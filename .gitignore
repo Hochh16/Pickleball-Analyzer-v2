@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data — videos and large derived artifacts should not be committed
+data/
+samples/*.mp4
+samples/*.mov
+samples/*.mkv
+samples/*.avi
+samples/*.webm
+
+# Model weights cached locally
+*.pt
+*.onnx
+
+# Outputs
+*.parquet
+!stages/**/test_fixtures/**/*.parquet
