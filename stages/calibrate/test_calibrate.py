@@ -39,6 +39,11 @@ def _make_fake_video(path: Path, frame: np.ndarray, fps: float = 30.0) -> None:
 def test_round_trip_calibration() -> None:
     """Verify all 6 smoke-test conditions from the contract."""
     # Synthetic frame: green court rectangle from (200, 200) to (1700, 900).
+    # Court is 700 px tall in image-space; in court-space it's 44 ft tall.
+    # User baseline (court y=0) is at image y=900 (bottom).
+    # Opponent baseline (court y=44) is at image y=200 (top).
+    # User's kitchen line (court y=15) is at image y = 900 - (700 * 15 / 44).
+    # Opponent's kitchen line (court y=29) is at image y = 900 - (700 * 29 / 44).
     frame = np.full((1080, 1920, 3), (40, 80, 30), dtype=np.uint8)
     cv2.rectangle(frame, (200, 200), (1700, 900), (50, 130, 80), -1)
 
@@ -46,6 +51,9 @@ def test_round_trip_calibration() -> None:
         tmp = Path(tmp_str)
         video_path = tmp / "test.mp4"
         _make_fake_video(video_path, frame)
+
+        user_kitchen_y_px = 900 - (700 * 15 / 44)
+        opp_kitchen_y_px  = 900 - (700 * 29 / 44)
 
         markers = {
             "court_corners_image": [
@@ -55,12 +63,12 @@ def test_round_trip_calibration() -> None:
                 [200,  200],
             ],
             "kitchen_line_user_image": [
-                [200,  200 + (700 * 7 / 44)],
-                [1700, 200 + (700 * 7 / 44)],
+                [200,  user_kitchen_y_px],
+                [1700, user_kitchen_y_px],
             ],
             "kitchen_line_opponent_image": [
-                [200,  200 + (700 * 37 / 44)],
-                [1700, 200 + (700 * 37 / 44)],
+                [200,  opp_kitchen_y_px],
+                [1700, opp_kitchen_y_px],
             ],
             "user_baseline":        "near",
             "dominant_hand":        "right",
@@ -80,11 +88,13 @@ def test_round_trip_calibration() -> None:
         assert abs(proj[0] - 200) < 2, f"x off: {proj[0]}"
         assert abs(proj[1] - 900) < 2, f"y off: {proj[1]}"
 
-        # 3. Project (10, 7) court (center of user kitchen) lands inside the kitchen polygon.
+        # 3. Project (10, 18) court -- midway between user's kitchen line (y=15)
+        # and the net (y=22), at court center-x. Should land inside the
+        # user_kitchen_polygon (which spans y=15 to y=22).
         kitchen_poly = np.asarray(
             court_json["derived"]["user_kitchen_polygon_image"], dtype=np.float32
         )
-        proj = project_point(court_to_image, (10.0, 7.0))
+        proj = project_point(court_to_image, (10.0, 18.0))
         inside = cv2.pointPolygonTest(kitchen_poly, (float(proj[0]), float(proj[1])), False)
         assert inside >= 0, (
             f"point not inside kitchen polygon: {proj}, polygon: {kitchen_poly.tolist()}"

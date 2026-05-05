@@ -46,7 +46,13 @@ COURT_ZONES_POLICY_VERSION = 1
 
 COURT_WIDTH_FT = 20.0
 COURT_LENGTH_FT = 44.0
-KITCHEN_DEPTH_FT = 7.0
+KITCHEN_DEPTH_FT = 7.0  # depth of the non-volley zone, measured from the NET
+
+# Y-coordinate (in court-feet) of each kitchen line, given user_baseline.
+# Net is at y = COURT_LENGTH_FT / 2 = 22 ft.
+# User-side kitchen is 7 ft from the net on the user's side.
+# Opponent-side kitchen is 7 ft from the net on the opponent's side.
+NET_LINE_FT = COURT_LENGTH_FT / 2.0  # = 22.0
 
 HOMOGRAPHY_RMSE_WARNING_PX = 5.0
 KITCHEN_PROJECTION_WARNING_PX = 10.0
@@ -190,6 +196,22 @@ def compute_homography_rmse(
     return float(np.sqrt(np.mean(np.square(errors))))
 
 
+def _user_kitchen_y_ft(user_baseline: str) -> float:
+    """Y-coordinate of the user's kitchen line, in court-feet."""
+    if user_baseline == "near":
+        return NET_LINE_FT - KITCHEN_DEPTH_FT  # 22 - 7 = 15
+    else:
+        return NET_LINE_FT + KITCHEN_DEPTH_FT  # 22 + 7 = 29
+
+
+def _opponent_kitchen_y_ft(user_baseline: str) -> float:
+    """Y-coordinate of the opponent's kitchen line, in court-feet."""
+    if user_baseline == "near":
+        return NET_LINE_FT + KITCHEN_DEPTH_FT  # 22 + 7 = 29
+    else:
+        return NET_LINE_FT - KITCHEN_DEPTH_FT  # 22 - 7 = 15
+
+
 def compute_kitchen_projection_error(
     user_kitchen_image: List[List[float]],
     user_baseline: str,
@@ -197,15 +219,9 @@ def compute_kitchen_projection_error(
 ) -> float:
     """How far is the user's clicked kitchen line from the homography-projected
     kitchen line? In pixels."""
-    if user_baseline == "near":
-        court_left  = (0.0, KITCHEN_DEPTH_FT)
-        court_right = (COURT_WIDTH_FT, KITCHEN_DEPTH_FT)
-    else:
-        court_left  = (0.0, COURT_LENGTH_FT - KITCHEN_DEPTH_FT)
-        court_right = (COURT_WIDTH_FT, COURT_LENGTH_FT - KITCHEN_DEPTH_FT)
-
-    expected_left  = project_point(court_to_image, court_left)
-    expected_right = project_point(court_to_image, court_right)
+    y_ft = _user_kitchen_y_ft(user_baseline)
+    expected_left  = project_point(court_to_image, (0.0, y_ft))
+    expected_right = project_point(court_to_image, (COURT_WIDTH_FT, y_ft))
 
     clicked_left, clicked_right = user_kitchen_image
     err_left  = np.hypot(expected_left[0] - clicked_left[0],   expected_left[1] - clicked_left[1])
@@ -219,15 +235,9 @@ def compute_opponent_kitchen_projection_error(
     court_to_image: np.ndarray,
 ) -> float:
     """Same as compute_kitchen_projection_error but for the opponent's side."""
-    if user_baseline == "near":
-        court_left  = (0.0, COURT_LENGTH_FT - KITCHEN_DEPTH_FT)
-        court_right = (COURT_WIDTH_FT, COURT_LENGTH_FT - KITCHEN_DEPTH_FT)
-    else:
-        court_left  = (0.0, KITCHEN_DEPTH_FT)
-        court_right = (COURT_WIDTH_FT, KITCHEN_DEPTH_FT)
-
-    expected_left  = project_point(court_to_image, court_left)
-    expected_right = project_point(court_to_image, court_right)
+    y_ft = _opponent_kitchen_y_ft(user_baseline)
+    expected_left  = project_point(court_to_image, (0.0, y_ft))
+    expected_right = project_point(court_to_image, (COURT_WIDTH_FT, y_ft))
 
     clicked_left, clicked_right = opponent_kitchen_image
     err_left  = np.hypot(expected_left[0] - clicked_left[0],   expected_left[1] - clicked_left[1])
@@ -239,8 +249,13 @@ def derive_polygons(
     court_to_image: np.ndarray,
     user_baseline: str,
 ) -> Dict[str, List[List[float]]]:
-    """Compute pixel-coord polygons for the four key court regions."""
-    NET_LINE_FT = COURT_LENGTH_FT / 2.0
+    """Compute pixel-coord polygons for the four key court regions.
+
+    The kitchen polygon spans from the kitchen line to the net (7 ft deep).
+    The half-court polygon spans from the baseline to the net (22 ft deep).
+    """
+    user_kitchen_y = _user_kitchen_y_ft(user_baseline)
+    opp_kitchen_y = _opponent_kitchen_y_ft(user_baseline)
 
     if user_baseline == "near":
         user_half_court = [
@@ -250,8 +265,8 @@ def derive_polygons(
             (0.0,             NET_LINE_FT),
         ]
         user_kitchen_court = [
-            (0.0,             KITCHEN_DEPTH_FT),
-            (COURT_WIDTH_FT,  KITCHEN_DEPTH_FT),
+            (0.0,             user_kitchen_y),
+            (COURT_WIDTH_FT,  user_kitchen_y),
             (COURT_WIDTH_FT,  NET_LINE_FT),
             (0.0,             NET_LINE_FT),
         ]
@@ -264,8 +279,8 @@ def derive_polygons(
         opp_kitchen_court = [
             (0.0,             NET_LINE_FT),
             (COURT_WIDTH_FT,  NET_LINE_FT),
-            (COURT_WIDTH_FT,  COURT_LENGTH_FT - KITCHEN_DEPTH_FT),
-            (0.0,             COURT_LENGTH_FT - KITCHEN_DEPTH_FT),
+            (COURT_WIDTH_FT,  opp_kitchen_y),
+            (0.0,             opp_kitchen_y),
         ]
     else:
         user_half_court = [
@@ -277,8 +292,8 @@ def derive_polygons(
         user_kitchen_court = [
             (0.0,             NET_LINE_FT),
             (COURT_WIDTH_FT,  NET_LINE_FT),
-            (COURT_WIDTH_FT,  COURT_LENGTH_FT - KITCHEN_DEPTH_FT),
-            (0.0,             COURT_LENGTH_FT - KITCHEN_DEPTH_FT),
+            (COURT_WIDTH_FT,  user_kitchen_y),
+            (0.0,             user_kitchen_y),
         ]
         opp_half_court = [
             (0.0,             0.0),
@@ -287,8 +302,8 @@ def derive_polygons(
             (0.0,             NET_LINE_FT),
         ]
         opp_kitchen_court = [
-            (0.0,             KITCHEN_DEPTH_FT),
-            (COURT_WIDTH_FT,  KITCHEN_DEPTH_FT),
+            (0.0,             opp_kitchen_y),
+            (COURT_WIDTH_FT,  opp_kitchen_y),
             (COURT_WIDTH_FT,  NET_LINE_FT),
             (0.0,             NET_LINE_FT),
         ]
@@ -349,7 +364,7 @@ def render_top_down_preview(
     warped = cv2.warpPerspective(frame, image_to_topdown, (out_w, out_h))
 
     cyan = (255, 255, 0)
-    for y_ft in (KITCHEN_DEPTH_FT, COURT_LENGTH_FT - KITCHEN_DEPTH_FT, COURT_LENGTH_FT / 2.0):
+    for y_ft in (NET_LINE_FT - KITCHEN_DEPTH_FT, NET_LINE_FT + KITCHEN_DEPTH_FT, NET_LINE_FT):
         y_px = int(round(y_ft * TOP_DOWN_PX_PER_FT))
         cv2.line(warped, (0, y_px), (out_w, y_px), cyan, 2)
 
