@@ -46,3 +46,7 @@ samples/*.webm
 # Outputs
 *.parquet
 !stages/**/test_fixtures/**/*.parquet
+# Throwaway diagnostic scripts and scratch work
+diag_*.py
+validate_*.py
+scratch/
