@@ -1,5 +1,42 @@
 # Architecture
 
+## Pipeline-wide assumptions
+
+These assumptions apply to the entire pipeline. Any stage may rely on them
+without re-validating. Violating them is undefined behavior — stages may
+fail loudly, produce wrong outputs, or both.
+
+### Camera placement
+
+The camera is positioned in **one of the two far corners of the court,
+approximately 6 feet high, with the entire court visible in frame**. Side
+views, baseline-center views, low-angle views, and partial-court framings
+are not supported.
+
+This single constraint underpins:
+- Stage 1 (calibrate) — the homography assumes a quadrilateral court
+  visible from a corner-elevated angle.
+- Stage 2 (track players) — player detection and ground-projection assume
+  feet are visible and the camera is above the action.
+- Stage 4 (track ball) — TrackNet weights and the pixel-space ROI assume
+  this viewpoint distribution.
+- Downstream stages — shot attribution, side-of-court reasoning, etc.
+
+If we ever support other camera positions, this assumption needs to be
+revisited stage-by-stage. Not in scope for v1.
+
+### Single ball, single match
+
+One pickleball in active play at a time. One continuous match per video
+file (no edited highlight reels, no multi-game compilations). Camera does
+not pan, zoom, or cut during the match.
+
+### Frame rate and resolution
+
+Any reasonable phone-camera output is acceptable: 24-60 fps, 720p or
+higher. Stages may resize internally for model input but operate on the
+native frame index from the source video.
+
 ## Layered pipeline
 
 ~~~
@@ -45,13 +82,13 @@ video.mp4
 
 2. **Inputs are file paths. Outputs are file paths.** No in-memory pipelines, no shared global state, no class hierarchies that span stages.
 
-3. **Schemas are versioned.** Every output file has a `schema_version` field. Breaking schema changes increment it.
+3. **Schemas are versioned.** Every output file has a `schema_version` field. Breaking schema changes increment it. Non-breaking additions (new optional column, new optional metadata field) do not. Stages that consume a schema must check `schema_version` and fail loudly on a version they were not written for.
 
 4. **No stage modifies its inputs.** Output files are always new files.
 
 5. **Each stage has a `contract.md`** in its folder. The contract is the source of truth — it specifies inputs, outputs, schema, edge cases. The contract is reviewed and approved before code is written.
 
-6. **Each stage has a smoke test.** A 30-second test clip with known-correct expected outputs. The stage is "done" only when the smoke test passes.
+6. **Each stage has a smoke test.** A short test clip (≤30 seconds) with known-correct expected outputs. The stage is "done" only when the smoke test passes.
 
 7. **Failures are loud.** No silent fallbacks. If a stage can't produce its output, it raises with a clear message.
 

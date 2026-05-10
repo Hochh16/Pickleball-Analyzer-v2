@@ -1,0 +1,1 @@
+"""Stage 4 — track ball. See stages/track_ball/contract.md for spec."""

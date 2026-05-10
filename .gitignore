@@ -50,3 +50,14 @@ samples/*.webm
 diag_*.py
 validate_*.py
 scratch/
+
+# Regenerable rally-frame verification thumbnails (Stage 4 smoke test)
+data/*/rally_verification/
+
+# Throwaway venv for one-time weight conversion (tools/convert_dettor_weights.py)
+.venv-convert/
+
+
+# Dettor's SavedModel directory (one-time conversion input)
+data/models/dettor_savedmodel/
+

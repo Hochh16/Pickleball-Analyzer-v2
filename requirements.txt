@@ -1,0 +1,29 @@
+# Pickleball Analyzer v2 — Python dependencies
+#
+# Versions are minimum bounds matching what Stages 1-3 were developed
+# against. Newer patch/minor versions should be safe; major-version
+# bumps may break things and should be tested.
+#
+# To install:
+#   pip install -r requirements.txt
+
+# --- Numerics & data ---
+numpy>=2.4.4
+pandas>=3.0.2
+pyarrow>=24.0.0          # parquet I/O for stage outputs
+
+# --- Computer vision ---
+opencv-python>=4.13.0.92
+opencv-contrib-python>=4.13.0.92
+opencv-python-headless>=4.13.0.92
+
+# --- Pose & detection ---
+mediapipe>=0.10.35       # Stage 3 (pose)
+ultralytics>=8.4.46      # Stage 2 (player tracking — YOLO + ByteTrack)
+ultralytics-thop>=2.0.19
+
+# --- Stage 4 (track_ball) ---
+torch>=2.11.0
+torchvision>=0.26.0
+tqdm>=4.66.0             # progress bar in track_ball inference loop
+h5py>=3.10.0             # Keras-weights reader for tools/convert_dettor_weights.py

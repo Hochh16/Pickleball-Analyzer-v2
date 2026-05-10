@@ -91,3 +91,47 @@ Adding this stage would change ARCHITECTURE.md from 11 stages to 12. Worth doing
 **Why this is a workaround, not the right answer:** Masking with a flat grey rectangle is unusual visual input and may slightly lower MediaPipe's pose detection rate on otherwise-good crops. The smoke test should compare the post-masking detection rate against the pre-masking rate (97.5%) to flag regressions. A more sophisticated approach would mask only the body region of the other person (using a person-segmentation model), not the entire bbox rectangle. Even better would be a multi-person pose model.
 
 **Where to revisit:** If the masked detection rate drops below 90%, or if downstream stages report incorrect landmarks even with masking enabled, consider switching to a multi-person model (MediaPipe `num_poses > 1` plus pick-by-distance, or a different model altogether). Track this as a Stage 3 follow-up.
+
+## Stage 4 - Dettor's pre-trained weights do not generalize to user footage
+
+**Observed:** May 2026, Stage 4 first end-to-end run with Andrew Dettor's
+pickleball-trained TrackNetV2 weights converted from his TF SavedModel.
+
+**Problem:** Stage 4 ran end-to-end without exception against the
+2-minute test_clip. All schema invariants validated. But the detection
+rate on active-rally frames was 4.5%, far below the 80% threshold.
+Diagnostic inspection on 4+ frames showed:
+
+- The model produces near-uniform low-confidence output (heatmap
+  values mostly in 0.001-0.005 range; p99.9 around 0.05-0.1).
+- On lucky frames where an adjacent-court ball is well-lit, the model
+  locks onto it (frame 250: peak value 0.48 on adjacent-court ball,
+  not user's-court ball).
+- On all other frames tested, the model's argmax landed on incidental
+  bright/circular features: window glare, wall objects, court lines,
+  player heads. Never on the user's-court ball.
+
+**Verified mechanically correct:**
+- Weight conversion sanity checks: all 5 passed (layer count, Conv/BN
+  count match, per-layer shape parity, forward-pass not-NaN, output
+  range plausible).
+- BatchNorm-over-width adaptation working as designed (Dettor used
+  axis=-1 BN on NCHW data — see `_tracknet_model.py` for details).
+- Forward pass on dummy zero input returns the expected near-uniform
+  sigmoid 0.5 output.
+
+**Why generalization failed (likely causes):**
+- Camera placement different. Dettor trained on PPA Tour broadcast
+  footage (high boom, professional venues, stable lighting, 4K). User
+  footage is amateur — corner-mounted phone at ~6 ft, indoor and
+  outdoor venues with variable lighting and court colors.
+- Dettor's training set was small (~1 PPA Tour match) and his own
+  writeup acknowledged overfitting concerns.
+
+**Path forward (Stage 4.5):** Fine-tune Dettor's weights on
+user-labeled frames from the user's own videos. Stage 4.5 contract at
+`stages/finetune_ball_model/contract.md` codifies this effort.
+
+**Stage 4 itself is code-complete.** No code changes required to
+Stage 4. When Stage 4.5 produces new weights, Stage 4's `--weights`
+argument points at them; smoke test re-runs without other changes.
