@@ -1,4 +1,4 @@
-# Stage 4.5 — Fine-Tune Ball-Tracking Model
+# Stage 4.5 — Train Ball-Tracking Model
 
 ## Purpose
 
@@ -6,9 +6,17 @@ Produce TrackNetV2 weights that detect the pickleball reliably on the
 user's footage. Stage 4 is mechanically correct but Andrew Dettor's
 pre-trained pickleball weights do not generalize to the user's camera
 setup, lighting, court colors, or ball appearance — verified by
-multi-frame diagnostic inspection in May 2026. Stage 4.5 closes the
-generalization gap by fine-tuning Dettor's weights on user-labeled
-frames from the user's own videos.
+multi-frame diagnostic inspection in May 2026.
+
+The original plan (fine-tune Dettor's weights, captured in v0.1.0 of
+this contract) was attempted and produced a model with 32% detection
+at 10px and 100% false-positive rate. Diagnostics revealed the model
+had memorized fixed-pixel background features (tree branches in the
+outdoor video) as 'ball'. See 'v1 lessons learned' at the bottom of
+this document. Stage 4.5 now closes the generalization gap by training
+TrackNetV2 from scratch on user-labeled frames, with MSE loss and
+spatial augmentation to defeat positional memorization. Dettor's
+weights are no longer used.
 
 This stage is offline (training runs on Colab GPU) and one-shot per
 weights version. It is not part of the per-video processing pipeline.
@@ -17,10 +25,11 @@ weights version. It is not part of the per-video processing pipeline.
 
 Slots between Stage 4 (track ball) and Stage 5 (detect shots) but does
 not modify Stage 4 or Stage 5. Stage 4.5's only interface to the rest
-of the pipeline is the .pt weights file at
-data/models/tracknet_v2_dettor.pt (or another path passed to Stage 4
-via --weights). When Stage 4.5 produces a new weights file, Stage 4's
---weights argument points at it; no other code changes.
+of the pipeline is the .pt weights file at data/models/. Any
+TrackNetV2 .pt that matches the architecture in
+stages/track_ball/_tracknet_model.py is a valid Stage 4 input. When
+Stage 4.5 produces a new weights file, Stage 4's --weights argument
+points at it; no other code changes.
 
 This stage is added to ARCHITECTURE.md as Stage 4.5 (between 4 and 5),
 extending the pipeline diagram from 11 to 12 stages.
@@ -35,7 +44,7 @@ The full pipeline is: label videos -> prepare training data -> train
 |---|---|---|
 | Labeling tool | Video file | data/<video>/ball_labels.json |
 | Data prep | Multiple ball_labels.json + their videos | data/training/{train,val}/ |
-| Training | Prepared dataset + Dettor's weights | data/models/tracknet_v2_finetuned_v1.pt |
+| Training | Prepared dataset | data/models/tracknet_v2_trained_v1.pt |
 | Validation | Held-out video + new weights | data/training/validation_report.json |
 | Weights swap | New .pt file | (operator action; no code) |
 | Stage 4 smoke test | (already exists in Stage 4) | Pass/fail verdict |
@@ -108,18 +117,24 @@ What it produces: for each labeled frame, three consecutive video
 frames are loaded and resized to the model's input resolution
 (288x512). A 3-channel heatmap target is generated with a Gaussian
 peak centered on the labeled ball position (or all-zero if
-ball_visible=false). The frame triple and heatmap target are saved as
-a single .npy file per training sample.
+ball_visible=false). Input frames are stored as uint8 (lossless;
+notebook casts to float32 and divides by 255 at training time); target
+heatmaps are stored as float16 (lossless for sparse Gaussian peaks in
+[0,1]). Each sample is saved as one .npz file containing two named
+arrays: 'input' (9, 288, 512) uint8 and 'target' (3, 288, 512)
+float16. This deviates from an earlier draft that called for one .npy
+per sample with shape (12, 288, 512); mixed dtypes cannot share a
+single .npy. Disk cost at ~10.7k samples: ~22 GB (vs ~72 GB float32).
 
 Output structure:
 
     data/training/
         train/
-            000000.npy        # shape (12, 288, 512): 9 input + 3 target channels
-            000001.npy
+            000000.npz        # 'input' (9, 288, 512) uint8 + 'target' (3, 288, 512) float16
+            000001.npz
             ...
         val/
-            000000.npy
+            000000.npz
             ...
         metadata.json         # per-sample lookup: source video, frame_idx, label
 
@@ -143,50 +158,57 @@ metadata.json schema:
 Constraints:
 - The labeled frame is the third of the triple (frame_idx-2, frame_idx-1, frame_idx), matching Stage 4's inference convention.
 - Frames where frame_idx < 2 are skipped (insufficient history).
+- Frames where ball_visible=true produce a target with the SAME Gaussian peak duplicated on all 3 channels at the labeled position. Channels 0/1 are an approximation (we don't have labels for frames i-2 and i-1); they preserve TrackNetV2's 3-channel supervision pattern. Stage 4 inference reads only channel 2.
 - Frames where ball_visible=false produce all-zero heatmap targets — these are NEGATIVE samples training the model to output near-zero where there's no ball. Critical for reducing false positives.
 - Coordinates from the JSON are in original video resolution; data prep scales them to the 288x512 model input space when generating heatmaps.
 
 ## Sub-piece 3: Training (Colab notebook)
 
-stages/finetune_ball_model/finetune.ipynb — Jupyter notebook designed
-to run on Google Colab with a T4 GPU on the free tier.
+stages/finetune_ball_model/train.ipynb — Jupyter notebook designed to
+run on Google Colab with a T4 GPU on the free tier. Training may
+span multiple Colab sessions; the notebook checkpoints after every
+epoch and resumes from the latest checkpoint on rerun.
 
 Inputs (uploaded to user's Google Drive):
 
 | Item | Drive location |
 |---|---|
-| Dettor's converted .pt weights | MyDrive/pickleball/tracknet_v2_dettor.pt |
 | Prepared training data (zipped) | MyDrive/pickleball/training_data.zip |
 | Vendored model code | MyDrive/pickleball/_tracknet_model.py |
 
 What the notebook does:
 1. Mounts Google Drive.
-2. Unzips training data to Colab local disk.
+2. Unzips training data to Colab local disk (skipped if already present).
 3. Loads the vendored TrackNet model class.
-4. Loads Dettor's weights as starting point.
-5. Trains for N epochs with weighted BCE + Adam, validating each epoch.
-6. Saves best-val-loss weights as tracknet_v2_finetuned_v<N>.pt.
-7. Writes a training-log JSON with per-epoch loss/accuracy.
-8. Copies weights and log back to user's Drive.
+4. Initializes a fresh TrackNetV2 with random weights (NOT loading Dettor).
+5. If a checkpoint exists in Drive at MyDrive/pickleball/checkpoints/, loads it and resumes from that epoch.
+6. Trains for the remaining epochs with MSE loss + Adam (cosine LR decay), validating each epoch.
+7. After each epoch: writes a checkpoint (latest.pt + epoch_N.pt) and an updated training log to Drive.
+8. Tracks best-val-loss weights and saves them as tracknet_v2_trained_v<N>.pt.
+9. On run completion (or wall-budget interruption), copies the best weights and full log back to Drive. Operator may rerun the notebook in a new Colab session to continue from the checkpoint.
 
 Hyperparameters (in the notebook, easy to edit):
-- Optimizer: Adam, lr=1e-4 (lower than from-scratch training because we're fine-tuning).
-- Loss: weighted binary cross-entropy with positive-weight scaling (heatmap pixels are sparse; positives need up-weighting).
+- Optimizer: Adam, lr=1e-3 with cosine annealing to 1e-5 across the full epoch budget. Higher than v1's 1e-4 because we are training from scratch, not fine-tuning.
+- Weight decay: 1e-5 (mild L2; pushes against memorizing fixed-pixel features).
+- Loss: MSE against the Gaussian heatmap target. Plain MSE, no pos_weight. MSE penalizes shape mismatch and removes v1's incentive to predict 'confidently wrong' high-confidence peaks on fixed background features.
 - Batch size: 4 (constrained by T4 GPU memory at 288x512 input).
-- Epochs: 30 default, with early stopping on val loss plateau (patience=5).
-- Augmentation: random horizontal flip; brightness/contrast jitter; minor RGB shift. No spatial cropping (would change the camera-position assumption).
+- Epochs: 50 default. Early stopping on val loss plateau (patience=10; longer than v1 because from-scratch training is noisier in early epochs).
+- Augmentation: random horizontal flip; brightness +-15%; contrast +-15%; per-color RGB shift +-5%; random rotation +-5 degrees; random translation +-10% of image dimensions. Rotation + translation are explicitly added to defeat positional memorization (v1 learned that pixel (993, 273) is 'always a ball' because trees were always there). These augmentations do NOT change the camera-position assumption: the camera is still in a far corner ~6ft high; the ball is still detected from the same viewpoint distribution. They only break the model's ability to memorize 'this pixel = ball.'
+- No spatial cropping (would change the field of view, which IS a camera-position assumption).
 
 Outputs (back to Drive):
 
 | Item | Drive location |
 |---|---|
-| Best fine-tuned weights | MyDrive/pickleball/tracknet_v2_finetuned_v<N>.pt |
-| Training log | MyDrive/pickleball/finetune_log_v<N>.json |
+| Best trained weights | MyDrive/pickleball/tracknet_v2_trained_v<N>.pt |
+| Training log | MyDrive/pickleball/train_log_v<N>.json |
+| Per-epoch checkpoints | MyDrive/pickleball/checkpoints/latest.pt and epoch_N.pt |
 
 Constraints:
-- Notebook must run end-to-end in a single Colab session (~3 hours max on free tier).
+- Single Colab T4 free tier (~3 hours per session). Training may span 2-3 sessions; the notebook checkpoints after each epoch and resumes on rerun.
 - All logging is to the notebook output and to the JSON log; no wandb/tensorboard signup required.
-- Notebook is VERSIONED IN GIT (committed as a .ipynb file). Re-running it should reproduce results modulo training stochasticity.
+- Notebook is VERSIONED IN GIT (committed as a .ipynb file). Re-running from scratch (no checkpoint) should reproduce results modulo training stochasticity.
+- Checkpoint format: full optimizer state + LR scheduler state + epoch number + best_val_loss, so a resumed session is functionally identical to an uninterrupted long session.
 
 ## Sub-piece 4: Validation
 
@@ -277,8 +299,10 @@ If criterion 4 passes but criterion 5 fails (outdoor works, test_clip
 doesn't), the data prep or hyperparameters likely have a bug.
 Diagnose before declaring Stage 4.5 done.
 
-If both 4 and 5 fail, the fine-tune did not generalize. Increase
-labeled data, re-train.
+If both 4 and 5 fail, training did not generalize. Run the
+diagnostic tool (tools/diag_heatmaps.py) to identify the failure
+mode before re-training. Do NOT declare Stage 4.5 done with weights
+that fail acceptance — iterate based on diagnostic findings.
 
 ## Smoke test
 
@@ -305,7 +329,7 @@ Implemented at stages/finetune_ball_model/smoke_test.py.
 
 ## Known follow-ups
 
-- Adjacent-court contamination still present. Stage 4.5 trains the model to detect the ball in user's footage; it does not teach the model to ignore adjacent-court balls. The labeling tool naturally excludes adjacent-court balls (user only clicks on user's-court ball or marks invisible), but this is implicit. If contamination remains a problem after fine-tuning, an explicit "negative sample" pass with adjacent-court balls labeled as ball_visible=false may help.
+- Adjacent-court contamination is partly addressed by v2's spatial augmentation (which breaks fixed-pixel memorization that included neighboring courts) and by the existing labeling convention (the user only clicks the user's-court ball; adjacent-court balls in view become implicit negative supervision via ball_visible=false on the same frames). If contamination remains a problem after v2 weights, an explicit pass labeling frames with adjacent-court balls but no user-court ball as ball_visible=false would harden this.
 - Model is hard-coded to 288x512 input. If user's videos move to a different aspect ratio, retrain. Documented in _tracknet_model.py per BatchNormOverWidth's per-position width.
 - Iteration speed. Stage 4 smoke test takes ~110 minutes on CPU. After Stage 4.5 completes, consider whether to commission a smaller fast-iteration smoke clip (the original 19s clip referenced in earlier conversations, if it can be located).
 
@@ -313,3 +337,68 @@ Implemented at stages/finetune_ball_model/smoke_test.py.
 
 Same as Stage 4 (camera placement, single ball, single match, etc.) —
 documented in ARCHITECTURE.md § Pipeline-wide assumptions.
+## v1 lessons learned (May 2026)
+
+The original Stage 4.5 plan was to fine-tune Dettor's PPA-broadcast
+TrackNetV2 weights on ~10.7k user-labeled frames using weighted BCE
+(pos_weight=100) and Adam lr=1e-4. The contract above (Edits 1-12)
+reflects what changed after that approach failed. This section captures
+what we learned, so future Claudes and future-David don't repeat the
+trajectory.
+
+### Outcome of v1
+
+- Trained 6 epochs in 2.8h on Colab T4. Best val loss was at epoch 1.
+- Validation against held-out outdoor video (validate.py):
+  - detection_rate_at_10px: 0.323 (615/1904)
+  - detection_rate_at_25px: 0.484 (921/1904)
+  - false_positive_rate: 1.000 (1117/1117)
+  - median pixel error: 28.2 px; p95: 1056 px
+  - mean confidence on visible frames: 0.99
+  - mean confidence on invisible frames: 0.98
+- Diagnostic (tools/diag_heatmaps.py):
+  - On 20 visible frames, the GT ball location was in the model's
+    top-5 peaks only 7 times. On the other 13 (65%), the real ball
+    was not even a candidate.
+  - Two pixel locations (model-resolution ~(993, 273) and (453, 401))
+    appeared as top-5 peaks across nearly every frame. They
+    correspond to tree branches in the distance outside the court.
+
+### Root causes
+
+1. Weighted BCE with pos_weight=100 made 'confidently wrong' locally
+   optimal. A single high-confidence wrong prediction costs less than
+   many low-confidence right predictions when positives are very
+   sparse.
+2. Static cameras + no spatial augmentation let the model memorize
+   fixed pixel locations rather than learn ball-like features.
+   Across 10.7k labels, certain background features (tree branches,
+   light fixtures) were persistently present, so the model learned
+   'pixel X is always positive' as a shortcut.
+3. Dettor's PPA-broadcast features anchored the early layers on the
+   wrong visual prior. His ball appearance (compact, well-lit, high
+   contrast against blue or beige hard court) does not match
+   amateur phone footage (variable lighting, low contrast, outdoor
+   courts with high-frequency green backgrounds).
+
+### v2 changes (already reflected in the contract above)
+
+1. Train from scratch (random init), not from Dettor's weights.
+2. MSE loss, not weighted BCE. No pos_weight.
+3. Spatial augmentation (rotation +-5 degrees, translation +-10%) to
+   defeat positional memorization.
+4. Longer training (50 epochs across 2-3 Colab sessions) with
+   per-epoch checkpoints for resumability.
+5. Cosine LR decay and mild weight decay for better convergence.
+
+### v1 artifacts retained
+
+- data/models/tracknet_v2_finetuned_v1.pt: the failed weights. Kept
+  for reproducibility but NOT used downstream.
+- data/training/validation_report.json: v1 validate.py output.
+- data/training/diag_v1/*.png: diagnostic visualizations.
+- finetune_log_v1.json on Drive: v1 training log.
+
+If v2 also fails acceptance, do NOT default to 'more data, longer
+training.' Re-run the diagnostic and look at the failure mode
+first.

@@ -135,3 +135,62 @@ user-labeled frames from the user's own videos. Stage 4.5 contract at
 **Stage 4 itself is code-complete.** No code changes required to
 Stage 4. When Stage 4.5 produces new weights, Stage 4's `--weights`
 argument points at them; smoke test re-runs without other changes.
+
+## Stage 4.5 v1 - Fine-tuned weights produced fixed-pixel hallucinations
+
+**Observed:** May 2026, first end-to-end Stage 4.5 run with the
+original 'fine-tune Dettor's weights' plan.
+
+**Problem:** After 6 epochs of training (Adam lr=1e-4, weighted BCE with
+pos_weight=100, 10,701 labels across 4 videos), validate.py against the
+held-out outdoor video reported:
+
+- detection_rate_at_10px: 0.323 (615/1904 visible-ball frames)
+- detection_rate_at_25px: 0.484
+- **false_positive_rate: 1.000** (every single ball-not-visible frame
+  produced a confident prediction)
+- median pixel error: 28.2 px, p95: 1056 px
+- mean confidence on visible: 0.99; on invisible: 0.98
+
+The diagnostic tool (tools/diag_heatmaps.py) revealed why: on 20
+visible-ball frames, the real ball's pixel was NOT in the model's
+top-5 candidate peaks in 13 of 20 cases (65%). And the same two pixel
+coordinates - model-resolution (993, 273) and (453, 401), both pointing
+at tree-branch clusters outside the court in the outdoor video - were
+top-5 peaks across nearly every frame regardless of what was happening
+on the court. The model had memorized fixed background features as
+'ball.'
+
+**Root causes:**
+
+1. Weighted BCE with pos_weight=100 made 'confidently wrong' locally
+   optimal. With positives ~3000x rarer than negatives, a single
+   high-confidence wrong prediction costs less than many low-confidence
+   correct ones.
+2. Static cameras + no spatial augmentation let the model learn fixed
+   pixel positions as a shortcut. Tree branches, light fixtures, and
+   other background features were persistently present across 10.7k
+   labels, so 'pixel X is positive' became cheaper to encode than
+   'detect ball-shaped features.'
+3. Dettor's PPA-broadcast features anchored the early layers on the
+   wrong visual prior. His training data is professionally-lit, high-
+   contrast broadcast footage; the user's data is amateur phone
+   footage with variable lighting and low contrast. Fine-tuning could
+   not move those priors far enough.
+
+**Where fixed:** Stage 4.5 v2 contract (current). Three changes:
+random-init training (not fine-tuning), MSE loss (not weighted BCE),
+and spatial augmentation (rotation +-5deg, translation +-10%) to
+defeat positional memorization. See stages/finetune_ball_model/
+contract.md, 'v1 lessons learned' section.
+
+**v1 artifacts retained:** data/models/tracknet_v2_finetuned_v1.pt
+(failed weights, retained for reproducibility but NOT used downstream),
+data/training/validation_report.json, data/training/diag_v1/*.png.
+
+**Lesson generalizable beyond Stage 4.5:** when working with sparse
+positive labels, weighted BCE with very high pos_weight has a known
+failure mode where the model learns confident-wrong predictions
+rather than discriminative features. MSE against a target shape is
+more robust for heatmap-style outputs. Spatial augmentation is
+essential whenever the camera is static and the target is small.
