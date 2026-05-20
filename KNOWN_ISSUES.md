@@ -136,61 +136,100 @@ user-labeled frames from the user's own videos. Stage 4.5 contract at
 Stage 4. When Stage 4.5 produces new weights, Stage 4's `--weights`
 argument points at them; smoke test re-runs without other changes.
 
-## Stage 4.5 v1 - Fine-tuned weights produced fixed-pixel hallucinations
+## Stage 4.5 - TrackNetV2 approach abandoned after two failed attempts
 
-**Observed:** May 2026, first end-to-end Stage 4.5 run with the
-original 'fine-tune Dettor's weights' plan.
+**Observed:** May 2026, across two distinct deep-learning training attempts.
 
-**Problem:** After 6 epochs of training (Adam lr=1e-4, weighted BCE with
-pos_weight=100, 10,701 labels across 4 videos), validate.py against the
-held-out outdoor video reported:
+**Outcome:** Both attempts produced models that failed validation badly
+enough to be unusable. Stage 4.5 was rewritten in v0.3.0 to use
+classical computer vision (background subtraction + blob detection +
+ROI filter + trajectory smoothing) instead of deep learning. The
+TrackNetV2 architecture and weights are no longer used anywhere in
+the pipeline.
 
-- detection_rate_at_10px: 0.323 (615/1904 visible-ball frames)
-- detection_rate_at_25px: 0.484
-- **false_positive_rate: 1.000** (every single ball-not-visible frame
-  produced a confident prediction)
-- median pixel error: 28.2 px, p95: 1056 px
-- mean confidence on visible: 0.99; on invisible: 0.98
+### Attempt 1 (v1, contract v0.1.0): Fine-tune Dettor's PPA weights
 
-The diagnostic tool (tools/diag_heatmaps.py) revealed why: on 20
-visible-ball frames, the real ball's pixel was NOT in the model's
-top-5 candidate peaks in 13 of 20 cases (65%). And the same two pixel
-coordinates - model-resolution (993, 273) and (453, 401), both pointing
-at tree-branch clusters outside the court in the outdoor video - were
-top-5 peaks across nearly every frame regardless of what was happening
-on the court. The model had memorized fixed background features as
-'ball.'
+- Setup: Adam lr=1e-4, weighted BCE with pos_weight=100, 10,701 user
+  labels across 4 videos, T4 GPU on Colab free tier.
+- Trained 6 epochs in 2.8h; best val loss was at epoch 1.
+- Validation against held-out outdoor video:
+  - detection_rate_at_10px: 0.323 (615/1904)
+  - false_positive_rate: 1.000 (1117/1117)
+  - mean confidence on visible: 0.99; on invisible: 0.98
+- Diagnostic (tools/diag_heatmaps.py): on 20 visible-ball frames, the
+  real ball was NOT in the model's top-5 candidate peaks in 13 cases
+  (65%). Two fixed pixel coordinates - tree branches in the distance
+  outside the court - appeared as top-5 peaks on nearly every frame.
+- Root cause: BCE with pos_weight=100 made "confidently wrong"
+  locally optimal. Static cameras + no spatial augmentation let the
+  model memorize fixed background features. Dettor's PPA-broadcast
+  features anchored the early layers on the wrong visual prior.
 
-**Root causes:**
+### Attempt 2 (v2, contract v0.2.0): Train from scratch with MSE + spatial aug
 
-1. Weighted BCE with pos_weight=100 made 'confidently wrong' locally
-   optimal. With positives ~3000x rarer than negatives, a single
-   high-confidence wrong prediction costs less than many low-confidence
-   correct ones.
-2. Static cameras + no spatial augmentation let the model learn fixed
-   pixel positions as a shortcut. Tree branches, light fixtures, and
-   other background features were persistently present across 10.7k
-   labels, so 'pixel X is positive' became cheaper to encode than
-   'detect ball-shaped features.'
-3. Dettor's PPA-broadcast features anchored the early layers on the
-   wrong visual prior. His training data is professionally-lit, high-
-   contrast broadcast footage; the user's data is amateur phone
-   footage with variable lighting and low contrast. Fine-tuning could
-   not move those priors far enough.
+- Setup: random init, MSE loss, Adam lr=1e-3 with cosine decay,
+  weight_decay=1e-5, rotation +/-5 deg, translation +/-10%, A100 GPU
+  on Colab Pro, batch_size=8.
+- Aborted at epoch 25 because training had visibly collapsed at epoch
+  10 to the trivial "predict zero everywhere" solution.
+- Val loss flatlined at ~0.000078 from epoch 10 onward. The math: the
+  target heatmap is ~99.97% zeros; predicting 0 everywhere achieves
+  MSE ~0.00007 (matching observed loss exactly).
+- Root cause: MSE on sparse positive targets has a stable trivial
+  local minimum at "predict nothing." Symmetric to v1's failure mode
+  - v1 made wrong-confident optimal; v2 made nothing-confident
+  optimal.
 
-**Where fixed:** Stage 4.5 v2 contract (current). Three changes:
-random-init training (not fine-tuning), MSE loss (not weighted BCE),
-and spatial augmentation (rotation +-5deg, translation +-10%) to
-defeat positional memorization. See stages/finetune_ball_model/
-contract.md, 'v1 lessons learned' section.
+### Why TrackNet was the wrong tool
 
-**v1 artifacts retained:** data/models/tracknet_v2_finetuned_v1.pt
-(failed weights, retained for reproducibility but NOT used downstream),
-data/training/validation_report.json, data/training/diag_v1/*.png.
+TrackNetV2 was designed for broadcast tennis and badminton: mast
+cameras 15-30 feet up, 4K resolution where the ball spans 8-12 pixels,
+clean uniform backgrounds, tens of thousands of training labels per
+model, stable lighting and ball appearance.
 
-**Lesson generalizable beyond Stage 4.5:** when working with sparse
-positive labels, weighted BCE with very high pos_weight has a known
-failure mode where the model learns confident-wrong predictions
-rather than discriminative features. MSE against a target shape is
-more robust for heatmap-style outputs. Spatial augmentation is
-essential whenever the camera is static and the target is small.
+User's footage is amateur phone-camera at ~6 ft height, 1080p with
+4-6 pixel balls, busy backgrounds (trees, fences, light fixtures,
+windows), thin per-environment label counts (~2,500 per visual
+environment), and varying lighting across indoor/outdoor venues. All
+five characteristics violate TrackNet's training distribution.
+
+### Where fixed
+
+v3 (contract v0.3.0) rewrites Stage 4.5 entirely around classical CV:
+a per-video calibration tool (`tune_ball_cv.py`) produces a
+`ball_cv_params.json` that Stage 4's CV pipeline consumes. Background
+subtraction exploits the static-camera assumption directly - "free"
+signal that deep learning cannot use. Low resolution becomes a non-
+issue because a 4-pixel ball is a clear blob after background
+subtraction. New venues are handled via a 2-3 minute calibration
+step per video rather than via collecting more labels and
+retraining.
+
+Stage 4 will be rewritten to consume the new schema; ETA after Stage
+4.5 v3 is complete.
+
+### Artifacts retained but unused downstream
+
+- `data/models/tracknet_v2_finetuned_v1.pt` - v1 failed weights.
+- `data/training/validation_report.json` - v1 validate.py output.
+- `data/training/diag_v1/*.png` - v1 diagnostic visualizations.
+- `train_log_v1.json` on Drive - v2 training log up to epoch 25.
+- `_tracknet_model.py` vendored in `stages/track_ball/` - will be
+  deleted when Stage 4 is rewritten.
+- v2 final weights were not saved (training was aborted before the
+  save cell).
+
+### Generalizable lessons
+
+1. When fine-tuning, verify the source model's training data matches
+   your problem's characteristics. Dettor's PPA-broadcast priors were
+   actively misleading on amateur phone footage.
+2. For sparse-positive heatmap detection, both raw weighted BCE
+   (high pos_weight) and raw MSE have symmetric failure modes that
+   produce equally useless models. Focal loss is the standard
+   remedy IF deep learning is the right tool.
+3. Match the tool to the data, not the problem to the tool. Anchoring
+   on "TrackNet because Dettor trained on pickleball" cost two days
+   and most of an A100 monthly budget. Static-camera amateur footage
+   is closer to 1990s surveillance CV than to 2020s broadcast-sports
+   CV; the tooling should match.
