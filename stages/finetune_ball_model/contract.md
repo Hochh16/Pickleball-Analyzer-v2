@@ -1,5 +1,43 @@
 # Stage 4.5 - Ball-Detection Calibration
 
+## STATUS: PAUSED (May 2026)
+
+This contract describes the v3 (classical CV) approach. v3 was attempted
+end-to-end on test_clip and produced a tune accuracy of ~1% (1/100
+isolated-blob frames), well below the 80% acceptance criterion. See
+KNOWN_ISSUES.md section 'Stage 4.5 - Ball detection PAUSED after three
+failed attempts' for full diagnostic findings.
+
+**Stage 4.5 is paused, not abandoned.** Two conditions would justify
+re-activating it:
+
+1. **Better source video** raises the SNR enough that the existing v3
+   tooling produces usable detections. Specifically: higher camera mount
+   (10-15 ft), 4K and/or 60 fps recording, faster shutter, simpler
+   backgrounds. The existing `tune_ball_cv.py` can be re-run on improved
+   footage without code changes; if tune accuracy rises above ~50% on
+   a new test clip, v3 is likely viable.
+
+2. **Algorithmic extension** beyond per-frame detection - specifically,
+   multi-frame trajectory tracking that scores candidate detections
+   across windows of 5-10 frames using ball physics (constant velocity
+   between bounces, gravity-influenced arc, smooth trajectory). This
+   is the standard fix for low-SNR ball tracking and is the next
+   technical avenue if better video alone doesn't suffice.
+
+**While Stage 4.5 is paused, downstream stages (Stage 5+) are being
+built using a synthetic placeholder ball.parquet** (clean trajectories
+generated from known shot patterns). This is documented in the Stage 5
+contract (when written). The placeholder approach exposes what
+downstream stages actually require from ball data, which will inform
+the v4 ball detector design.
+
+The rest of this document describes v3 as it was specified and
+attempted. None of v3's outputs are currently in use downstream.
+
+---
+
+
 ## Purpose
 
 Produce per-video CV-pipeline parameters that let Stage 4 (track ball)

@@ -136,100 +136,138 @@ user-labeled frames from the user's own videos. Stage 4.5 contract at
 Stage 4. When Stage 4.5 produces new weights, Stage 4's `--weights`
 argument points at them; smoke test re-runs without other changes.
 
-## Stage 4.5 - TrackNetV2 approach abandoned after two failed attempts
+## Stage 4.5 - Ball detection PAUSED after three failed attempts
 
-**Observed:** May 2026, across two distinct deep-learning training attempts.
+**Observed:** May 2026, across three distinct ball-detection approaches.
 
-**Outcome:** Both attempts produced models that failed validation badly
-enough to be unusable. Stage 4.5 was rewritten in v0.3.0 to use
-classical computer vision (background subtraction + blob detection +
-ROI filter + trajectory smoothing) instead of deep learning. The
-TrackNetV2 architecture and weights are no longer used anywhere in
-the pipeline.
+**Outcome:** All three attempts produced detectors that failed acceptance.
+Stage 4.5 is currently paused. Downstream stages (Stage 5+) are being
+built against a placeholder ball.parquet so the rest of the pipeline can
+progress. Ball detection will be revisited when (a) better source video
+is available from updated camera setups, and/or (b) algorithmic options
+beyond per-frame detection are explored.
 
-### Attempt 1 (v1, contract v0.1.0): Fine-tune Dettor's PPA weights
+### Attempt 1 (v1, contract v0.1.0): Fine-tune Dettor's PPA TrackNetV2 weights
 
-- Setup: Adam lr=1e-4, weighted BCE with pos_weight=100, 10,701 user
-  labels across 4 videos, T4 GPU on Colab free tier.
-- Trained 6 epochs in 2.8h; best val loss was at epoch 1.
-- Validation against held-out outdoor video:
-  - detection_rate_at_10px: 0.323 (615/1904)
-  - false_positive_rate: 1.000 (1117/1117)
-  - mean confidence on visible: 0.99; on invisible: 0.98
-- Diagnostic (tools/diag_heatmaps.py): on 20 visible-ball frames, the
-  real ball was NOT in the model's top-5 candidate peaks in 13 cases
-  (65%). Two fixed pixel coordinates - tree branches in the distance
-  outside the court - appeared as top-5 peaks on nearly every frame.
-- Root cause: BCE with pos_weight=100 made "confidently wrong"
-  locally optimal. Static cameras + no spatial augmentation let the
-  model memorize fixed background features. Dettor's PPA-broadcast
-  features anchored the early layers on the wrong visual prior.
+- Setup: Adam lr=1e-4, weighted BCE pos_weight=100, 10,701 user labels
+  across 4 videos, T4 GPU.
+- 6 epochs in 2.8h; best val loss at epoch 1.
+- Validation: detection_rate_at_10px=0.32, false_positive_rate=1.00.
+- Diagnostic showed the model memorized two fixed pixel locations (tree
+  branches in the distant background) as 'always a ball', present as
+  top-5 peaks on nearly every frame.
+- Root cause: BCE with high pos_weight made 'confidently wrong' locally
+  optimal; static camera + no spatial augmentation enabled positional
+  memorization; Dettor's PPA-broadcast features anchored on the wrong
+  visual prior.
 
-### Attempt 2 (v2, contract v0.2.0): Train from scratch with MSE + spatial aug
+### Attempt 2 (v2, contract v0.2.0): Train TrackNetV2 from scratch with MSE + spatial aug
 
-- Setup: random init, MSE loss, Adam lr=1e-3 with cosine decay,
-  weight_decay=1e-5, rotation +/-5 deg, translation +/-10%, A100 GPU
-  on Colab Pro, batch_size=8.
-- Aborted at epoch 25 because training had visibly collapsed at epoch
-  10 to the trivial "predict zero everywhere" solution.
-- Val loss flatlined at ~0.000078 from epoch 10 onward. The math: the
-  target heatmap is ~99.97% zeros; predicting 0 everywhere achieves
-  MSE ~0.00007 (matching observed loss exactly).
+- Setup: random init, MSE loss, Adam lr=1e-3 cosine decay, rotation
+  +/-5deg, translation +/-10%, A100 GPU, batch_size=8.
+- Aborted at epoch 25; training had collapsed by epoch 10 to the
+  trivial 'predict zero everywhere' solution.
+- Val loss flatlined at ~0.000078 (exactly matches the MSE of zero-
+  prediction on a 99.97%-zero target heatmap).
 - Root cause: MSE on sparse positive targets has a stable trivial
-  local minimum at "predict nothing." Symmetric to v1's failure mode
-  - v1 made wrong-confident optimal; v2 made nothing-confident
-  optimal.
+  minimum at 'predict nothing.' Symmetric to v1's failure mode.
 
-### Why TrackNet was the wrong tool
+### Attempt 3 (v3, contract v0.3.0): Classical CV with background subtraction
 
-TrackNetV2 was designed for broadcast tennis and badminton: mast
-cameras 15-30 feet up, 4K resolution where the ball spans 8-12 pixels,
-clean uniform backgrounds, tens of thousands of training labels per
-model, stable lighting and ball appearance.
+- Setup: median-background subtraction + connected-component filtering
+  + per-blob scoring (motion + circularity + color). Tunable per-video
+  via tune_ball_cv.py interactive calibration.
+- Validation on test_clip: tune accuracy ~1% (1/100 frames) even after
+  multiple rounds of threshold tuning and adding an isolated-blob
+  filter to exclude held-ball labels from measurement.
+- Diagnostic visualizations (tools/diag_fg_at_ball.py and the approval
+  grid PNG) showed:
+  - The ball IS faintly visible as foreground at the labeled position
+    in most mid-flight frames (thresholding at 8-20 produces a small
+    white blob at the click).
+  - However, hundreds of other small foreground blobs (court line
+    glints, player limb edges, fence shadows) survive the same
+    thresholds, producing a signal-to-noise ratio too low for the
+    per-frame scoring function to discriminate the ball.
+  - 86% of supposedly-clean isolated-blob labels still failed to
+    produce a measurable ball blob within 12 px of the click, due to
+    centroid offset from motion-blur streaks and component merging
+    with nearby foreground.
+- Root cause: a 4-6 pixel ball in 1080p amateur phone footage at 6ft
+  camera height with busy backgrounds is at or below the SNR floor
+  for per-frame CV. Per-frame algorithms (CV or DL) cannot
+  discriminate the ball from co-detected distractors without
+  temporal trajectory information across multi-frame windows.
 
-User's footage is amateur phone-camera at ~6 ft height, 1080p with
-4-6 pixel balls, busy backgrounds (trees, fences, light fixtures,
-windows), thin per-environment label counts (~2,500 per visual
-environment), and varying lighting across indoor/outdoor venues. All
-five characteristics violate TrackNet's training distribution.
+### Why all three approaches share a root cause
 
-### Where fixed
+The fundamental issue is the *footage profile*, not the algorithm:
+- Camera at ~6 ft (just above player heads, frequently sees the ball
+  passing through head height where it blends with shirts/faces).
+- Phone camera at 1080p; ball is 4-6 pixels in diameter.
+- Backgrounds include trees, fences, light fixtures, windows -
+  high-frequency content that looks ball-like at low resolution.
+- Lighting varies across venues.
 
-v3 (contract v0.3.0) rewrites Stage 4.5 entirely around classical CV:
-a per-video calibration tool (`tune_ball_cv.py`) produces a
-`ball_cv_params.json` that Stage 4's CV pipeline consumes. Background
-subtraction exploits the static-camera assumption directly - "free"
-signal that deep learning cannot use. Low resolution becomes a non-
-issue because a 4-pixel ball is a clear blob after background
-subtraction. New venues are handled via a 2-3 minute calibration
-step per video rather than via collecting more labels and
-retraining.
+These characteristics violate the assumptions baked into both
+broadcast-trained DL models (TrackNetV2 expects high-mounted 4K
+broadcast feeds with simple backgrounds) and standard per-frame CV
+(expects either high SNR or temporal coherence to disambiguate
+candidates).
 
-Stage 4 will be rewritten to consume the new schema; ETA after Stage
-4.5 v3 is complete.
+### Path forward (planned)
+
+Two parallel efforts:
+
+1. **Better source video.** Higher camera mount (10-15 ft if possible),
+   4K and/or 60 fps recording, faster shutter to reduce motion blur,
+   simpler backgrounds (avoid trees behind court), avoid adjacent
+   courts in frame. Even partial improvements should raise the SNR
+   substantially and may make the current v3 CV approach viable
+   without algorithmic changes. New test footage should be labeled
+   (~100 mid-flight frames is enough) and run through the existing
+   v3 tooling to measure the SNR improvement.
+
+2. **Pipeline development continues without ball detection.** Stage 5
+   (shot detection) and later stages will be built against a synthetic
+   placeholder ball.parquet (clean trajectories generated from known
+   shot patterns). This lets the rest of the pipeline progress, exposes
+   what downstream stages actually need from ball data (precision vs
+   recall vs zone-accuracy), and creates real pressure to inform a
+   future v4 ball-detection attempt.
 
 ### Artifacts retained but unused downstream
 
-- `data/models/tracknet_v2_finetuned_v1.pt` - v1 failed weights.
-- `data/training/validation_report.json` - v1 validate.py output.
-- `data/training/diag_v1/*.png` - v1 diagnostic visualizations.
-- `train_log_v1.json` on Drive - v2 training log up to epoch 25.
-- `_tracknet_model.py` vendored in `stages/track_ball/` - will be
-  deleted when Stage 4 is rewritten.
-- v2 final weights were not saved (training was aborted before the
-  save cell).
+- v1: data/models/tracknet_v2_finetuned_v1.pt, validation_report.json,
+  diag_v1/*.png.
+- v2: train_log_v1.json on Drive (training was aborted before save).
+- v3: stages/finetune_ball_model/_ball_cv_pipeline.py,
+  tune_ball_cv.py, validate.py, tools/diag_fg_at_ball.py,
+  tools/diag_heatmaps.py. All retained as documentation of what was
+  tried; tune_ball_cv.py specifically may be re-run on improved
+  footage without code changes.
+- All TrackNet code in stages/track_ball/ remains in place pending
+  Stage 4 rewrite; that rewrite is deferred until ball detection has
+  a working v4.
 
 ### Generalizable lessons
 
 1. When fine-tuning, verify the source model's training data matches
-   your problem's characteristics. Dettor's PPA-broadcast priors were
-   actively misleading on amateur phone footage.
-2. For sparse-positive heatmap detection, both raw weighted BCE
-   (high pos_weight) and raw MSE have symmetric failure modes that
-   produce equally useless models. Focal loss is the standard
-   remedy IF deep learning is the right tool.
-3. Match the tool to the data, not the problem to the tool. Anchoring
-   on "TrackNet because Dettor trained on pickleball" cost two days
-   and most of an A100 monthly budget. Static-camera amateur footage
-   is closer to 1990s surveillance CV than to 2020s broadcast-sports
-   CV; the tooling should match.
+   your problem's characteristics. Dettor's PPA priors were actively
+   misleading.
+2. For sparse-positive heatmap detection, both raw weighted BCE and
+   raw MSE have symmetric failure modes (confidently-wrong vs
+   nothing-confident). Focal loss is the standard remedy if DL is
+   the right tool.
+3. Per-frame CV with background subtraction is appropriate for
+   high-SNR scenarios (large object vs simple background) but fails
+   when the object is small and the background is busy. Temporal
+   trajectory tracking across multi-frame windows is the standard
+   next step for low-SNR ball tracking.
+4. Match the tool to the data, but ALSO match the data to the tool
+   where possible. Improving source video is often higher-leverage
+   than improving algorithms.
+5. When repeated approaches fail with different mechanisms but the
+   same outcome, the problem may be the data, not the technique.
+   Step back and reassess inputs before assuming the next algorithm
+   will work.
