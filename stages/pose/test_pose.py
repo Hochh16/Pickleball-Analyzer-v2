@@ -63,10 +63,14 @@ KEY_LANDMARKS = [
 ]
 
 # Sanity bounds for in-scope detection count (condition 6). The strict scope
-# filter should keep the run from blowing up to tens of thousands of garbage
-# detections, but should also retain the user plus a handful of real players.
+# filter should retain the user plus a handful of real players, but must not
+# degenerate into a near-no-op that admits nearly every non-transient
+# detection. The upper bound is RELATIVE to the non-transient count rather than
+# an absolute number: in-scope counts scale with clip length and number of real
+# players, so an absolute cap breaks whenever the test clip changes (the current
+# clip is 8125 frames / ~4.5 min; the original was ~570 / ~2 min).
 MIN_REASONABLE_IN_SCOPE = 100
-MAX_REASONABLE_IN_SCOPE = 12000
+MAX_IN_SCOPE_FRAC_OF_NON_TRANSIENT = 0.90
 
 
 def _fail(msg: str) -> None:
@@ -315,12 +319,21 @@ def condition_6(df: pd.DataFrame) -> bool:
         )
         return False
 
-    in_scope = data["scope_filter"].get("in_scope_detections", -1)
-    if in_scope < MIN_REASONABLE_IN_SCOPE or in_scope > MAX_REASONABLE_IN_SCOPE:
+    sf = data["scope_filter"]
+    in_scope = sf.get("in_scope_detections", -1)
+    non_transient = sf.get("non_transient_detections", -1)
+    if in_scope < MIN_REASONABLE_IN_SCOPE:
         _fail(
-            f"in_scope_detections={in_scope} outside reasonable bounds "
-            f"[{MIN_REASONABLE_IN_SCOPE}, {MAX_REASONABLE_IN_SCOPE}]; "
-            f"scope filter may be too strict or too permissive"
+            f"in_scope_detections={in_scope} below floor "
+            f"{MIN_REASONABLE_IN_SCOPE}; scope filter dropped (almost) everything"
+        )
+        return False
+    if non_transient > 0 and in_scope > MAX_IN_SCOPE_FRAC_OF_NON_TRANSIENT * non_transient:
+        _fail(
+            f"in_scope_detections={in_scope} exceeds "
+            f"{MAX_IN_SCOPE_FRAC_OF_NON_TRANSIENT:.0%} of non_transient "
+            f"({non_transient}); scope filter is a near-no-op (admitted nearly "
+            f"everything)"
         )
         return False
 
