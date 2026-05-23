@@ -6,6 +6,12 @@ This is a design doc; per-stage status lives here as a quick pointer (full
 detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
 
 - **Stages 1–3** (calibrate, track players, pose): implemented, smoke-tested.
+- **Stage 2.5** (classify tracks): NEW stage (added 2026-05-22; pipeline is now
+  12 stages). Maps ByteTrack track_ids to logical roles
+  (user/partner/opp_left/opp_right/noise) via multi-cue re-identification
+  (click-anchored continuity + height + clothing color). Runs on real player
+  tracking (no ball dependency). Unlocks complete user labeling, per-player
+  stats, and non-user handedness. See `stages/classify_tracks/contract.md`.
 - **Stage 4** (track ball, TrackNetV2): code-complete, but its detector's
   weights don't generalize to amateur footage, so it currently produces
   unusable output. The code is not broken in itself — depending on the
@@ -78,6 +84,9 @@ video.mp4
     ▼
 [2] Track players (uses court.json) ──► players.parquet
     │
+    ▼
+[2.5] Classify tracks (players + clicks + roster) ──► track_roles.json
+    │   (maps track_ids -> user/partner/opp_left/opp_right/noise)
     ▼
 [3] Pose (uses players bbox crops) ──► poses.parquet
     │
