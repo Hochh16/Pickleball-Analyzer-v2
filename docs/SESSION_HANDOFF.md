@@ -1,8 +1,9 @@
-# Session Handoff: Stage 5 (detect shots) DONE; Stage 4.5 still PAUSED
+# Session Handoff: Stages 5 & 6 DONE; Stage 4.5 still PAUSED
 
 This document captures the state of Pickleball-Analyzer-v2 at the end of the
 May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
-"begin Stage 5 with placeholder ball data"), whose plan is now executed.
+"begin Stage 5 with placeholder ball data"), whose plan is now executed and
+extended through Stage 6 (classify shots).
 
 ## Context for the next session
 
@@ -31,9 +32,12 @@ May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
 - **Stage 4.5** (ball detection): PAUSED after v1/v2/v3 failures. Root cause is
   the footage profile (4-6 px ball, ~6 ft camera, busy backgrounds), not the
   algorithm. See `KNOWN_ISSUES.md`. Unchanged this session.
-- **Stage 5** (detect shots): NEW — implemented, smoke-tested (7/7), committed
-  this session. Details below.
-- **Stages 6-11**: not started. Stage 6 (classify shots) is the natural next.
+- **Stage 5** (detect shots): implemented, smoke-tested (7/7), committed.
+- **Stage 6** (classify shots): NEW — implemented, smoke-tested (8/8), committed
+  this session. stroke side + shot type + bounce-based volley. Details below.
+- **Stages 7-11**: not started. Stage 7 (segment rallies) is the natural next.
+  See "What's queued" for the role-classification ("Stage 2.5") and bounce-
+  detection infrastructure questions.
 
 ## What was done this session
 
@@ -95,10 +99,33 @@ May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
   player-match 0.959, precision 0.990, serve recall 0.894; gap variant degrades
   gracefully.
 
+### 4. Implemented Stage 6 (classify shots)
+- Contract: `stages/classify_shots/contract.md`. Code:
+  `stages/classify_shots/classify_shots.py`. Smoke test:
+  `stages/classify_shots/test_classify_shots.py` (8/8).
+- Run: `python -m stages.classify_shots.classify_shots data/test_clip --force`
+- **Output `classified.json`**: a 1:1 superset of `shots.json` adding per shot:
+  `stroke_side` (+conf), `shot_type` (+conf), `is_volley` (+conf), and a
+  `features` block. Propagates `ball_source` + the synthetic warning.
+- **Stroke side** (forehand/backhand): real only for the USER (handedness from
+  `roster.json`, mapped via `is_user`); `unknown` for others until role
+  classification exists. Handles LEFT-handed users (handedness flips the side;
+  camera-facing mirror handled) — verified by unit test.
+- **Shot type**: serve (from Stage 5) / drive / dink / drop / lob / overhead /
+  reset / unknown, by a rule tree over hitter court-zone, post/pre ball speed
+  (px→ft/s via local px/ft), arc height, contact height.
+- **Volley** (`is_volley`): bounce-based — scans the inter-shot ball trajectory
+  for a non-player ground-bounce kink; none => volley.
+- `roster.json` (NEW per-video setup input): handedness per logical role
+  (user/partner/opp_left/opp_right). v1 uses only the `user` entry.
+- **Smoke results:** rule logic (shot type + L/R stroke side) all correct;
+  end-to-end is_volley accuracy 0.95, serves->serve, schema 1:1, unknown 11%.
+
 ### Commits this session
 - `7f08997` Stage 3: relative scope bound in pose smoke test
-- `f68132a` Stage 5: detect shots (impulse hits + serve appearance) +
-  synthetic ball fixture
+- `f68132a` Stage 5: detect shots (impulse hits + serve appearance) + fixture
+- `94a08a9` docs: ARCHITECTURE + handoff for Stage 5
+- `fbd22f0` Stage 6: classify shots + synth_ball typed/bounce truth
 
 ## IMPORTANT caveats for the next session
 
@@ -120,6 +147,19 @@ May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
   coverage improves. The right fix is the dedicated track-classification stage
   ("Stage 2.5") noted in `KNOWN_ISSUES.md`, not manual clicks-per-gap. Defer
   until user-centric metrics are actually being computed on real data.
+- **Lob detection is weak in this footage (low headroom).** The play sits ~250
+  px below the top of the frame, so tall lob arcs (synthetic OR real) clip at
+  the top edge and `arc_height_frac` collapses. Stage 6's lob *rule* is
+  validated by unit test, but end-to-end lob accuracy is not gated.
+  **David will provide future footage with more headroom above the play**, which
+  directly fixes this (the apex stays in-frame). When that footage arrives,
+  re-tune `LOB_MIN_ARC_FRAC` and re-validate lob detection end-to-end. (More
+  headroom comes naturally from the higher camera mount already wanted for
+  Stage 4.5 ball SNR — one better setup helps both.)
+- **Non-user handedness / opponent analysis** (e.g. "hit to the opponent's
+  backhand") needs the role-classification stage to map handedness (collected in
+  `roster.json`) to the right tracks. Left-handed *players generally* are
+  supported; we just can't yet attribute hands to non-user players.
 
 ## Local-only artifacts (gitignored — regenerate, don't expect in git)
 
@@ -128,25 +168,48 @@ May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
 2. `python -m stages.pose.test_pose`
 3. `python tools/synth_ball.py data/test_clip --seed 1234 --force`
 4. `python -m stages.detect_shots.detect_shots data/test_clip --force`
+5. `python -m stages.classify_shots.classify_shots data/test_clip --force`
 
-`user_clicks.json` IS gitignored too (under `data/`), so the 5 clicks are
-local-only. If lost, re-identify the user in a few frames and rebuild it.
+`user_clicks.json` and `roster.json` are gitignored too (under `data/`), so
+they're local-only. If lost: re-identify the user in a few frames to rebuild
+`user_clicks.json`, and recreate `roster.json` (`{"schema_version":1,
+"handedness":{"user":"right","partner":"unknown","opp_left":"unknown",
+"opp_right":"unknown"}}` — set `user` to match `court.json.dominant_hand`).
 
 ## What's queued for the next session
 
-In rough priority order (none blocking):
+Two threads: continue the linear pipeline, and the infrastructure investments
+that several stages now want.
 
-1. **Stage 6 — classify shots.** The natural next stage. Input: `shots.json`
-   + poses + ball + court. Output: per-shot forehand/backhand (from pose) and
-   drive/dink/lob/serve/volley (from trajectory + position). Serves are already
-   flagged by Stage 5. Write the contract first (the stub is 3 lines).
-2. **Better source video for Stage 4.5** (offline, David). Higher mount
-   (10-15 ft), 4K/60fps, faster shutter, simpler backgrounds. Once a clip
-   exists, run the v3 tooling to measure SNR (see prior handoff in git history).
-3. Deferred (revisit when relevant): fill user-label gaps / build the Stage 2.5
-   track-classification stage; generate synth ball + Stage 5 on a second clip
-   to test generalization; bounce detection (needed for in/out + serve
-   placement).
+**Linear pipeline:**
+1. **Stage 7 — segment rallies.** The natural next stage. Input:
+   `classified.json` + ball. Output: `rallies.json` (start/end frame, shot_ids,
+   end_reason). NOTE it wants **bounce detection** for end reasons like
+   "ball-out" / "ball bounced twice" — see below. Write the contract first
+   (the stub is ~5 lines).
+
+**Infrastructure (not strictly blocking Stage 7, but high-leverage):**
+- **Player-role classification ("Stage 2.5").** Maps logical roles (user /
+  partner / opp_left / opp_right) to track_ids over the match. Unlocks:
+  non-user handedness (opponent/partner forehand-backhand, "hit to opponent's
+  backhand"), per-player stats, AND fixes the ~60% user-labeling /
+  court-switch ID problem (which currently caps the quality of every
+  user-centric metric in Stages 8-9). Highest-leverage non-pipeline work, but a
+  detour; needs its own contract. NOT required for Stage 7.
+- **Bounce detection** (likely its own small stage, or folded into Stage 7).
+  Needed for: ball in/out + rally end reasons (Stage 7), serve/shot landing &
+  placement quality (Stage 6 reset, serve quality), and would consolidate the
+  inter-shot bounce check Stage 6 currently does itself. Stage 5 already
+  computes the raw signal (non-player trajectory inflections it discards).
+
+**Footage (offline, David):**
+- **Better source video for Stage 4.5** AND **more headroom above the play**.
+  Higher mount (10-15 ft), 4K/60fps, faster shutter, simpler backgrounds, and
+  framing with room above the action. The higher mount serves ball SNR (Stage
+  4.5) AND the headroom fixes Stage 6 lob detection. Once a clip exists: run v3
+  tooling to measure ball SNR, and re-validate/re-tune lob detection.
+- Deferred: fill user-label gaps (better solved by Stage 2.5); second clip for
+  Stage 5/6 generalization.
 
 ## Things to NOT touch between sessions
 - Stage 4 (`stages/track_ball/`) and Stage 4.5 (`stages/finetune_ball_model/`):
@@ -162,9 +225,10 @@ Open a new Claude session and paste:
     ARCHITECTURE.md, KNOWN_ISSUES.md, and the relevant stage contract.md
     before proposing anything.
 
-    Stage 5 (detect shots) is done and committed; the ball is still a
-    synthetic placeholder (Stage 4.5 paused). I'd like to start Stage 6
-    (classify shots).   [or whatever you choose]
+    Stages 5 (detect shots) and 6 (classify shots) are done and committed;
+    the ball is still a synthetic placeholder (Stage 4.5 paused). I'd like to
+    start Stage 7 (segment rallies).   [or: build the Stage 2.5 role-
+    classification stage, or bounce detection — see What's queued]
 
 ---
 

@@ -18,13 +18,17 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real
   player positions, flagged `synthetic: true`). Downstream stages must treat
   ball data as placeholder until a real ball detector (v4) exists.
-- **Stages 6–11**: not started.
+- **Stage 6** (classify shots): **implemented + smoke-tested**. Stroke side
+  (user only until role classification), shot type, bounce-based volley. Same
+  synthetic-ball caveat. Lob-by-arc is weak in low-headroom footage (see
+  `KNOWN_ISSUES.md` / handoff).
+- **Stages 7–11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
-`stages/detect_shots`) — Python modules can't start with a digit, so the
-numbered folders in the pipeline diagram below are illustrative, not import
-paths.
+`stages/detect_shots`, `stages/classify_shots`) — Python modules can't start
+with a digit, so the numbered folders in the pipeline diagram below are
+illustrative, not import paths.
 
 ## Pipeline-wide assumptions
 
