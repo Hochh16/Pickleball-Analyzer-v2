@@ -1,5 +1,31 @@
 # Architecture
 
+## Implementation status (2026-05-22)
+
+This is a design doc; per-stage status lives here as a quick pointer (full
+detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
+
+- **Stages 1–3** (calibrate, track players, pose): implemented, smoke-tested.
+- **Stage 4** (track ball, TrackNetV2): code-complete, but its detector's
+  weights don't generalize to amateur footage, so it currently produces
+  unusable output. The code is not broken in itself — depending on the
+  eventual v4 ball-detection approach it will either be re-pointed at new
+  weights (stays as-is) or rewritten (e.g. around classical CV). Undecided.
+- **Stage 4.5** (ball-detection calibration): **PAUSED** after three failed
+  approaches; awaiting better source video. See `KNOWN_ISSUES.md`.
+- **Stage 5** (detect shots): **implemented + smoke-tested**. Because real ball
+  detection is paused, Stage 5 currently runs against a **synthetic placeholder
+  `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real
+  player positions, flagged `synthetic: true`). Downstream stages must treat
+  ball data as placeholder until a real ball detector (v4) exists.
+- **Stages 6–11**: not started.
+
+Implemented stages live in **importable** folders (`stages/calibrate`,
+`stages/track_players`, `stages/pose`, `stages/track_ball`,
+`stages/detect_shots`) — Python modules can't start with a digit, so the
+numbered folders in the pipeline diagram below are illustrative, not import
+paths.
+
 ## Pipeline-wide assumptions
 
 These assumptions apply to the entire pipeline. Any stage may rely on them
