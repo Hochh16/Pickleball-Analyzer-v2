@@ -1,9 +1,10 @@
-# Session Handoff: Stages 5 & 6 DONE; Stage 4.5 still PAUSED
+# Session Handoff: Stages 5, 6 & 2.5 DONE; Stage 4.5 still PAUSED
 
 This document captures the state of Pickleball-Analyzer-v2 at the end of the
 May 22 2026 session. It supersedes the previous handoff (Stage 4.5 paused,
 "begin Stage 5 with placeholder ball data"), whose plan is now executed and
-extended through Stage 6 (classify shots).
+extended through Stage 6 (classify shots) plus a NEW Stage 2.5 (classify tracks
+into player roles). The pipeline is now 12 stages.
 
 ## Context for the next session
 
@@ -32,12 +33,12 @@ extended through Stage 6 (classify shots).
 - **Stage 4.5** (ball detection): PAUSED after v1/v2/v3 failures. Root cause is
   the footage profile (4-6 px ball, ~6 ft camera, busy backgrounds), not the
   algorithm. See `KNOWN_ISSUES.md`. Unchanged this session.
+- **Stage 2.5** (classify tracks): NEW — implemented, smoke-tested (5/5),
+  committed this session. Maps track_ids to roles (user/partner/opp_left/
+  opp_right/noise). Raised user coverage 60% -> 98.6% on test_clip. Details below.
 - **Stage 5** (detect shots): implemented, smoke-tested (7/7), committed.
-- **Stage 6** (classify shots): NEW — implemented, smoke-tested (8/8), committed
-  this session. stroke side + shot type + bounce-based volley. Details below.
+- **Stage 6** (classify shots): implemented, smoke-tested (8/8), committed.
 - **Stages 7-11**: not started. Stage 7 (segment rallies) is the natural next.
-  See "What's queued" for the role-classification ("Stage 2.5") and bounce-
-  detection infrastructure questions.
 
 ## What was done this session
 
@@ -121,11 +122,36 @@ extended through Stage 6 (classify shots).
 - **Smoke results:** rule logic (shot type + L/R stroke side) all correct;
   end-to-end is_volley accuracy 0.95, serves->serve, schema 1:1, unknown 11%.
 
+### 5. Implemented Stage 2.5 (classify tracks into player roles) — NEW stage
+- Contract: `stages/classify_tracks/contract.md`. Code:
+  `stages/classify_tracks/classify_tracks.py`. Smoke test (5/5):
+  `stages/classify_tracks/test_classify_tracks.py`.
+- Run: `python -m stages.classify_tracks.classify_tracks data/test_clip --force`
+- **Output `track_roles.json`**: maps each track_id -> role
+  (user/partner/opp_left/opp_right/noise) + confidence + basis; aggregates
+  track_ids per role; stats incl. `user_frame_coverage`.
+- **Method (v1, video-free):** noise filter (835 -> ~47 non-noise) -> near/far
+  side -> seed user from clicks -> **simultaneity** ("two people at once" =>
+  the simultaneous near track is the partner) + **click-anchored continuity** +
+  **perspective-normalized height** to link user gap-segments and split
+  user/partner even in matching kit -> provisional opponent L/R by court-x.
+- **Result:** user coverage **60% -> 98.6%**; all clicked tracks confirmed user.
+- **v1 limitations:** multi-region clothing-color matching NOT yet implemented
+  (fast-follow; height+continuity already cover matching-kit). Opponent roles
+  are contaminated by far-side adjacent-court players (low confidence) — needs
+  a tighter far-side filter.
+- **Why this matters:** it's REAL data (no synthetic-ball dependency) and fixes
+  the user-labeling debt that capped every downstream user metric. Stage 3's
+  scope filter and Stage 6's is_user-only handedness mapping should later switch
+  to consuming `track_roles.json`.
+
 ### Commits this session
 - `7f08997` Stage 3: relative scope bound in pose smoke test
 - `f68132a` Stage 5: detect shots (impulse hits + serve appearance) + fixture
 - `94a08a9` docs: ARCHITECTURE + handoff for Stage 5
 - `fbd22f0` Stage 6: classify shots + synth_ball typed/bounce truth
+- `b5570e1` docs: ARCHITECTURE + handoff for Stage 6
+- `ef0e52e` Stage 2.5: classify tracks into player roles (pipeline 11->12)
 
 ## IMPORTANT caveats for the next session
 
@@ -169,6 +195,8 @@ extended through Stage 6 (classify shots).
 3. `python tools/synth_ball.py data/test_clip --seed 1234 --force`
 4. `python -m stages.detect_shots.detect_shots data/test_clip --force`
 5. `python -m stages.classify_shots.classify_shots data/test_clip --force`
+6. `python -m stages.classify_tracks.classify_tracks data/test_clip --force`
+   (independent of the ball; can run any time after step 1)
 
 `user_clicks.json` and `roster.json` are gitignored too (under `data/`), so
 they're local-only. If lost: re-identify the user in a few frames to rebuild
@@ -188,14 +216,15 @@ that several stages now want.
    "ball-out" / "ball bounced twice" — see below. Write the contract first
    (the stub is ~5 lines).
 
-**Infrastructure (not strictly blocking Stage 7, but high-leverage):**
-- **Player-role classification ("Stage 2.5").** Maps logical roles (user /
-  partner / opp_left / opp_right) to track_ids over the match. Unlocks:
-  non-user handedness (opponent/partner forehand-backhand, "hit to opponent's
-  backhand"), per-player stats, AND fixes the ~60% user-labeling /
-  court-switch ID problem (which currently caps the quality of every
-  user-centric metric in Stages 8-9). Highest-leverage non-pipeline work, but a
-  detour; needs its own contract. NOT required for Stage 7.
+**Infrastructure:**
+- **Stage 2.5 follow-ups (DONE this session, but v1 has gaps):**
+  - Multi-region clothing-color matching (deferred; helps different-colour
+    user/partner & opponent separation).
+  - Tighten the far-side filter — opponent roles are contaminated by
+    adjacent-court players (~19 tracks each).
+  - Re-wire Stage 3 (scope filter) and Stage 6 (is_user-only handedness) to
+    consume `track_roles.json` instead of re-deriving / using sparse is_user.
+    Then Stage 6 can give opponents/partner real forehand/backhand.
 - **Bounce detection** (likely its own small stage, or folded into Stage 7).
   Needed for: ball in/out + rally end reasons (Stage 7), serve/shot landing &
   placement quality (Stage 6 reset, serve quality), and would consolidate the
@@ -225,10 +254,10 @@ Open a new Claude session and paste:
     ARCHITECTURE.md, KNOWN_ISSUES.md, and the relevant stage contract.md
     before proposing anything.
 
-    Stages 5 (detect shots) and 6 (classify shots) are done and committed;
-    the ball is still a synthetic placeholder (Stage 4.5 paused). I'd like to
-    start Stage 7 (segment rallies).   [or: build the Stage 2.5 role-
-    classification stage, or bounce detection — see What's queued]
+    Stages 2.5 (classify tracks), 5 (detect shots) and 6 (classify shots) are
+    done and committed; the ball is still a synthetic placeholder (Stage 4.5
+    paused). I'd like to start Stage 7 (segment rallies).   [or: bounce
+    detection, or wire Stage 3/6 to consume track_roles.json — see What's queued]
 
 ---
 
