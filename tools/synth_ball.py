@@ -45,11 +45,32 @@ HIT_GAP_MIN_S = 0.35         # min time between consecutive hits in a rally
 HIT_GAP_MAX_S = 1.20         # max time between consecutive hits
 DEAD_TIME_MIN_S = 1.0        # min dead time between rallies (ball not visible)
 DEAD_TIME_MAX_S = 3.0
-ARC_HEIGHT_MIN_PX = 20.0     # gentle gravity bump on each inter-hit segment
-ARC_HEIGHT_MAX_PX = 100.0
 PADDLE_HEIGHT_FRAC = 0.25    # impact point height up from bbox top (0=top,1=bottom)
 IMPACT_JITTER_PX = 4.0       # small noise on impact placement
 SYNTH_CONFIDENCE = 1.0       # confidence written for synthetic visible frames
+
+# Per-segment arc as a fraction of the chord (hit-to-hit straight distance).
+# Default segments stay gentle (low arc) so they don't read as lobs and so the
+# apex never trips Stage 5's impulse detector.
+DEFAULT_ARC_FRAC = (0.05, 0.22)
+
+# Clear-cut shot-type demos (Stage 6 smoke test grades these). A fraction of
+# non-last hits get an UNAMBIGUOUS outgoing shot the classifier should nail:
+#   lob   = big arc over many frames (gentle apex, safe for Stage 5)
+#   drive = short segment => high speed, flat
+DEMO_PROB = 0.30
+LOB_DEMO_L = (26, 38)        # frames; large L keeps the big arc's apex gradual
+LOB_DEMO_ARC_FRAC = (0.45, 0.65)
+DRIVE_DEMO_L = (5, 9)        # frames; short => high px/frame => high ft/s
+DRIVE_DEMO_ARC_FRAC = (0.02, 0.08)
+
+# Ground bounces: a fraction of inter-hit segments bounce (=> the receiver hit
+# the ball OFF THE BOUNCE, not a volley). A bounce is a sharp non-player
+# trajectory kink mid-court; it stays away from players so Stage 5 ignores it.
+BOUNCE_PROB = 0.5
+BOUNCE_MIN_CHORD_PX = 250.0  # only bounce long segments (kink stays off players)
+BOUNCE_DROP_FRAC = 0.32      # downward kink depth as a fraction of the chord
+BOUNCE_MIN_PLAYER_DIST_PX = 130.0  # bounce point must be this far from all players
 
 # On-court eligibility for placing hits (exclude adjacent-court contamination).
 COURT_Y_MIN_FT = -10.0
@@ -200,10 +221,27 @@ def pick_hitter(cands: List[dict], rng, prev: Optional[dict]) -> dict:
     return cands[rng.integers(len(cands))]
 
 
+def pick_nearest(cands: List[dict], prev: dict) -> dict:
+    """Closest eligible player to `prev` in pixel space. Used for lob demos so
+    the chord is SHORT and a tall arc fits the frame's limited headroom (the
+    court/play sits high in the frame; a big arc over a long chord clips at the
+    top edge and stops reading as a lob)."""
+    diff = [c for c in cands if c["track_id"] != prev["track_id"]] or cands
+    return min(diff, key=lambda c: math.hypot(c["x"] - prev["x"], c["y"] - prev["y"]))
+
+
 def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
                   rng) -> List[List[dict]]:
-    """Return a list of rallies; each rally is an ordered list of hit dicts
-    {frame, track_id, is_user, x, y}."""
+    """Return a list of rallies; each rally is an ordered list of hit dicts.
+
+    Each hit also carries, for its OUTGOING segment (to the next hit):
+      out_arc_frac : arc height as a fraction of the chord
+      out_bounced  : whether the ball bounces mid-segment (=> receiver is NOT a
+                     volley)
+      out_demo_type: "lob"/"drive" if this is a deliberately-unambiguous demo
+                     shot for the Stage 6 smoke test, else None
+    The last hit of a rally has no outgoing segment (it gets a follow-through).
+    """
     hit_gap = (max(1, int(HIT_GAP_MIN_S * fps)), max(2, int(HIT_GAP_MAX_S * fps)))
     dead = (max(1, int(DEAD_TIME_MIN_S * fps)), max(2, int(DEAD_TIME_MAX_S * fps)))
     frames_with_players = sorted(eligible.keys())
@@ -211,17 +249,29 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
         return []
 
     def jhit(frame: int, p: dict) -> dict:
-        """Build a hit record, jittering the impact point by a small paddle-
-        scale offset so association is non-degenerate (the ball sits just off
-        the hand, not exactly on the wrist landmark)."""
         return {
-            "frame": frame,
-            "track_id": p["track_id"],
-            "is_user": p["is_user"],
+            "frame": frame, "track_id": p["track_id"], "is_user": p["is_user"],
             "x": float(p["x"] + rng.normal(0.0, IMPACT_JITTER_PX)),
             "y": float(p["y"] + rng.normal(0.0, IMPACT_JITTER_PX)),
             "side": p["side"],
+            "out_arc_frac": float(rng.uniform(*DEFAULT_ARC_FRAC)),
+            "out_bounced": False, "out_demo_type": None,
         }
+
+    def bounce_pt(a: dict, b: dict) -> Tuple[float, float]:
+        chord = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
+        mx, my = 0.5 * (a["x"] + b["x"]), 0.5 * (a["y"] + b["y"])
+        return mx, my + BOUNCE_DROP_FRAC * chord  # pushed DOWN toward court
+
+    def can_bounce(a: dict, b: dict, mid_frame: int) -> bool:
+        chord = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
+        if chord < BOUNCE_MIN_CHORD_PX:
+            return False
+        bx, by = bounce_pt(a, b)
+        for p in eligible.get(mid_frame, []):
+            if math.hypot(bx - p["x"], by - p["y"]) < BOUNCE_MIN_PLAYER_DIST_PX:
+                return False  # too close to a player -> would look like a shot
+        return True
 
     rallies: List[List[dict]] = []
     cursor = frames_with_players[0]
@@ -230,7 +280,6 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
     while cursor <= last_frame - hit_gap[0]:
         here = eligible.get(cursor, [])
         if not here:
-            # advance to next frame that has an eligible player
             nxt = [f for f in frames_with_players if f > cursor]
             if not nxt:
                 break
@@ -242,16 +291,43 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
         prev = pick_hitter(here, rng, None)
         rally.append(jhit(cursor, prev))
         f = cursor
-        for _ in range(n_shots - 1):
-            dframes = int(rng.integers(hit_gap[0], hit_gap[1] + 1))
+        for step in range(n_shots - 1):
+            # Choose this segment's character (the OUTGOING shot of rally[-1]).
+            # No demo on the serve's outgoing (step 0): serves are labeled serve.
+            demo = None
+            if step >= 1 and rng.random() < DEMO_PROB:
+                demo = "drive" if rng.random() < 0.5 else "lob"
+            if demo == "drive":
+                dframes = int(rng.integers(*DRIVE_DEMO_L))
+                arc = float(rng.uniform(*DRIVE_DEMO_ARC_FRAC))
+            elif demo == "lob":
+                dframes = int(rng.integers(*LOB_DEMO_L))
+                arc = float(rng.uniform(*LOB_DEMO_ARC_FRAC))
+            else:
+                dframes = int(rng.integers(hit_gap[0], hit_gap[1] + 1))
+                arc = float(rng.uniform(*DEFAULT_ARC_FRAC))
+
             f_next = f + dframes
             if f_next > last_frame:
                 break
             cands = eligible.get(f_next, [])
             if not cands:
                 break
-            nxt = pick_hitter(cands, rng, prev)
-            rally.append(jhit(f_next, nxt))
+            # Lob demos go to the NEAREST player (short chord) so the tall arc
+            # fits the frame; others cross the court (opposite side).
+            nxt = pick_nearest(cands, rally[-1]) if demo == "lob" else pick_hitter(cands, rng, prev)
+            nxt_hit = jhit(f_next, nxt)
+
+            # Demo shots are never bounced, so their rendered shape matches the
+            # intended type (a clean up-arc lob / flat drive, not a down-V).
+            bounced = (demo is None and rng.random() < BOUNCE_PROB
+                       and can_bounce(rally[-1], nxt_hit, f + dframes // 2))
+
+            rally[-1]["out_arc_frac"] = arc
+            rally[-1]["out_demo_type"] = demo
+            rally[-1]["out_bounced"] = bounced
+
+            rally.append(nxt_hit)
             f, prev = f_next, nxt
 
         if len(rally) >= 2:
@@ -284,16 +360,36 @@ def render_ball(rallies: List[List[dict]], n_frames: int, w: int, h: int,
             if L <= 0:
                 continue
             dist = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
-            arc_h = float(rng.uniform(ARC_HEIGHT_MIN_PX, ARC_HEIGHT_MAX_PX))
-            arc_h = min(arc_h, 0.35 * dist + ARC_HEIGHT_MIN_PX)  # keep apex gentle
-            for i in range(L):  # fills [f0, f1)
-                t = i / L
-                px = a["x"] + t * (b["x"] - a["x"])
-                py = a["y"] + t * (b["y"] - a["y"]) - arc_h * math.sin(math.pi * t)
-                f = f0 + i
-                x[f] = px
-                y[f] = py
-                vis[f] = True
+            if a.get("out_bounced"):
+                # Ball descends to a mid-court bounce point then rises to B: a
+                # sharp non-player kink (=> B is OFF THE BOUNCE, not a volley).
+                mx, my = 0.5 * (a["x"] + b["x"]), 0.5 * (a["y"] + b["y"])
+                bpx, bpy = mx, my + BOUNCE_DROP_FRAC * dist
+                half = max(1, L // 2)
+                for i in range(L):
+                    f = f0 + i
+                    if i < half:
+                        t = i / half
+                        x[f] = a["x"] + t * (bpx - a["x"])
+                        y[f] = a["y"] + t * (bpy - a["y"])
+                    else:
+                        t = (i - half) / max(1, L - half)
+                        x[f] = bpx + t * (b["x"] - bpx)
+                        y[f] = bpy + t * (b["y"] - bpy)
+                    vis[f] = True
+            else:
+                # Single gravity-bump arc (no bounce => B is a volley). Cap the
+                # height so the apex stays in-frame (the play sits high in the
+                # frame; an uncapped tall arc clips at y=0 and stops reading as
+                # a lob).
+                arc_h = float(a.get("out_arc_frac", 0.1)) * dist
+                arc_h = min(arc_h, max(8.0, min(a["y"], b["y"]) - 8.0))
+                for i in range(L):  # fills [f0, f1)
+                    t = i / L
+                    x[f0 + i] = a["x"] + t * (b["x"] - a["x"])
+                    y[f0 + i] = (a["y"] + t * (b["y"] - a["y"])
+                                 - arc_h * math.sin(math.pi * t))
+                    vis[f0 + i] = True
         # final hit frame gets its own impact point
         last = rally[-1]
         x[last["frame"]] = last["x"]
@@ -376,25 +472,41 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
         "visible", "confidence", "interpolated"]]
     df.to_parquet(out_parquet, engine="pyarrow", index=False)
 
-    # ground-truth hits (flatten rallies). The first hit of each rally is a
-    # SERVE: no incoming ball trajectory, so a direction-change detector cannot
-    # see it. Mark it so Stage 5's smoke test grades recall on the DETECTABLE
-    # (non-serve) population.
+    # Ground-truth hits (flatten rallies). Per hit:
+    #  - is_serve: first hit of a rally (no incoming ball; undetectable by the
+    #    direction-change detector -> Stage 5 grades recall on non-serve hits).
+    #  - is_volley: the ball did NOT bounce since the previous shot, i.e. the
+    #    INCOMING segment (rally[j-1]'s outgoing) was not a bounce. Serves are
+    #    not volleys.
+    #  - shot_type_label: "serve" for serves; for a deliberately-unambiguous
+    #    demo, the demo type ("lob"/"drive") of this hit's OUTGOING shot; else
+    #    None (classified by Stage 6 but not graded for accuracy).
     hits = []
     for rally in rallies:
         for j, hit in enumerate(rally):
+            is_serve = (j == 0)
+            if is_serve:
+                is_volley = False
+                label = "serve"
+            else:
+                is_volley = not bool(rally[j - 1].get("out_bounced", False))
+                label = hit.get("out_demo_type")  # may be None
             hits.append({
                 "hit_id": 0,
                 "frame": int(hit["frame"]),
                 "track_id": int(hit["track_id"]),
                 "is_user": bool(hit["is_user"]),
                 "pixel_xy": [round(float(hit["x"]), 2), round(float(hit["y"]), 2)],
-                "is_serve": bool(j == 0),
+                "is_serve": bool(is_serve),
+                "is_volley": bool(is_volley),
+                "shot_type_label": label,
             })
     hits.sort(key=lambda hh: hh["frame"])
     for i, hh in enumerate(hits):
         hh["hit_id"] = i
     n_serves = sum(1 for hh in hits if hh["is_serve"])
+    n_volley = sum(1 for hh in hits if hh["is_volley"])
+    n_labeled = sum(1 for hh in hits if hh["shot_type_label"] in ("lob", "drive"))
 
     n_visible = int(vis.sum())
     now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -436,6 +548,8 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
         "n_hits": len(hits),
         "n_serves": n_serves,
         "n_detectable": len(hits) - n_serves,
+        "n_volley": n_volley,
+        "n_labeled_type": n_labeled,
         "hits": hits,
     }
     with out_truth.open("w", encoding="utf-8") as f:
@@ -443,7 +557,9 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
         f.write("\n")
 
     return {"n_rallies": len(rallies), "n_hits": len(hits),
-            "frames_visible": n_visible, "ball_visible_frac": meta["stats"]["ball_visible_frac"]}
+            "n_volley": n_volley, "n_labeled_type": n_labeled,
+            "frames_visible": n_visible,
+            "ball_visible_frac": meta["stats"]["ball_visible_frac"]}
 
 
 # --- Main --------------------------------------------------------------------
@@ -486,7 +602,9 @@ def run(folder: Path, seed: int, gap_frac: float, force: bool) -> dict:
         "rally_shots_range": [RALLY_MIN_SHOTS, RALLY_MAX_SHOTS],
         "hit_gap_s_range": [HIT_GAP_MIN_S, HIT_GAP_MAX_S],
         "dead_time_s_range": [DEAD_TIME_MIN_S, DEAD_TIME_MAX_S],
-        "arc_height_px_range": [ARC_HEIGHT_MIN_PX, ARC_HEIGHT_MAX_PX],
+        "default_arc_frac": list(DEFAULT_ARC_FRAC),
+        "demo_prob": DEMO_PROB,
+        "bounce_prob": BOUNCE_PROB,
         "paddle_height_frac": PADDLE_HEIGHT_FRAC,
     }
     stats = write_outputs(folder, x, y, vis, rallies, n_frames, w, h, fps,
@@ -517,6 +635,7 @@ def main(argv: Optional[list] = None) -> int:
         return 1
     print(f"synth_ball: wrote ball.parquet + meta + truth to {args.folder}")
     print(f"  rallies={stats['n_rallies']} hits={stats['n_hits']} "
+          f"volleys={stats['n_volley']} labeled_demos={stats['n_labeled_type']} "
           f"visible_frames={stats['frames_visible']} "
           f"({stats['ball_visible_frac']:.1%})")
     return 0

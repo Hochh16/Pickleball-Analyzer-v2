@@ -1,0 +1,454 @@
+"""Stage 6 — classify shots.
+
+Label each shot from shots.json with a stroke side (forehand/backhand), a shot
+type (serve/drive/dink/drop/lob/overhead/reset/unknown), and a bounce-based
+volley flag. Rule-based, with honest "unknown" when the signal is weak.
+
+v1: real forehand/backhand only for the USER (handedness from roster.json,
+mapped via is_user); non-user stroke side is "unknown" until a player-role-
+classification stage exists. See stages/classify_shots/contract.md.
+
+Usage:
+    python -m stages.classify_shots.classify_shots data/test_clip [--force]
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import logging
+import math
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+SCHEMA_VERSION = 1
+STAGE_VERSION = "0.1.0"
+
+# --- Config (see contract) --------------------------------------------------
+LOB_MIN_ARC_FRAC = 0.35
+DRIVE_MIN_SPEED_FTPS = 25.0
+DINK_MAX_SPEED_FTPS = 16.0
+RESET_MIN_INCOMING_FTPS = 25.0
+POST_TRAJ_FRAMES = 15
+MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
+SIDE_CONF_FLOOR = 0.5
+KITCHEN_MAX_DIST_FT = 9.0   # effective kitchen depth from net (court_zones)
+BASELINE_MIN_DIST_FT = 17.0  # within ~5ft of the 22ft baseline
+BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
+LANDMARK_VIS_FLOOR = 0.5
+NET_Y_FT = 22.0
+
+SHOT_TYPES = {"serve", "drive", "dink", "drop", "lob", "overhead", "reset", "unknown"}
+STROKE_SIDES = {"forehand", "backhand", "unknown"}
+EPS = 1e-9
+
+
+def fail(msg: str, exc=RuntimeError):
+    raise exc(msg)
+
+
+def setup_logging(level: str) -> logging.Logger:
+    log = logging.getLogger("classify_shots")
+    log.handlers.clear()
+    h = logging.StreamHandler(sys.stderr)
+    h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s",
+                                     datefmt="%H:%M:%S"))
+    log.addHandler(h)
+    log.setLevel(getattr(logging, level.upper(), logging.INFO))
+    return log
+
+
+# --- Loaders -----------------------------------------------------------------
+
+def load_json(path: Path) -> dict:
+    if not path.exists():
+        fail(f"required input not found: {path}", FileNotFoundError)
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_court(path: Path) -> dict:
+    c = load_json(path)
+    derived = c.get("derived", {}) or {}
+    near = derived.get("pixels_per_foot_at_near_baseline")
+    far = derived.get("pixels_per_foot_at_far_baseline")
+    video = c.get("video", {}) or {}
+    return {"ppf_near": near, "ppf_far": far, "fps": video.get("fps")}
+
+
+def load_roster(path: Path, log: logging.Logger) -> Dict[str, str]:
+    if not path.exists():
+        log.warning(f"roster.json not found ({path}); user handedness unknown")
+        return {}
+    r = load_json(path)
+    return r.get("handedness", {}) or {}
+
+
+def index_players(path: Path) -> Dict[Tuple[int, int], dict]:
+    if not path.exists():
+        fail(f"players.parquet not found: {path}", FileNotFoundError)
+    df = pd.read_parquet(path)
+    out: Dict[Tuple[int, int], dict] = {}
+    for r in df.itertuples(index=False):
+        out[(int(r.frame), int(r.track_id))] = {
+            "court_y": float(r.court_y_ft),
+            "bbox": (float(r.bbox_x1), float(r.bbox_y1),
+                     float(r.bbox_x2), float(r.bbox_y2)),
+            "foot": (float(r.foot_x), float(r.foot_y)),
+        }
+    # also a per-frame list of all player pixel points (for bounce away-check)
+    per_frame: Dict[int, List[Tuple[float, float]]] = {}
+    for r in df.itertuples(index=False):
+        per_frame.setdefault(int(r.frame), []).append((float(r.foot_x), float(r.foot_y)))
+    return out, per_frame
+
+
+def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
+    if not path.exists():
+        return {}
+    cols = ["frame", "track_id", "pose_detected",
+            "left_shoulder_x_px", "left_shoulder_y_px", "left_shoulder_visibility",
+            "right_shoulder_x_px", "right_shoulder_y_px", "right_shoulder_visibility",
+            "left_hip_y_px", "left_hip_visibility",
+            "right_hip_y_px", "right_hip_visibility"]
+    df = pd.read_parquet(path, columns=cols)
+    df = df[df["pose_detected"]]
+    out: Dict[Tuple[int, int], dict] = {}
+    for r in df.itertuples(index=False):
+        out[(int(r.frame), int(r.track_id))] = {
+            "lsx": r.left_shoulder_x_px, "lsy": r.left_shoulder_y_px,
+            "lsv": r.left_shoulder_visibility,
+            "rsx": r.right_shoulder_x_px, "rsy": r.right_shoulder_y_px,
+            "rsv": r.right_shoulder_visibility,
+            "lhy": r.left_hip_y_px, "lhv": r.left_hip_visibility,
+            "rhy": r.right_hip_y_px, "rhv": r.right_hip_visibility,
+        }
+    return out
+
+
+def load_ball(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if not path.exists():
+        fail(f"ball.parquet not found: {path}", FileNotFoundError)
+    df = pd.read_parquet(path).sort_values("frame_idx").reset_index(drop=True)
+    x = df["pixel_x"].to_numpy()
+    y = df["pixel_y"].to_numpy()
+    known = (df["visible"].to_numpy() | df["interpolated"].to_numpy())
+    return x, y, known
+
+
+# --- Feature helpers ---------------------------------------------------------
+
+def ppf_at(court: dict, court_y: float) -> Optional[float]:
+    near, far = court["ppf_near"], court["ppf_far"]
+    if near is None or far is None:
+        return None
+    t = max(0.0, min(1.0, court_y / 44.0))
+    return near + t * (far - near)
+
+
+def speed_ftps(speed_pxpf: Optional[float], court: dict, court_y: float,
+               fps: float) -> Optional[float]:
+    if speed_pxpf is None:
+        return None
+    ppf = ppf_at(court, court_y)
+    if ppf is None or ppf < EPS:
+        return None
+    return float(speed_pxpf) * fps / ppf
+
+
+def zone_from_court_y(court_y: float) -> str:
+    dist_from_net = abs(court_y - NET_Y_FT)
+    if dist_from_net <= KITCHEN_MAX_DIST_FT:
+        return "kitchen"
+    if dist_from_net >= BASELINE_MIN_DIST_FT:
+        return "baseline"
+    return "transition"
+
+
+def arc_height_frac(x, y, known, f0: int, f_end: int) -> Optional[float]:
+    """Max upward (smaller-y) deviation of the post-shot trajectory from the
+    straight contact->end chord, as a fraction of the chord length."""
+    n = len(x)
+    f1 = min(f_end, n - 1)
+    pts = [(int(f), float(x[f]), float(y[f]))
+           for f in range(f0, f1 + 1) if 0 <= f < n and known[f]]
+    if len(pts) < 3:
+        return None
+    (fa, xa, ya), (fb, xb, yb) = pts[0], pts[-1]
+    chord = math.hypot(xb - xa, yb - ya)
+    if chord < EPS:
+        return None
+    max_up = 0.0
+    for (f, px, py) in pts[1:-1]:
+        t = (f - fa) / (fb - fa) if fb != fa else 0.0
+        line_y = ya + t * (yb - ya)
+        up = line_y - py  # positive when ball is ABOVE the chord (smaller y)
+        if up > max_up:
+            max_up = up
+    return max_up / chord
+
+
+def contact_height(impact_y: float, pose: Optional[dict]) -> str:
+    if pose is None:
+        return "mid"
+    sh = [v for v, vis in ((pose["lsy"], pose["lsv"]), (pose["rsy"], pose["rsv"]))
+          if vis >= LANDMARK_VIS_FLOOR and not _nan(v)]
+    hp = [v for v, vis in ((pose["lhy"], pose["lhv"]), (pose["rhy"], pose["rhv"]))
+          if vis >= LANDMARK_VIS_FLOOR and not _nan(v)]
+    if sh and impact_y <= (sum(sh) / len(sh)):
+        return "high"
+    if hp and impact_y >= (sum(hp) / len(hp)):
+        return "low"
+    return "mid"
+
+
+def _nan(v) -> bool:
+    try:
+        return math.isnan(float(v))
+    except (TypeError, ValueError):
+        return True
+
+
+def stroke_side(impact_x: float, pose: Optional[dict],
+                handedness: Optional[str]) -> Tuple[str, float]:
+    if handedness not in ("left", "right") or pose is None:
+        return "unknown", 0.0
+    if (pose["lsv"] < LANDMARK_VIS_FLOOR or pose["rsv"] < LANDMARK_VIS_FLOOR
+            or _nan(pose["lsx"]) or _nan(pose["rsx"])):
+        return "unknown", 0.0
+    lsx, rsx = float(pose["lsx"]), float(pose["rsx"])
+    center_x = 0.5 * (lsx + rsx)
+    shoulder_w = abs(rsx - lsx)
+    if shoulder_w < EPS:
+        return "unknown", 0.0
+    # Anatomical right shoulder on the image-right => player's back to camera.
+    facing_away = rsx > lsx
+    body_right_sign = 1.0 if facing_away else -1.0
+    offset = impact_x - center_x
+    # Forehand is on the dominant-hand side of the body.
+    dom_sign = body_right_sign if handedness == "right" else -body_right_sign
+    side = "forehand" if (offset * dom_sign) > 0 else "backhand"
+    conf = min(1.0, abs(offset) / (0.5 * shoulder_w))
+    if conf < SIDE_CONF_FLOOR:
+        return "unknown", round(conf, 3)
+    return side, round(conf, 3)
+
+
+def turn_deg(x, y, f) -> Optional[float]:
+    n = len(x)
+    if f - 1 < 0 or f + 1 >= n:
+        return None
+    a = np.array([x[f] - x[f - 1], y[f] - y[f - 1]])
+    b = np.array([x[f + 1] - x[f], y[f + 1] - y[f]])
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na < EPS or nb < EPS:
+        return None
+    return float(np.degrees(np.arccos(np.clip(a @ b / (na * nb), -1.0, 1.0))))
+
+
+def bounced_between(x, y, known, players_by_frame, f_prev: int, f_cur: int) -> Optional[bool]:
+    """True if the ball bounced (a sharp non-player trajectory kink) between the
+    previous shot and this one. None if the inter-shot trajectory is unusable."""
+    if f_cur - f_prev < 4:
+        return None
+    usable = False
+    for f in range(f_prev + 2, f_cur - 1):
+        if not (known[f - 1] and known[f] and known[f + 1]):
+            continue
+        usable = True
+        t = turn_deg(x, y, f)
+        if t is None or t < BOUNCE_MIN_TURN_DEG:
+            continue
+        # away from players? (kink mid-court, not a missed shot)
+        pts = players_by_frame.get(f, [])
+        bx, by = float(x[f]), float(y[f])
+        if all(math.hypot(bx - px, by - py) > 120.0 for (px, py) in pts) or not pts:
+            return True
+    return False if usable else None
+
+
+# --- Classification ----------------------------------------------------------
+
+def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone):
+    if is_serve:
+        return "serve", 0.95
+    if arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC:
+        return "lob", min(1.0, arc_frac)
+    if contact_h == "high" and post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
+        return "overhead", 0.7
+    if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
+        return "drive", 0.7
+    if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
+            and post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
+            and zone != "baseline"):
+        return "reset", 0.65
+    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone == "kitchen":
+        return "dink", 0.65
+    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("transition", "baseline"):
+        return "drop", 0.6
+    return "unknown", 0.3
+
+
+def run(folder: Path, args, log: logging.Logger) -> dict:
+    if not folder.is_dir():
+        fail(f"not a folder: {folder}", FileNotFoundError)
+    shots_path = folder / "shots.json"
+    out_path = folder / "classified.json"
+    if out_path.exists() and not args.force:
+        fail(f"output exists: {out_path}. Use --force to overwrite.", FileExistsError)
+
+    shots_doc = load_json(shots_path)
+    court = load_court(folder / "court.json")
+    roster = load_roster(folder / "roster.json", log)
+    players, players_by_frame = index_players(folder / "players.parquet")
+    poses = index_poses(folder / "poses.parquet")
+    bx, by, bknown = load_ball(folder / "ball.parquet")
+
+    fps = shots_doc.get("fps") or court["fps"]
+    if not fps or fps <= 0:
+        fail("could not determine fps", ValueError)
+    user_hand = roster.get("user")
+    ball_source = shots_doc.get("ball_source", "real")
+
+    shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
+    out_shots = []
+    warnings = list(shots_doc.get("warnings", []))
+    prev_frame = None
+
+    for i, s in enumerate(shots):
+        f = int(s["frame"])
+        # arc is measured over the full OUTGOING segment (to the next shot),
+        # capped, so a long lob's bow isn't truncated.
+        next_frame = int(shots[i + 1]["frame"]) if i + 1 < len(shots) else None
+        if next_frame is not None and next_frame - f <= MAX_ARC_FRAMES:
+            arc_end = next_frame - 1
+        else:
+            arc_end = f + MAX_ARC_FRAMES
+        tid = int(s["track_id"])
+        is_user = bool(s.get("is_user"))
+        is_serve = bool(s.get("is_serve"))
+        impact_x, impact_y = s["impact_pixel_xy"]
+        pdata = players.get((f, tid))
+        pose = poses.get((f, tid))
+        court_y = pdata["court_y"] if pdata else NET_Y_FT
+        zone = zone_from_court_y(court_y)
+
+        post_ftps = speed_ftps(s.get("speed_post_px_per_frame"), court, court_y, fps)
+        pre_ftps = speed_ftps(s.get("speed_pre_px_per_frame"), court, court_y, fps)
+        arc_frac = arc_height_frac(bx, by, bknown, f, arc_end)
+        contact_h = contact_height(float(impact_y), pose)
+
+        shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
+                                             post_ftps, pre_ftps, zone)
+
+        # stroke side: real only for the user (handedness known + mapped)
+        hand = user_hand if is_user else None
+        side, side_conf = stroke_side(float(impact_x), pose, hand)
+
+        # volley: bounce-based
+        if is_serve or prev_frame is None:
+            is_volley, vol_conf = False, 0.9
+        else:
+            b = bounced_between(bx, by, bknown, players_by_frame, prev_frame, f)
+            if b is None:
+                is_volley, vol_conf = False, 0.3  # can't tell -> default not-volley, low conf
+            else:
+                is_volley, vol_conf = (not b), 0.7
+
+        out = dict(s)  # carry through all Stage 5 fields
+        out.update({
+            "stroke_side": side,
+            "stroke_side_confidence": side_conf,
+            "shot_type": shot_type,
+            "shot_type_confidence": round(type_conf, 3),
+            "is_volley": bool(is_volley),
+            "is_volley_confidence": round(vol_conf, 3),
+            "features": {
+                "contact_zone": zone,
+                "post_speed_ftps": round(post_ftps, 2) if post_ftps is not None else None,
+                "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
+                "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
+                "contact_height": contact_h,
+                "handedness_used": hand,
+                "handedness_known": hand in ("left", "right"),
+            },
+        })
+        out_shots.append(out)
+        prev_frame = f
+
+    # stats
+    from collections import Counter
+    by_type = Counter(s["shot_type"] for s in out_shots)
+    by_side = Counter(s["stroke_side"] for s in out_shots)
+    stats = {
+        "n_shots": len(out_shots),
+        "by_shot_type": dict(by_type),
+        "by_stroke_side": dict(by_side),
+        "n_volley": sum(1 for s in out_shots if s["is_volley"]),
+        "n_unknown_type": by_type.get("unknown", 0),
+        "n_unknown_side": by_side.get("unknown", 0),
+    }
+
+    if ball_source == "synthetic":
+        msg = "ball_source is 'synthetic': classifications are derived from PLACEHOLDER ball data."
+        if msg not in warnings:
+            warnings.insert(0, msg)
+        log.warning("ball_source is SYNTHETIC: classifications are placeholder-derived.")
+    if user_hand not in ("left", "right"):
+        warnings.append("user handedness unknown (roster.json); user stroke side will be 'unknown'.")
+
+    log.info(f"classified {len(out_shots)} shots; types={dict(by_type)}; "
+             f"sides={dict(by_side)}; volleys={stats['n_volley']}")
+
+    out_doc = {
+        "schema_version": SCHEMA_VERSION,
+        "source_shots": str(shots_path),
+        "ball_source": ball_source,
+        "fps": float(fps),
+        "params": {
+            "lob_min_arc_frac": LOB_MIN_ARC_FRAC,
+            "drive_min_speed_ftps": DRIVE_MIN_SPEED_FTPS,
+            "dink_max_speed_ftps": DINK_MAX_SPEED_FTPS,
+            "reset_min_incoming_ftps": RESET_MIN_INCOMING_FTPS,
+            "post_traj_frames": POST_TRAJ_FRAMES,
+            "bounce_min_turn_deg": BOUNCE_MIN_TURN_DEG,
+        },
+        "shots": out_shots,
+        "stats": stats,
+        "warnings": warnings,
+        "stage_version": STAGE_VERSION,
+        "completed_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(out_doc, f, indent=2)
+        f.write("\n")
+    log.info(f"wrote {out_path}")
+    return out_doc
+
+
+def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Stage 6 — classify shots")
+    p.add_argument("folder", type=Path)
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--log-level", default="INFO",
+                   choices=["DEBUG", "INFO", "WARNING", "ERROR"], dest="log_level")
+    return p.parse_args(argv)
+
+
+def main(argv: Optional[list] = None) -> int:
+    args = parse_args(argv)
+    log = setup_logging(args.log_level)
+    try:
+        run(args.folder, args, log)
+    except (FileNotFoundError, FileExistsError, ValueError, RuntimeError) as e:
+        log.error(str(e))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
