@@ -226,23 +226,19 @@ between the previous shot and this one. Volleys are common in pickleball (net
 exchanges often never bounce), and volley-ness is orthogonal to stroke type (you
 can volley a dink or a drive), so it's a **separate boolean**, not a `shot_type`.
 
-**Mechanism — inter-shot bounce check.** Between consecutive shots, Stage 6
-scans the ball trajectory (`ball.parquet`) for a **ground bounce**: a sharp
-trajectory inflection that is NOT at a player. (This is exactly the kind of
-non-player inflection Stage 5 already finds and discards as `n_rejected_no_player`
-— here we use it.) Zero bounces between the prior shot and this one → `is_volley
-= true`; one or more → `false`. The first shot of a rally (serve) and shots
-after a ball gap get `is_volley` with reduced confidence or `null` when the
-inter-shot trajectory is unavailable.
+**Mechanism — `bounces.json` lookup (since Stage 6 v0.2.0, 2026-05-27).**
+Stage 6 reads `bounces.json` (Stage 5.5's output) and computes
+`is_volley = (count of bounces with between_shots == [prev_shot_id, this_shot_id]) == 0`.
+At-feet bounces count as bounces — a dink that lands at the receiver's feet
+means the receiver's return is NOT a volley. The first shot of a rally
+(serve) is always `is_volley = false` with high confidence.
 
-> **DECISION (volley).** Bounce-based, computed inside Stage 6 from the ball
-> trajectory — not the weak time-gap proxy I first proposed. Requires:
-> (a) `synth_ball.py` extended to **insert ground bounces** on some inter-hit
-> segments (so some shots are off-the-bounce, some volleys) with a ground-truth
-> `is_volley` per hit, for testing; (b) acknowledging this is a mini
-> bounce-detector living in Stage 6 for now — a future dedicated bounce stage
-> (also needed for in/out and shot landing points) may absorb it. Flag if you'd
-> rather defer `is_volley` until that dedicated stage instead.
+> **DECISION (volley, post-rewire).** Originally Stage 6 v0.1.0 scanned the
+> inter-shot ball trajectory itself to find a non-player inflection. With
+> Stage 5.5 (`detect_bounces`) landed, that scan is duplicate logic that can
+> drift from the canonical bounce signal. Stage 6 now consumes `bounces.json`
+> directly — single source of truth, includes at-feet bounces the old scan
+> missed. Output schema unchanged; `stage_version` bumped 0.1.0 → 0.2.0.
 
 ## Defenses against placeholder / bad data
 

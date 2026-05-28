@@ -35,8 +35,10 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1            # ball.parquet schema (matches Stage 4)
-TRUTH_SCHEMA_VERSION = 1
-TOOL_VERSION = "0.1.0"
+TRUTH_SCHEMA_VERSION = 2      # bumped from 1: ball_synth_truth.json now also
+                              # carries `bounces[]` (additive; existing readers
+                              # ignore new fields)
+TOOL_VERSION = "0.2.0"        # bounce-truth extension + at-feet bounces
 
 # --- Generation defaults (tunable via CLI) ----------------------------------
 RALLY_MIN_SHOTS = 3
@@ -70,7 +72,23 @@ DRIVE_DEMO_ARC_FRAC = (0.02, 0.08)
 BOUNCE_PROB = 0.5
 BOUNCE_MIN_CHORD_PX = 250.0  # only bounce long segments (kink stays off players)
 BOUNCE_DROP_FRAC = 0.32      # downward kink depth as a fraction of the chord
-BOUNCE_MIN_PLAYER_DIST_PX = 130.0  # bounce point must be this far from all players
+BOUNCE_MIN_PLAYER_DIST_PX = 200.0  # midpoint bounce: clearly outside Stage 5/5.5
+                                   # association radius (max 120 px) plus margin
+                                   # for player motion across the bounce frame
+
+# At-feet bounces: a fraction of bounces are placed AT THE RECEIVER'S FOOT — the
+# common pickleball case where a dink/drop/reset lands at the opponent's feet
+# and they return it off the bounce. Stage 5.5 recovers these via a
+# y-velocity-flip tiebreaker; the synthetic trajectory must produce a clean
+# down-then-up y pattern across the bounce frame. The bounce occurs
+# AT_FEET_OFFSET_FRAMES BEFORE the receive (so the receiver has a few frames to
+# rise the ball to wrist height before hitting), and the segment must be at
+# least MIN_AT_FEET_SEG_FRAMES long so each velocity-window leg has enough
+# samples to compute a clean v_y average.
+AT_FEET_BOUNCE_PROB = 0.30          # fraction of bounces that are at-feet
+AT_FEET_OFFSET_FRAMES = 4           # bounce occurs K frames before receive
+MIN_AT_FEET_SEG_FRAMES = 10         # segment length floor for at-feet
+AT_FEET_MIN_OTHER_PLAYER_DIST_PX = 60  # other players this far from the at-feet bounce
 
 # On-court eligibility for placing hits (exclude adjacent-court contamination).
 COURT_Y_MIN_FT = -10.0
@@ -108,10 +126,14 @@ def load_court(court_path: Path) -> dict:
     with court_path.open("r", encoding="utf-8") as f:
         c = json.load(f)
     video = c.get("video", {}) or {}
+    homog = c.get("homography", {}) or {}
+    img_to_court = homog.get("image_to_court")
     return {
         "fps": video.get("fps"),
         "frame_width": video.get("frame_width"),
         "frame_height": video.get("frame_height"),
+        "image_to_court": (np.array(img_to_court, dtype=np.float64)
+                           if img_to_court is not None else None),
     }
 
 
@@ -200,6 +222,10 @@ def build_eligible(players: pd.DataFrame, scope_ids: Optional[set],
             "is_user": bool(row.is_user),
             "x": float(cx),
             "y": float(cy),
+            # foot point (bbox bottom-center) — where the ball lands for an
+            # at-feet bounce; physically below the wrist/paddle hand
+            "foot_x": float(0.5 * (row.bbox_x1 + row.bbox_x2)),
+            "foot_y": float(row.bbox_y2),
             "side": "near" if row.court_y_ft < NET_Y_FT else "far",
         })
     return eligible
@@ -256,22 +282,47 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
             "side": p["side"],
             "out_arc_frac": float(rng.uniform(*DEFAULT_ARC_FRAC)),
             "out_bounced": False, "out_demo_type": None,
+            # Bounce-location fields (populated when out_bounced=True):
+            "out_bounce_x": None, "out_bounce_y": None,
+            "out_bounce_frame_offset": None,  # frames after `frame` where the bounce sits
+            "out_bounce_is_at_feet": False,
+            "out_bounce_receiver_track_id": None,
         }
 
-    def bounce_pt(a: dict, b: dict) -> Tuple[float, float]:
+    def midpoint_bounce_pt(a: dict, b: dict) -> Tuple[float, float]:
         chord = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
         mx, my = 0.5 * (a["x"] + b["x"]), 0.5 * (a["y"] + b["y"])
         return mx, my + BOUNCE_DROP_FRAC * chord  # pushed DOWN toward court
 
-    def can_bounce(a: dict, b: dict, mid_frame: int) -> bool:
+    def can_midpoint_bounce(a: dict, b: dict, mid_frame: int) -> bool:
         chord = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
         if chord < BOUNCE_MIN_CHORD_PX:
             return False
-        bx, by = bounce_pt(a, b)
+        bx, by = midpoint_bounce_pt(a, b)
         for p in eligible.get(mid_frame, []):
             if math.hypot(bx - p["x"], by - p["y"]) < BOUNCE_MIN_PLAYER_DIST_PX:
                 return False  # too close to a player -> would look like a shot
         return True
+
+    def try_at_feet_bounce(receiver_hit: dict, bounce_frame: int
+                           ) -> Optional[Tuple[float, float]]:
+        """Place the bounce at the RECEIVER's foot at `bounce_frame`. Returns
+        (bx, by) if the receiver is detected at that frame AND no OTHER player
+        is within AT_FEET_MIN_OTHER_PLAYER_DIST_PX of the bounce point (so the
+        Stage 5.5 "nearest player" will unambiguously be the receiver). Else
+        None — caller falls back to a midpoint bounce or no bounce."""
+        cands = eligible.get(bounce_frame, [])
+        receiver_now = next((c for c in cands
+                             if c["track_id"] == receiver_hit["track_id"]), None)
+        if receiver_now is None:
+            return None
+        bx, by = receiver_now["foot_x"], receiver_now["foot_y"]
+        for p in cands:
+            if p["track_id"] == receiver_hit["track_id"]:
+                continue
+            if math.hypot(bx - p["x"], by - p["y"]) < AT_FEET_MIN_OTHER_PLAYER_DIST_PX:
+                return None
+        return (float(bx), float(by))
 
     rallies: List[List[dict]] = []
     cursor = frames_with_players[0]
@@ -320,12 +371,47 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
 
             # Demo shots are never bounced, so their rendered shape matches the
             # intended type (a clean up-arc lob / flat drive, not a down-V).
-            bounced = (demo is None and rng.random() < BOUNCE_PROB
-                       and can_bounce(rally[-1], nxt_hit, f + dframes // 2))
+            # Decide bounce: first try at-feet (places the bounce at the
+            # receiver's foot for the bounce-at-feet path Stage 5.5 must
+            # recover via y-velocity-flip), fall back to a midpoint bounce.
+            bounced = False
+            bounce_x = None
+            bounce_y = None
+            bounce_offset = None
+            bounce_is_at_feet = False
+            bounce_receiver_tid = None
+            if demo is None and rng.random() < BOUNCE_PROB:
+                # First try at-feet (with the usual probability and a
+                # min-segment-length floor so each velocity-window leg has
+                # enough samples).
+                if (dframes >= MIN_AT_FEET_SEG_FRAMES
+                        and rng.random() < AT_FEET_BOUNCE_PROB):
+                    af_offset = dframes - AT_FEET_OFFSET_FRAMES
+                    af_frame = f + af_offset
+                    res = try_at_feet_bounce(nxt_hit, af_frame)
+                    if res is not None:
+                        bounce_x, bounce_y = res
+                        bounce_offset = af_offset
+                        bounced = True
+                        bounce_is_at_feet = True
+                        bounce_receiver_tid = nxt_hit["track_id"]
+                # Fall back to midpoint bounce if at-feet not used / not viable.
+                if not bounced:
+                    mid_offset = dframes // 2
+                    if can_midpoint_bounce(rally[-1], nxt_hit, f + mid_offset):
+                        bx, by = midpoint_bounce_pt(rally[-1], nxt_hit)
+                        bounce_x, bounce_y = bx, by
+                        bounce_offset = mid_offset
+                        bounced = True
 
             rally[-1]["out_arc_frac"] = arc
             rally[-1]["out_demo_type"] = demo
             rally[-1]["out_bounced"] = bounced
+            rally[-1]["out_bounce_x"] = bounce_x
+            rally[-1]["out_bounce_y"] = bounce_y
+            rally[-1]["out_bounce_frame_offset"] = bounce_offset
+            rally[-1]["out_bounce_is_at_feet"] = bounce_is_at_feet
+            rally[-1]["out_bounce_receiver_track_id"] = bounce_receiver_tid
 
             rally.append(nxt_hit)
             f, prev = f_next, nxt
@@ -361,19 +447,24 @@ def render_ball(rallies: List[List[dict]], n_frames: int, w: int, h: int,
                 continue
             dist = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
             if a.get("out_bounced"):
-                # Ball descends to a mid-court bounce point then rises to B: a
-                # sharp non-player kink (=> B is OFF THE BOUNCE, not a volley).
-                mx, my = 0.5 * (a["x"] + b["x"]), 0.5 * (a["y"] + b["y"])
-                bpx, bpy = mx, my + BOUNCE_DROP_FRAC * dist
-                half = max(1, L // 2)
+                # Ball descends to a bounce point (chosen by build_rallies:
+                # either midpoint+drop OR at the receiver's foot), then rises
+                # to B: a sharp non-player kink (=> B is OFF THE BOUNCE, not a
+                # volley). The bounce position + frame offset are now read
+                # from the hit dict (set by build_rallies), not recomputed —
+                # at-feet bounces sit AT the receiver, not at the midpoint.
+                bpx = float(a["out_bounce_x"])
+                bpy = float(a["out_bounce_y"])
+                bounce_offset = int(a["out_bounce_frame_offset"])
+                bounce_offset = max(1, min(L - 1, bounce_offset))
                 for i in range(L):
                     f = f0 + i
-                    if i < half:
-                        t = i / half
+                    if i < bounce_offset:
+                        t = i / bounce_offset
                         x[f] = a["x"] + t * (bpx - a["x"])
                         y[f] = a["y"] + t * (bpy - a["y"])
                     else:
-                        t = (i - half) / max(1, L - half)
+                        t = (i - bounce_offset) / max(1, L - bounce_offset)
                         x[f] = bpx + t * (b["x"] - bpx)
                         y[f] = bpy + t * (b["y"] - bpy)
                     vis[f] = True
@@ -449,7 +540,8 @@ def render_ball(rallies: List[List[dict]], n_frames: int, w: int, h: int,
 
 def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
                   court_path: Path, video_path: Path, seed: int,
-                  gap_frac: float, params: dict, force: bool) -> dict:
+                  gap_frac: float, params: dict, force: bool,
+                  homography: Optional[np.ndarray]) -> dict:
     out_parquet = folder / "ball.parquet"
     out_meta = folder / "ball.meta.json"
     out_truth = folder / "ball_synth_truth.json"
@@ -508,6 +600,64 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
     n_volley = sum(1 for hh in hits if hh["is_volley"])
     n_labeled = sum(1 for hh in hits if hh["shot_type_label"] in ("lob", "drive"))
 
+    # Ground bounces (truth). Each bounced inter-hit segment generates one
+    # bounce record. The bounce pixel comes from build_rallies (midpoint+drop
+    # or at the receiver's foot); court_xy_ft is projected here via the
+    # homography (geometrically accurate at z=0 = bounce moment); between_hits
+    # references the two surrounding hit_ids so Stage 5.5's `between_shots`
+    # output can be graded against truth.
+    hit_key_to_id: Dict[Tuple[int, int], int] = {
+        (int(h["frame"]), int(h["track_id"])): int(h["hit_id"]) for h in hits
+    }
+    IN_COURT_TOL = 0.25  # ft; matches Stage 5.5 default
+
+    def project(px: float, py: float) -> Optional[Tuple[float, float]]:
+        if homography is None:
+            return None
+        pts = np.array([[[float(px), float(py)]]], dtype=np.float32)
+        cxy = cv2.perspectiveTransform(pts, homography.astype(np.float32))[0][0]
+        if not (np.isfinite(cxy[0]) and np.isfinite(cxy[1])):
+            return None
+        return (float(cxy[0]), float(cxy[1]))
+
+    bounces_truth: List[dict] = []
+    for rally in rallies:
+        for k in range(len(rally) - 1):
+            a = rally[k]
+            b = rally[k + 1]
+            if not a.get("out_bounced"):
+                continue
+            bf = int(a["frame"]) + int(a["out_bounce_frame_offset"])
+            bx = float(a["out_bounce_x"])
+            by = float(a["out_bounce_y"])
+            cxy = project(bx, by)
+            if cxy is None:
+                court_xy = None
+                in_court = None
+            else:
+                court_xy = [round(cxy[0], 2), round(cxy[1], 2)]
+                in_court = bool(
+                    (-IN_COURT_TOL <= cxy[0] <= 20.0 + IN_COURT_TOL)
+                    and (-IN_COURT_TOL <= cxy[1] <= 44.0 + IN_COURT_TOL)
+                )
+            a_hit_id = hit_key_to_id.get((int(a["frame"]), int(a["track_id"])))
+            b_hit_id = hit_key_to_id.get((int(b["frame"]), int(b["track_id"])))
+            bounces_truth.append({
+                "bounce_id": 0,  # assigned after sort
+                "frame": bf,
+                "pixel_xy": [round(bx, 2), round(by, 2)],
+                "court_xy_ft": court_xy,
+                "is_in_court": in_court,
+                "is_at_feet": bool(a.get("out_bounce_is_at_feet", False)),
+                "receiver_track_id": a.get("out_bounce_receiver_track_id"),
+                "between_hits": [a_hit_id, b_hit_id],
+            })
+    bounces_truth.sort(key=lambda bb: bb["frame"])
+    for i, bb in enumerate(bounces_truth):
+        bb["bounce_id"] = i
+    n_bounces = len(bounces_truth)
+    n_bounces_at_feet = sum(1 for bb in bounces_truth if bb["is_at_feet"])
+
     n_visible = int(vis.sum())
     now = dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -550,7 +700,10 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
         "n_detectable": len(hits) - n_serves,
         "n_volley": n_volley,
         "n_labeled_type": n_labeled,
+        "n_bounces": n_bounces,
+        "n_bounces_at_feet": n_bounces_at_feet,
         "hits": hits,
+        "bounces": bounces_truth,
     }
     with out_truth.open("w", encoding="utf-8") as f:
         json.dump(truth, f, indent=2)
@@ -558,6 +711,7 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
 
     return {"n_rallies": len(rallies), "n_hits": len(hits),
             "n_volley": n_volley, "n_labeled_type": n_labeled,
+            "n_bounces": n_bounces, "n_bounces_at_feet": n_bounces_at_feet,
             "frames_visible": n_visible,
             "ball_visible_frac": meta["stats"]["ball_visible_frac"]}
 
@@ -605,10 +759,14 @@ def run(folder: Path, seed: int, gap_frac: float, force: bool) -> dict:
         "default_arc_frac": list(DEFAULT_ARC_FRAC),
         "demo_prob": DEMO_PROB,
         "bounce_prob": BOUNCE_PROB,
+        "at_feet_bounce_prob": AT_FEET_BOUNCE_PROB,
+        "at_feet_offset_frames": AT_FEET_OFFSET_FRAMES,
+        "min_at_feet_seg_frames": MIN_AT_FEET_SEG_FRAMES,
         "paddle_height_frac": PADDLE_HEIGHT_FRAC,
     }
     stats = write_outputs(folder, x, y, vis, rallies, n_frames, w, h, fps,
-                          court_path, video_path, seed, gap_frac, params, force)
+                          court_path, video_path, seed, gap_frac, params, force,
+                          homography=court.get("image_to_court"))
     return stats
 
 
@@ -636,6 +794,7 @@ def main(argv: Optional[list] = None) -> int:
     print(f"synth_ball: wrote ball.parquet + meta + truth to {args.folder}")
     print(f"  rallies={stats['n_rallies']} hits={stats['n_hits']} "
           f"volleys={stats['n_volley']} labeled_demos={stats['n_labeled_type']} "
+          f"bounces={stats['n_bounces']} (at_feet={stats['n_bounces_at_feet']}) "
           f"visible_frames={stats['frames_visible']} "
           f"({stats['ball_visible_frac']:.1%})")
     return 0

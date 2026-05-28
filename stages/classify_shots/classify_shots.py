@@ -26,7 +26,9 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+STAGE_VERSION = "0.2.0"  # 0.1.0 -> 0.2.0: is_volley now consumes bounces.json
+                         # from Stage 5.5 instead of scanning the ball
+                         # trajectory internally. Output schema unchanged.
 
 # --- Config (see contract) --------------------------------------------------
 LOB_MIN_ARC_FRAC = 0.35
@@ -250,25 +252,17 @@ def turn_deg(x, y, f) -> Optional[float]:
     return float(np.degrees(np.arccos(np.clip(a @ b / (na * nb), -1.0, 1.0))))
 
 
-def bounced_between(x, y, known, players_by_frame, f_prev: int, f_cur: int) -> Optional[bool]:
-    """True if the ball bounced (a sharp non-player trajectory kink) between the
-    previous shot and this one. None if the inter-shot trajectory is unusable."""
-    if f_cur - f_prev < 4:
-        return None
-    usable = False
-    for f in range(f_prev + 2, f_cur - 1):
-        if not (known[f - 1] and known[f] and known[f + 1]):
+def build_bounces_between_index(bounces_doc: dict) -> Dict[Tuple[int, int], int]:
+    """Map (prev_shot_id, next_shot_id) -> count of bounces sitting between them.
+    Used by the volley check: is_volley = (count == 0)."""
+    idx: Dict[Tuple[int, int], int] = {}
+    for b in bounces_doc.get("bounces", []):
+        bs = b.get("between_shots", [None, None])
+        if bs[0] is None or bs[1] is None:
             continue
-        usable = True
-        t = turn_deg(x, y, f)
-        if t is None or t < BOUNCE_MIN_TURN_DEG:
-            continue
-        # away from players? (kink mid-court, not a missed shot)
-        pts = players_by_frame.get(f, [])
-        bx, by = float(x[f]), float(y[f])
-        if all(math.hypot(bx - px, by - py) > 120.0 for (px, py) in pts) or not pts:
-            return True
-    return False if usable else None
+        key = (int(bs[0]), int(bs[1]))
+        idx[key] = idx.get(key, 0) + 1
+    return idx
 
 
 # --- Classification ----------------------------------------------------------
@@ -302,6 +296,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         fail(f"output exists: {out_path}. Use --force to overwrite.", FileExistsError)
 
     shots_doc = load_json(shots_path)
+    bounces_doc = load_json(folder / "bounces.json")  # required: Stage 5.5 output
     court = load_court(folder / "court.json")
     roster = load_roster(folder / "roster.json", log)
     players, players_by_frame = index_players(folder / "players.parquet")
@@ -314,10 +309,16 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     user_hand = roster.get("user")
     ball_source = shots_doc.get("ball_source", "real")
 
+    # is_volley is derived from bounces.json: a shot is a volley iff no bounce
+    # sits between it and the previous shot. At-feet bounces count as bounces
+    # (the ball still bounced before the shot, just at the player's feet).
+    bounces_between = build_bounces_between_index(bounces_doc)
+
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
     out_shots = []
     warnings = list(shots_doc.get("warnings", []))
     prev_frame = None
+    prev_shot_id: Optional[int] = None
 
     for i, s in enumerate(shots):
         f = int(s["frame"])
@@ -349,15 +350,16 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         hand = user_hand if is_user else None
         side, side_conf = stroke_side(float(impact_x), pose, hand)
 
-        # volley: bounce-based
-        if is_serve or prev_frame is None:
+        # volley: lookup in bounces.json (Stage 5.5 output). A shot is a volley
+        # iff zero bounces sit between it and the previous shot. At-feet
+        # bounces count as bounces.
+        shot_id = int(s["shot_id"])
+        if is_serve or prev_shot_id is None:
             is_volley, vol_conf = False, 0.9
         else:
-            b = bounced_between(bx, by, bknown, players_by_frame, prev_frame, f)
-            if b is None:
-                is_volley, vol_conf = False, 0.3  # can't tell -> default not-volley, low conf
-            else:
-                is_volley, vol_conf = (not b), 0.7
+            n_b = bounces_between.get((prev_shot_id, shot_id), 0)
+            is_volley = (n_b == 0)
+            vol_conf = 0.8
 
         out = dict(s)  # carry through all Stage 5 fields
         out.update({
@@ -379,6 +381,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         })
         out_shots.append(out)
         prev_frame = f
+        prev_shot_id = shot_id
 
     # stats
     from collections import Counter

@@ -1,13 +1,13 @@
 # Architecture
 
-## Implementation status (2026-05-22)
+## Implementation status (2026-05-27)
 
 This is a design doc; per-stage status lives here as a quick pointer (full
 detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
 
 - **Stages 1–3** (calibrate, track players, pose): implemented, smoke-tested.
 - **Stage 2.5** (classify tracks): NEW stage (added 2026-05-22; pipeline is now
-  12 stages). Maps ByteTrack track_ids to logical roles
+  13 stages). Maps ByteTrack track_ids to logical roles
   (user/partner/opp_left/opp_right/noise) via multi-cue re-identification
   (click-anchored continuity + height + clothing color). Runs on real player
   tracking (no ball dependency). Unlocks complete user labeling, per-player
@@ -24,17 +24,27 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real
   player positions, flagged `synthetic: true`). Downstream stages must treat
   ball data as placeholder until a real ball detector (v4) exists.
+- **Stage 5.5** (detect bounces): NEW stage (added 2026-05-27; pipeline now 13
+  stages). Reuses Stage 5's impulse signal with the opposite proximity rule to
+  emit every ground bounce, plus a y-velocity-flip tiebreaker that recovers
+  bounces at a player's feet (a common pickleball play). Outputs
+  `bounces.json` with `between_shots`, in/out classification, and `is_at_feet`
+  per bounce. Consumed by Stage 6 (`is_volley`) and downstream by Stage 7
+  (rally-end reasons). Same synthetic-ball caveat. See
+  `stages/detect_bounces/contract.md`.
 - **Stage 6** (classify shots): **implemented + smoke-tested**. Stroke side
-  (user only until role classification), shot type, bounce-based volley. Same
+  (user only until role classification), shot type, bounce-based volley
+  (rewired 2026-05-27 to consume `bounces.json` from Stage 5.5 — same volley
+  semantics, single source of truth for the bounce signal). Same
   synthetic-ball caveat. Lob-by-arc is weak in low-headroom footage (see
   `KNOWN_ISSUES.md` / handoff).
 - **Stages 7–11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
-`stages/detect_shots`, `stages/classify_shots`) — Python modules can't start
-with a digit, so the numbered folders in the pipeline diagram below are
-illustrative, not import paths.
+`stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`) —
+Python modules can't start with a digit, so the numbered folders in the
+pipeline diagram below are illustrative, not import paths.
 
 ## Pipeline-wide assumptions
 
@@ -97,10 +107,13 @@ video.mp4
 [5] Detect shots (players + pose + ball) ──► shots.json
     │
     ▼
-[6] Classify shots (shots + pose + ball trajectory) ──► classified.json
+[5.5] Detect bounces (shots + ball + players) ──► bounces.json
+    │   (consumed by Stage 6 for is_volley, by Stage 7 for end_reasons)
+    ▼
+[6] Classify shots (shots + bounces + pose + ball) ──► classified.json
     │
     ▼
-[7] Segment rallies (classified + ball) ──► rallies.json
+[7] Segment rallies (classified + bounces + ball) ──► rallies.json
     │
     ▼
 [8] Compute metrics (everything above) ──► metrics.json
