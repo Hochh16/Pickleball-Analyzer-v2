@@ -48,11 +48,26 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   `winner_side`, no `track_roles.json` dependency — winner attribution
   deferred to Stage 8. Same synthetic-ball caveat. See
   `stages/segment_rallies/contract.md`.
-- **Stages 8–11**: not started.
+- **Stage 8** (compute metrics): **implemented + smoke-tested** (2026-05-29).
+  Aggregates `classified.json` + `rallies.json` + `bounces.json` +
+  `players.parquet` + `track_roles.json` into `metrics.json`: match summary
+  (rally lengths, serve-fault rate, shot mix, third-shot drop rate, bounce
+  in/out), per-role player stats, `error_attribution` (Stage 7's
+  `end_reason → owner` mapping; server/hitter errors to a role, receiver
+  errors to a team), team positioning + movement, and numeric heatmap grids
+  (player-position per role + ball-landing) for Stage 11 to render. First
+  consumer of `track_roles.json` (all-roles, best-effort, contamination
+  flagged) and first to read real player positions for **durable** (non-ball)
+  position/coverage metrics. Tier-B ball-derived metrics are emitted as
+  null `pending_real_ball` placeholders with descriptions. A `reliability`
+  block names which families are synthetic-gated vs real. Same synthetic-ball
+  caveat for ball-derived families. See `stages/compute_metrics/contract.md`.
+- **Stages 9–11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
-`stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`) —
+`stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`,
+`stages/segment_rallies`, `stages/classify_tracks`, `stages/compute_metrics`) —
 Python modules can't start with a digit, so the numbered folders in the
 pipeline diagram below are illustrative, not import paths.
 
@@ -174,3 +189,39 @@ Build these (no off-the-shelf alternative):
 Sidecar files. No database. One folder per video under `data/`.
 
 If we ever need cross-video queries, we add a thin SQLite layer that indexes the JSON files. Not in v1.
+
+## Future / proposed stages (not in v1)
+
+These are deferred product directions, captured so the roadmap is explicit.
+They are NOT part of the current 13-stage pipeline and have no contract yet.
+They emerged from the Stage 8 metrics design (the "Tier C" differentiators):
+deep value that leans on the pipeline's real (non-ball) data assets — pose and
+position — and so is mostly unaffected by the synthetic-ball pause.
+
+### Proposed — Technique analysis (pose-derived)
+
+A stage consuming `poses.parquet` (Stage 3, REAL) + `classified.json`
+(shot frames) + `players.parquet`, emitting `technique.json`: per-player
+biomechanical / footwork coaching signals that almost no consumer app offers.
+Candidate metrics:
+- **Split-step timing** — did the player load/hop as the opponent struck?
+  (vertical foot/hip motion aligned to opponent contact frames).
+- **Contact-point consistency** — variance of impact position relative to the
+  body across shots of a given type.
+- **Posture on dinks** — knee bend / hip height when hitting from the kitchen
+  (low-and-balanced vs reaching high).
+- **Ready-position recovery** — time to return to a neutral paddle-up stance
+  after a shot.
+
+Mostly REAL data (pose), so durable now; deferred only because it's its own
+modeling effort, not because it needs the ball. Would feed the Stage 9 rating.
+
+### Proposed — Cross-video trend tracking
+
+The retention layer: aggregate `metrics.json` across sessions to show
+improvement curves per metric (kitchen-line %, unforced-error rate, third-shot
+drop rate, movement work-rate, …) over weeks/months. This is the concrete use
+case for the thin SQLite index mentioned under Storage — it indexes each
+video's sidecar JSON and serves per-metric time series to a dashboard / report.
+Needs a stable `metrics.json` schema (hence Stage 8's `schema_version`) and a
+notion of player identity across videos.
