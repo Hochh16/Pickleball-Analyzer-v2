@@ -27,6 +27,9 @@ env/
 *.swp
 *.swo
 
+# Claude Code — local per-machine permission allowlist (not shared)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
