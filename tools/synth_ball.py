@@ -35,10 +35,11 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1            # ball.parquet schema (matches Stage 4)
-TRUTH_SCHEMA_VERSION = 2      # bumped from 1: ball_synth_truth.json now also
-                              # carries `bounces[]` (additive; existing readers
-                              # ignore new fields)
-TOOL_VERSION = "0.2.0"        # bounce-truth extension + at-feet bounces
+TRUTH_SCHEMA_VERSION = 3      # bumped from 2: ball_synth_truth.json now also
+                              # carries `rallies[]` with each rally's expected
+                              # end_reason + end_pattern (additive)
+TOOL_VERSION = "0.3.0"        # rally-end patterns (Stage 7 ground truth) +
+                              # serve-fault rallies
 
 # --- Generation defaults (tunable via CLI) ----------------------------------
 RALLY_MIN_SHOTS = 3
@@ -90,6 +91,37 @@ AT_FEET_OFFSET_FRAMES = 4           # bounce occurs K frames before receive
 MIN_AT_FEET_SEG_FRAMES = 10         # segment length floor for at-feet
 AT_FEET_MIN_OTHER_PLAYER_DIST_PX = 60  # other players this far from the at-feet bounce
 
+# Rally-ending patterns (Stage 7 ground truth). Each rally chooses one pattern
+# that determines its truth `end_reason` and what gets rendered after the last
+# shot. ~10% of rallies are SERVE-FAULTS (single-shot rallies whose serve
+# lands out-of-court or in the receiver's kitchen). The remaining ~90% are
+# multi-shot rallies, each with one of 5 end patterns rendered after the
+# last shot's follow-through.
+SERVE_FAULT_RALLY_PROB = 0.10
+SERVE_FAULT_OUT_PROB   = 0.50       # within serve-faults: out-of-court vs kitchen
+
+# Multi-shot end patterns; weights normalized in code if they don't sum to 1.0.
+END_PATTERN_PROBS = {
+    "in_court_bounce_receiver": 0.33,  # -> ball-not-returned (receiver missed)
+    "out_of_court_bounce":      0.28,  # -> ball-out (hitter sent it wide/long)
+    "double_bounce":            0.17,  # -> double-bounce
+    "hitter_side_bounce":       0.11,  # -> net-or-short
+    "no_bounce":                0.11,  # -> ball-off-frame (ball flies off)
+}
+PATTERN_TO_END_REASON = {
+    "in_court_bounce_receiver": "ball-not-returned",
+    "out_of_court_bounce":      "ball-out",
+    "double_bounce":            "double-bounce",
+    "hitter_side_bounce":       "net-or-short",
+    "no_bounce":                "ball-off-frame",
+    "serve_fault_out":          "serve-fault",
+    "serve_fault_kitchen":      "serve-fault",
+}
+END_BOUNCE_MIN_FRAMES_AFTER = 18    # min frames from last shot to first end bounce
+END_BOUNCE_MAX_FRAMES_AFTER = 26
+DOUBLE_BOUNCE_GAP_FRAMES    = 14    # second bounce this many frames after first
+POST_END_BOUNCE_FRAMES      = 6     # brief post-bounce upward trajectory length
+
 # On-court eligibility for placing hits (exclude adjacent-court contamination).
 COURT_Y_MIN_FT = -10.0
 COURT_Y_MAX_FT = 44.0
@@ -128,12 +160,15 @@ def load_court(court_path: Path) -> dict:
     video = c.get("video", {}) or {}
     homog = c.get("homography", {}) or {}
     img_to_court = homog.get("image_to_court")
+    crt_to_img = homog.get("court_to_image")
     return {
         "fps": video.get("fps"),
         "frame_width": video.get("frame_width"),
         "frame_height": video.get("frame_height"),
         "image_to_court": (np.array(img_to_court, dtype=np.float64)
                            if img_to_court is not None else None),
+        "court_to_image": (np.array(crt_to_img, dtype=np.float64)
+                           if crt_to_img is not None else None),
     }
 
 
@@ -161,19 +196,25 @@ def in_scope_track_ids(poses_path: Path) -> Optional[set]:
     return set(int(t) for t in df["track_id"].unique())
 
 
-def load_wrists(poses_path: Path) -> Dict[Tuple[int, int], Tuple[float, float]]:
-    """(frame, track_id) -> representative wrist pixel point (mean of visible
-    wrists). The ball is struck at the paddle, which is held at the hand/wrist,
-    so this is the physically correct contact location to place a synthetic hit
-    (and is exactly what Stage 5 associates impacts on)."""
+def load_wrists(poses_path: Path
+                 ) -> Tuple[Dict[Tuple[int, int], Tuple[float, float]],
+                            Dict[Tuple[int, int], List[Tuple[float, float]]]]:
+    """Returns (mean_wrists, all_wrists) per (frame, track_id):
+    - mean_wrists: mean of visible wrist pixels (used as the synthetic hit
+      contact point — physically the ball is struck at the wrist/paddle hand);
+    - all_wrists: list of all visible wrist pixels (left and/or right) — used
+      for player-proximity checks. Stage 5 uses MIN(distance) across all
+      wrists for shot association, so end-bounce placement must check the
+      same set to avoid Stage 5 capturing the bounce as a shot."""
     if not poses_path.exists():
-        return {}
+        return {}, {}
     cols = ["frame", "track_id", "pose_detected",
             "left_wrist_x_px", "left_wrist_y_px", "left_wrist_visibility",
             "right_wrist_x_px", "right_wrist_y_px", "right_wrist_visibility"]
     df = pd.read_parquet(poses_path, columns=cols)
     df = df[df["pose_detected"]]
-    out: Dict[Tuple[int, int], Tuple[float, float]] = {}
+    mean_out: Dict[Tuple[int, int], Tuple[float, float]] = {}
+    all_out: Dict[Tuple[int, int], List[Tuple[float, float]]] = {}
     for r in df.itertuples(index=False):
         pts = []
         if r.left_wrist_visibility >= 0.5 and not math.isnan(r.left_wrist_x_px):
@@ -183,15 +224,146 @@ def load_wrists(poses_path: Path) -> Dict[Tuple[int, int], Tuple[float, float]]:
         if pts:
             mx = sum(p[0] for p in pts) / len(pts)
             my = sum(p[1] for p in pts) / len(pts)
-            out[(int(r.frame), int(r.track_id))] = (mx, my)
-    return out
+            mean_out[(int(r.frame), int(r.track_id))] = (mx, my)
+            all_out[(int(r.frame), int(r.track_id))] = pts
+    return mean_out, all_out
+
+
+# --- Rally end-pattern helpers (Stage 7 truth) ------------------------------
+
+def project_court_to_pixel(M_court_to_image: np.ndarray,
+                            cx: float, cy: float) -> Optional[Tuple[float, float]]:
+    """Project a court (ft) coordinate to pixel (x, y). Returns None if the
+    projection is degenerate."""
+    if M_court_to_image is None:
+        return None
+    pts = np.array([[[float(cx), float(cy)]]], dtype=np.float32)
+    px = cv2.perspectiveTransform(pts, M_court_to_image.astype(np.float32))[0][0]
+    if not (np.isfinite(px[0]) and np.isfinite(px[1])):
+        return None
+    return float(px[0]), float(px[1])
+
+
+def pick_multi_shot_end_pattern(rng) -> str:
+    """Weighted-random pick from END_PATTERN_PROBS."""
+    names = list(END_PATTERN_PROBS.keys())
+    probs = np.array([END_PATTERN_PROBS[n] for n in names], dtype=np.float64)
+    probs = probs / probs.sum()
+    idx = int(rng.choice(len(names), p=probs))
+    return names[idx]
+
+
+def end_bounce_court_xy(pattern: str, hitter_side: str, rng
+                        ) -> Optional[Tuple[float, float]]:
+    """Return (court_x, court_y) in feet for a single rally-ending bounce,
+    given the hitter's side ('near' or 'far'). For double_bounce this returns
+    the FIRST bounce's location; caller computes the second.
+
+    Court: x in [0, 20], y in [0, 44], net at y=22, kitchen extends 7 ft each
+    side of net (y in [15, 29]).
+    """
+    if pattern == "no_bounce":
+        return None
+    if pattern == "in_court_bounce_receiver":
+        # in court, receiver's side (opposite hitter)
+        cx = float(rng.uniform(2.0, 18.0))
+        if hitter_side == "near":
+            cy = float(rng.uniform(25.0, 42.0))
+        else:
+            cy = float(rng.uniform(2.0, 19.0))
+        return cx, cy
+    if pattern == "out_of_court_bounce":
+        # 50/50 between beyond-baseline and out-sideline (receiver side)
+        if rng.random() < 0.5:
+            cx = float(rng.uniform(2.0, 18.0))
+            cy = float(rng.uniform(46.0, 52.0)) if hitter_side == "near" \
+                else float(rng.uniform(-8.0, -2.0))
+        else:
+            cx = float(rng.choice([-3.5, 23.5]))
+            cy = float(rng.uniform(25.0, 42.0)) if hitter_side == "near" \
+                else float(rng.uniform(2.0, 19.0))
+        return cx, cy
+    if pattern == "double_bounce":
+        # First bounce in-court, receiver's side, in the back court (so the
+        # second bounce can settle further along the trajectory).
+        cx = float(rng.uniform(3.0, 17.0))
+        if hitter_side == "near":
+            cy = float(rng.uniform(25.0, 38.0))
+        else:
+            cy = float(rng.uniform(6.0, 19.0))
+        return cx, cy
+    if pattern == "hitter_side_bounce":
+        # On hitter's side, near net (within ~3-7 ft) -> short shot / net hit
+        cx = float(rng.uniform(3.0, 17.0))
+        if hitter_side == "near":
+            cy = float(rng.uniform(15.5, 21.0))  # near side, just south of net
+        else:
+            cy = float(rng.uniform(23.0, 28.5))  # far side, just north of net
+        return cx, cy
+    if pattern == "serve_fault_out":
+        # Serve goes long past receiver's baseline
+        cx = float(rng.uniform(2.0, 18.0))
+        cy = float(rng.uniform(46.0, 52.0)) if hitter_side == "near" \
+            else float(rng.uniform(-8.0, -2.0))
+        return cx, cy
+    if pattern == "serve_fault_kitchen":
+        # Serve lands in receiver's kitchen
+        cx = float(rng.uniform(3.0, 17.0))
+        cy = float(rng.uniform(22.5, 28.5)) if hitter_side == "near" \
+            else float(rng.uniform(15.5, 21.5))
+        return cx, cy
+    return None  # unknown pattern
+
+
+def double_bounce_second_court_xy(first_cxy: Tuple[float, float],
+                                   hitter_side: str, rng
+                                   ) -> Tuple[float, float]:
+    """For double_bounce: the second bounce is nearby, slightly further along
+    the trajectory direction (further from net), still in-court."""
+    cx, cy = first_cxy
+    cx2 = max(0.5, min(19.5, cx + float(rng.uniform(-2.0, 2.0))))
+    if hitter_side == "near":
+        cy2 = max(22.5, min(43.5, cy + float(rng.uniform(0.5, 3.0))))
+    else:
+        cy2 = max(0.5, min(21.5, cy + float(rng.uniform(-3.0, -0.5))))
+    return cx2, cy2
 
 
 # --- Eligibility -------------------------------------------------------------
 
+def build_all_players_by_frame(players: pd.DataFrame,
+                                all_wrists: Dict[Tuple[int, int], List[Tuple[float, float]]],
+                                ) -> Dict[int, List[dict]]:
+    """frame -> list of ALL non-transient players with bbox + wrists. Used by
+    the end-bounce proximity check, which must mirror Stage 5's view (Stage 5
+    considers every non-transient player, not just the Stage-3 in-scope set
+    that build_eligible filters down to). Without this, the placement check
+    misses out-of-scope players standing on adjacent courts that Stage 5 will
+    happily associate a bounce-impulse with — turning the bounce into a fake
+    shot at the same frame and erasing it from bounces.json."""
+    df = players[~players["transient"]]
+    out: Dict[int, List[dict]] = {}
+    for row in df.itertuples(index=False):
+        key = (int(row.frame), int(row.track_id))
+        out.setdefault(int(row.frame), []).append({
+            "track_id": int(row.track_id),
+            "bbox": (float(row.bbox_x1), float(row.bbox_y1),
+                     float(row.bbox_x2), float(row.bbox_y2)),
+            "foot": (float(0.5 * (row.bbox_x1 + row.bbox_x2)),
+                     float(row.bbox_y2)),
+            "wrists": all_wrists.get(key, []),
+        })
+    return out
+
+
 def build_eligible(players: pd.DataFrame, scope_ids: Optional[set],
-                   wrists: Dict[Tuple[int, int], Tuple[float, float]]) -> Dict[int, List[dict]]:
-    """frame -> list of eligible hitter dicts {track_id, is_user, x, y, side}.
+                   mean_wrists: Dict[Tuple[int, int], Tuple[float, float]],
+                   all_wrists: Dict[Tuple[int, int], List[Tuple[float, float]]],
+                   ) -> Dict[int, List[dict]]:
+    """frame -> list of eligible hitter dicts {track_id, is_user, x, y, foot_x,
+    foot_y, side, bbox, wrists}. `x, y` is the AVERAGE wrist (hit contact
+    point); `wrists` is the LIST of visible wrist pixels (for placement
+    proximity checks that mirror Stage 5's MIN-distance association logic).
 
     A detection is eligible to be a hitter if it is non-transient, on the
     user's court (not adjacent-court contamination), and (if poses exist) a
@@ -212,8 +384,8 @@ def build_eligible(players: pd.DataFrame, scope_ids: Optional[set],
     eligible: Dict[int, List[dict]] = {}
     for row in df.itertuples(index=False):
         key = (int(row.frame), int(row.track_id))
-        if key in wrists:
-            cx, cy = wrists[key]
+        if key in mean_wrists:
+            cx, cy = mean_wrists[key]
         else:
             cx = 0.5 * (row.bbox_x1 + row.bbox_x2)
             cy = row.bbox_y1 + PADDLE_HEIGHT_FRAC * (row.bbox_y2 - row.bbox_y1)
@@ -226,6 +398,9 @@ def build_eligible(players: pd.DataFrame, scope_ids: Optional[set],
             # at-feet bounce; physically below the wrist/paddle hand
             "foot_x": float(0.5 * (row.bbox_x1 + row.bbox_x2)),
             "foot_y": float(row.bbox_y2),
+            "bbox": (float(row.bbox_x1), float(row.bbox_y1),
+                     float(row.bbox_x2), float(row.bbox_y2)),
+            "wrists": all_wrists.get(key, []),  # list of (wx, wy) tuples
             "side": "near" if row.court_y_ft < NET_Y_FT else "far",
         })
     return eligible
@@ -257,7 +432,10 @@ def pick_nearest(cands: List[dict], prev: dict) -> dict:
 
 
 def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
-                  rng) -> List[List[dict]]:
+                  rng, court_to_image: Optional[np.ndarray] = None,
+                  frame_w: int = 1920, frame_h: int = 1080,
+                  all_players_by_frame: Optional[Dict[int, List[dict]]] = None,
+                  ) -> List[List[dict]]:
     """Return a list of rallies; each rally is an ordered list of hit dicts.
 
     Each hit also carries, for its OUTGOING segment (to the next hit):
@@ -266,7 +444,14 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
                      volley)
       out_demo_type: "lob"/"drive" if this is a deliberately-unambiguous demo
                      shot for the Stage 6 smoke test, else None
-    The last hit of a rally has no outgoing segment (it gets a follow-through).
+    The last hit of a rally additionally carries (Stage 7 ground truth):
+      end_pattern        : which rally-ending pattern was chosen
+      end_reason_truth   : the corresponding truth end_reason (Stage 7)
+      end_bounces_pixel  : list of (frame_offset, px, py, is_in_court) tuples
+                           for bounces rendered AFTER this hit; empty for
+                           the `no_bounce` pattern.
+    ~10% of rallies are SERVE-FAULTS (single-shot rallies whose serve's
+    outgoing trajectory ends at an out-of-court or in-kitchen bounce).
     """
     hit_gap = (max(1, int(HIT_GAP_MIN_S * fps)), max(2, int(HIT_GAP_MAX_S * fps)))
     dead = (max(1, int(DEAD_TIME_MIN_S * fps)), max(2, int(DEAD_TIME_MAX_S * fps)))
@@ -287,7 +472,130 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
             "out_bounce_frame_offset": None,  # frames after `frame` where the bounce sits
             "out_bounce_is_at_feet": False,
             "out_bounce_receiver_track_id": None,
+            # Rally-ending pattern fields (populated on the LAST hit of each
+            # rally — Stage 7 truth). Empty/None on non-last hits.
+            "end_pattern": None,
+            "end_reason_truth": None,
+            "end_bounces_pixel": [],  # list of (frame_offset, x, y, is_in_court)
         }
+
+    # End-bounce proximity threshold: Stage 5's max association radius is 120
+    # px (perspective-scaled, clamped). 150 px gives a 30 px margin without
+    # over-rejecting placements in a frame densely populated with non-transient
+    # adjacent-court players. Higher (200 px) over-rejects and collapses end
+    # patterns to ball-off-frame; lower (~120 px) under-rejects and lets Stage
+    # 5 capture bounces as fake shots.
+    END_BOUNCE_MIN_PLAYER_DIST_PX = 150.0
+    END_BOUNCE_MAX_RETRIES = 12
+
+    def end_bounce_far_from_players(bx: float, by: float, bounce_frame: int
+                                     ) -> bool:
+        """True if the candidate end-bounce pixel is at least
+        END_BOUNCE_MIN_PLAYER_DIST_PX from every NON-TRANSIENT player at
+        `bounce_frame`, measured the way Stage 5 will measure it (MIN distance
+        to either visible wrist when poses are available; bbox-distance else,
+        plus foot distance). We check against ALL non-transient players, not
+        just the Stage-3 in-scope set — Stage 5 itself considers every
+        non-transient player for shot association, and a bounce landing near
+        an out-of-scope player (e.g. an adjacent-court player who survived
+        Stage 2's transient filter) would be captured as a fake shot."""
+        check_set = (all_players_by_frame.get(bounce_frame, [])
+                     if all_players_by_frame is not None
+                     else eligible.get(bounce_frame, []))
+        for p in check_set:
+            wrists = p.get("wrists") or []
+            if wrists:
+                d = min(math.hypot(bx - wx, by - wy) for wx, wy in wrists)
+            else:
+                x1, y1, x2, y2 = p["bbox"]
+                dx = max(x1 - bx, 0.0, bx - x2)
+                dy = max(y1 - by, 0.0, by - y2)
+                d_bbox = math.hypot(dx, dy)
+                fx, fy = p["foot"]
+                d_foot = math.hypot(bx - fx, by - fy)
+                d = min(d_bbox, d_foot)
+            if d < END_BOUNCE_MIN_PLAYER_DIST_PX:
+                return False
+        return True
+
+    def assign_end_pattern(hit: dict, pattern: str) -> None:
+        """Compute the rally-ending bounce position(s) in pixel space and
+        attach to hit. Called on the LAST hit of each rally."""
+        hit["end_pattern"] = pattern
+        hit["end_reason_truth"] = PATTERN_TO_END_REASON.get(pattern, "unknown")
+        if pattern == "no_bounce" or court_to_image is None:
+            hit["end_bounces_pixel"] = []
+            return
+        hitter_side = hit["side"]
+        IN_TOL = 0.25  # matches Stage 5.5's IN_COURT_TOLERANCE_FT
+
+        # Try up to END_BOUNCE_MAX_RETRIES random placements until the first
+        # bounce is far enough from all players at the bounce frame. Fall back
+        # to `no_bounce` (silently mapping serve-fault / multi-shot patterns
+        # to ball-off-frame) if we can't find a clear spot — better than
+        # placing a bounce near a player that Stage 5 would mis-detect as a
+        # shot.
+        bounces: List[Tuple[int, float, float, bool]] = []
+        for _ in range(END_BOUNCE_MAX_RETRIES):
+            cxy = end_bounce_court_xy(pattern, hitter_side, rng)
+            if cxy is None:
+                break
+            pxy = project_court_to_pixel(court_to_image, cxy[0], cxy[1])
+            if pxy is None:
+                continue
+            cx1, cy1 = cxy
+            bx1, by1 = pxy
+            bx1 = float(np.clip(bx1, -200.0, frame_w + 200.0))
+            by1 = float(np.clip(by1, -200.0, frame_h + 200.0))
+            offset1 = int(rng.integers(END_BOUNCE_MIN_FRAMES_AFTER,
+                                        END_BOUNCE_MAX_FRAMES_AFTER + 1))
+            bounce_frame_1 = int(hit["frame"]) + offset1
+            if not end_bounce_far_from_players(bx1, by1, bounce_frame_1):
+                continue  # too close to a player at that frame; retry
+            in_court_1 = bool((-IN_TOL <= cx1 <= 20.0 + IN_TOL)
+                              and (-IN_TOL <= cy1 <= 44.0 + IN_TOL))
+            bounces.append((offset1, bx1, by1, in_court_1))
+            if pattern == "double_bounce":
+                # Second bounce: also player-distance-checked, with retries.
+                placed = False
+                for _ in range(END_BOUNCE_MAX_RETRIES):
+                    cxy2 = double_bounce_second_court_xy(cxy, hitter_side, rng)
+                    pxy2 = project_court_to_pixel(court_to_image,
+                                                   cxy2[0], cxy2[1])
+                    if pxy2 is None:
+                        continue
+                    bx2, by2 = pxy2
+                    bx2 = float(np.clip(bx2, -200.0, frame_w + 200.0))
+                    by2 = float(np.clip(by2, -200.0, frame_h + 200.0))
+                    offset2 = offset1 + DOUBLE_BOUNCE_GAP_FRAMES
+                    bounce_frame_2 = int(hit["frame"]) + offset2
+                    if not end_bounce_far_from_players(bx2, by2, bounce_frame_2):
+                        continue
+                    in_court_2 = bool((-IN_TOL <= cxy2[0] <= 20.0 + IN_TOL)
+                                       and (-IN_TOL <= cxy2[1] <= 44.0 + IN_TOL))
+                    bounces.append((offset2, bx2, by2, in_court_2))
+                    placed = True
+                    break
+                if not placed:
+                    # Couldn't place second bounce; fall back to single-bounce.
+                    # That changes the truth from double-bounce to ball-not-
+                    # returned / ball-out / etc., but it's an honest reflection
+                    # of what we rendered.
+                    if in_court_1:
+                        hit["end_reason_truth"] = "ball-not-returned"
+                    else:
+                        hit["end_reason_truth"] = "ball-out"
+                    hit["end_pattern"] = (
+                        "in_court_bounce_receiver" if in_court_1
+                        else "out_of_court_bounce")
+            break  # placed at least one bounce; done with retry loop
+
+        if not bounces:
+            # All retries failed: fall back to no-bounce (truth changes to
+            # ball-off-frame so it stays consistent with what's rendered).
+            hit["end_pattern"] = "no_bounce"
+            hit["end_reason_truth"] = "ball-off-frame"
+        hit["end_bounces_pixel"] = bounces
 
     def midpoint_bounce_pt(a: dict, b: dict) -> Tuple[float, float]:
         chord = math.hypot(b["x"] - a["x"], b["y"] - a["y"])
@@ -337,7 +645,14 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
             cursor = nxt[0]
             continue
 
-        n_shots = int(rng.integers(RALLY_MIN_SHOTS, RALLY_MAX_SHOTS + 1))
+        # Decide rally character first: SERVE-FAULT rallies are single-shot
+        # (only the serve; the serve lands as a fault), otherwise normal
+        # multi-shot rallies of varying length.
+        is_serve_fault = (court_to_image is not None
+                          and rng.random() < SERVE_FAULT_RALLY_PROB)
+        n_shots = 1 if is_serve_fault else int(rng.integers(
+            RALLY_MIN_SHOTS, RALLY_MAX_SHOTS + 1))
+
         rally: List[dict] = []
         prev = pick_hitter(here, rng, None)
         rally.append(jhit(cursor, prev))
@@ -416,9 +731,33 @@ def build_rallies(eligible: Dict[int, List[dict]], n_frames: int, fps: float,
             rally.append(nxt_hit)
             f, prev = f_next, nxt
 
-        if len(rally) >= 2:
+        # Assign the rally-ending pattern to the last hit. For serve-fault
+        # rallies (n_shots=1) pick one of the two serve-fault patterns.
+        # Multi-shot rallies sample from END_PATTERN_PROBS.
+        rally_end_frame = f  # default: end of rally is the last hit's frame
+        if rally:
+            if is_serve_fault:
+                pattern = ("serve_fault_out"
+                           if rng.random() < SERVE_FAULT_OUT_PROB
+                           else "serve_fault_kitchen")
+            else:
+                pattern = pick_multi_shot_end_pattern(rng)
+            assign_end_pattern(rally[-1], pattern)
+            # Advance the rally's true end to include the end-pattern bounces
+            # + post-bounce ascent. Without this, the next rally's serve can
+            # be placed BEFORE this rally's bounces finish rendering, causing
+            # overlapping trajectories that violate Stage 5's teleport check.
+            eb = rally[-1].get("end_bounces_pixel") or []
+            if eb:
+                last_offset = int(eb[-1][0])
+                rally_end_frame = (int(rally[-1]["frame"]) + last_offset
+                                    + POST_END_BOUNCE_FRAMES)
+
+        # Accept rallies of length >= 1 (serve-faults are 1-shot) — was >= 2
+        # before; the old gate excluded serve-faults.
+        if len(rally) >= 1:
             rallies.append(rally)
-            cursor = f + int(rng.integers(dead[0], dead[1] + 1))
+            cursor = rally_end_frame + int(rng.integers(dead[0], dead[1] + 1))
         else:
             cursor = f + hit_gap[0]
 
@@ -486,13 +825,76 @@ def render_ball(rallies: List[List[dict]], n_frames: int, w: int, h: int,
         x[last["frame"]] = last["x"]
         y[last["frame"]] = last["y"]
         vis[last["frame"]] = True
-        # Follow-through: the last hit redirects the ball, so render a short
-        # OUTGOING segment in a new direction. This gives the last hit an
-        # outgoing velocity (=> a detectable impulse), then the ball goes
-        # not-visible (landed / out). The FIRST hit of a rally (serve) has no
-        # incoming ball and stays undetectable by a direction-change detector,
-        # by design (see Stage 5 contract).
-        if len(rally) >= 2:
+
+        # Rally-ending trajectory: choose based on the rally's end_pattern
+        # (Stage 7 ground truth). For patterns with bounces, render the leg
+        # from last hit to each bounce point (in order), with a rotated
+        # post-last-bounce ascent that creates a clean impulse signal for
+        # Stage 5.5. For "no_bounce" (or unset), fall back to the random
+        # follow-through used previously.
+        end_bounces = last.get("end_bounces_pixel") or []
+        end_pattern = last.get("end_pattern")
+        if end_bounces:
+            cur_x, cur_y = float(last["x"]), float(last["y"])
+            cur_f = int(last["frame"])
+            # Render legs to each bounce.
+            for (offset, bx, by, _in_court) in end_bounces:
+                target_f = cur_f + 0 + (int(offset) - (cur_f - int(last["frame"])))
+                # offset is "frames after last hit"; target_f is absolute frame.
+                target_f = int(last["frame"]) + int(offset)
+                leg_len = target_f - cur_f
+                if leg_len <= 0:
+                    continue
+                for j in range(1, leg_len + 1):
+                    f = cur_f + j
+                    if f >= n_frames:
+                        break
+                    t = j / leg_len
+                    x[f] = cur_x + t * (bx - cur_x)
+                    y[f] = cur_y + t * (by - cur_y)
+                    vis[f] = True
+                cur_x, cur_y = bx, by
+                cur_f = target_f
+            # Post-LAST-bounce ascent: rotate the entering velocity vector by
+            # 100-170 degrees so the bounce frame has a clean turn-rate
+            # impulse (well above Stage 5.5's 45deg threshold).
+            last_offset, last_bx, last_by, _ = end_bounces[-1]
+            last_target_f = int(last["frame"]) + int(last_offset)
+            # Find the velocity entering the last bounce:
+            if len(end_bounces) >= 2:
+                prev_offset, prev_bx, prev_by, _ = end_bounces[-2]
+                prev_f = int(last["frame"]) + int(prev_offset)
+                leg_dur = last_target_f - prev_f
+                if leg_dur <= 0:
+                    leg_dur = 1
+                vx_in = (last_bx - prev_bx) / leg_dur
+                vy_in = (last_by - prev_by) / leg_dur
+            else:
+                leg_dur = last_target_f - int(last["frame"])
+                if leg_dur <= 0:
+                    leg_dur = 1
+                vx_in = (last_bx - float(last["x"])) / leg_dur
+                vy_in = (last_by - float(last["y"])) / leg_dur
+            ang = math.radians(float(rng.uniform(100.0, 170.0)))
+            if rng.random() < 0.5:
+                ang = -ang
+            ca, sa = math.cos(ang), math.sin(ang)
+            energy = 0.5
+            vx_post = energy * (ca * vx_in - sa * vy_in)
+            vy_post = energy * (sa * vx_in + ca * vy_in)
+            for j in range(1, POST_END_BOUNCE_FRAMES + 1):
+                f = last_target_f + j
+                if f >= n_frames:
+                    break
+                x[f] = last_bx + j * vx_post
+                y[f] = last_by + j * vy_post
+                vis[f] = True
+        elif end_pattern in (None, "no_bounce") and len(rally) >= 2:
+            # No end-bounce pattern (or explicit `no_bounce`): use the
+            # original random follow-through — gives the last hit an
+            # outgoing velocity but no rally-ending bounce. Maps to truth
+            # end_reason `ball-off-frame` for `no_bounce`, or no-pattern
+            # in older rallies.
             prev = rally[-2]
             in_dir = np.array([last["x"] - prev["x"], last["y"] - prev["y"]])
             nrm = np.linalg.norm(in_dir)
@@ -620,8 +1022,26 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
             return None
         return (float(cxy[0]), float(cxy[1]))
 
+    # Build a mapping from (rally_idx) -> next_rally's first hit_id (or None
+    # for the last rally). Used to set `between_hits[1]` for rally-ending
+    # bounces, which sit between this rally's last hit and the NEXT rally's
+    # first hit (the serve of the next point).
+    next_first_hit_id: Dict[int, Optional[int]] = {}
+    for ri, rally in enumerate(rallies):
+        if ri + 1 < len(rallies):
+            nfh = rallies[ri + 1][0]
+            next_first_hit_id[ri] = hit_key_to_id.get(
+                (int(nfh["frame"]), int(nfh["track_id"])))
+        else:
+            next_first_hit_id[ri] = None
+
     bounces_truth: List[dict] = []
-    for rally in rallies:
+    # Per-rally tracking of end-bounce indices in bounces_truth so we can fill
+    # `ending_bounce_id_truth` once bounce_ids are assigned.
+    rally_end_bounce_indices: Dict[int, List[int]] = {}  # rally_idx -> list of bounces_truth indices
+
+    for ri, rally in enumerate(rallies):
+        # Standard inter-hit bounces (existing logic).
         for k in range(len(rally) - 1):
             a = rally[k]
             b = rally[k + 1]
@@ -652,11 +1072,98 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
                 "receiver_track_id": a.get("out_bounce_receiver_track_id"),
                 "between_hits": [a_hit_id, b_hit_id],
             })
-    bounces_truth.sort(key=lambda bb: bb["frame"])
-    for i, bb in enumerate(bounces_truth):
-        bb["bounce_id"] = i
+        # Rally-ending bounces from the last hit's end_pattern. The bounces
+        # sit between the rally's last hit and the NEXT rally's first hit
+        # (the serve of the next point), or null if this is the last rally.
+        last = rally[-1]
+        end_bounces = last.get("end_bounces_pixel") or []
+        last_hit_id = hit_key_to_id.get(
+            (int(last["frame"]), int(last["track_id"])))
+        next_hit_id = next_first_hit_id[ri]
+        indices_this_rally: List[int] = []
+        for (offset, ebx, eby, in_court_flag) in end_bounces:
+            bf = int(last["frame"]) + int(offset)
+            cxy = project(float(ebx), float(eby))
+            if cxy is None:
+                court_xy = None
+                in_court = None
+            else:
+                court_xy = [round(cxy[0], 2), round(cxy[1], 2)]
+                in_court = bool(
+                    (-IN_COURT_TOL <= cxy[0] <= 20.0 + IN_COURT_TOL)
+                    and (-IN_COURT_TOL <= cxy[1] <= 44.0 + IN_COURT_TOL)
+                )
+            indices_this_rally.append(len(bounces_truth))
+            bounces_truth.append({
+                "bounce_id": 0,
+                "frame": bf,
+                "pixel_xy": [round(float(ebx), 2), round(float(eby), 2)],
+                "court_xy_ft": court_xy,
+                "is_in_court": in_court,
+                "is_at_feet": False,
+                "receiver_track_id": None,
+                "between_hits": [last_hit_id, next_hit_id],
+            })
+        rally_end_bounce_indices[ri] = indices_this_rally
+
+    # Sort all bounces by frame, assign contiguous bounce_ids. Because sorting
+    # changes positions, build a map from old_index -> new bounce_id.
+    indexed = sorted(enumerate(bounces_truth), key=lambda p: p[1]["frame"])
+    old_to_new: Dict[int, int] = {}
+    sorted_bounces: List[dict] = []
+    for new_id, (old_i, b) in enumerate(indexed):
+        b["bounce_id"] = new_id
+        old_to_new[old_i] = new_id
+        sorted_bounces.append(b)
+    bounces_truth = sorted_bounces
     n_bounces = len(bounces_truth)
     n_bounces_at_feet = sum(1 for bb in bounces_truth if bb["is_at_feet"])
+
+    # Rebuild rally_end_bounce_indices with the new bounce_ids.
+    rally_end_bounce_ids: Dict[int, List[int]] = {
+        ri: [old_to_new[i] for i in idxs]
+        for ri, idxs in rally_end_bounce_indices.items()
+    }
+
+    # Build the truth `rallies` list (Stage 7 ground truth). Each rally has
+    # start/end frame, the truth hit_ids that make up the rally, the truth
+    # end_reason, the end_pattern that produced it, and the bounce_id of the
+    # rally-ending bounce (or None for `no_bounce`).
+    rallies_truth: List[dict] = []
+    for ri, rally in enumerate(rallies):
+        # Truth hit_ids for the rally's shots.
+        ids_in_rally: List[int] = []
+        for h in rally:
+            hid = hit_key_to_id.get((int(h["frame"]), int(h["track_id"])))
+            if hid is not None:
+                ids_in_rally.append(hid)
+        last_hit = rally[-1]
+        end_pattern = last_hit.get("end_pattern")
+        end_reason = last_hit.get("end_reason_truth", "unknown")
+        end_bounce_ids = rally_end_bounce_ids.get(ri, [])
+        # `ending_bounce_id_truth` is the LAST rally-ending bounce (the second
+        # bounce for double-bounce; the single bounce otherwise; null if no
+        # bounce produced).
+        ending_bid = end_bounce_ids[-1] if end_bounce_ids else None
+        # End frame: last bounce frame if any, else last hit frame.
+        if end_bounce_ids:
+            end_frame_val = bounces_truth[end_bounce_ids[-1]]["frame"]
+        else:
+            end_frame_val = int(last_hit["frame"])
+        rallies_truth.append({
+            "rally_id": ri,
+            "start_frame": int(rally[0]["frame"]),
+            "end_frame": int(end_frame_val),
+            "shot_ids_truth": ids_in_rally,
+            "end_reason": end_reason,
+            "end_pattern": end_pattern,
+            "ending_bounce_id_truth": ending_bid,
+        })
+    n_truth_rallies = len(rallies_truth)
+    by_end_reason_truth: Dict[str, int] = {}
+    for r in rallies_truth:
+        er = r["end_reason"] or "unknown"
+        by_end_reason_truth[er] = by_end_reason_truth.get(er, 0) + 1
 
     n_visible = int(vis.sum())
     now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -702,8 +1209,11 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
         "n_labeled_type": n_labeled,
         "n_bounces": n_bounces,
         "n_bounces_at_feet": n_bounces_at_feet,
+        "n_rallies": n_truth_rallies,
+        "by_end_reason_truth": by_end_reason_truth,
         "hits": hits,
         "bounces": bounces_truth,
+        "rallies": rallies_truth,
     }
     with out_truth.open("w", encoding="utf-8") as f:
         json.dump(truth, f, indent=2)
@@ -712,6 +1222,8 @@ def write_outputs(folder: Path, x, y, vis, rallies, n_frames, w, h, fps,
     return {"n_rallies": len(rallies), "n_hits": len(hits),
             "n_volley": n_volley, "n_labeled_type": n_labeled,
             "n_bounces": n_bounces, "n_bounces_at_feet": n_bounces_at_feet,
+            "n_truth_rallies": n_truth_rallies,
+            "by_end_reason_truth": by_end_reason_truth,
             "frames_visible": n_visible,
             "ball_visible_frac": meta["stats"]["ball_visible_frac"]}
 
@@ -738,14 +1250,18 @@ def run(folder: Path, seed: int, gap_frac: float, force: bool) -> dict:
 
     players = load_players(players_path)
     scope_ids = in_scope_track_ids(poses_path)
-    wrists = load_wrists(poses_path)
+    mean_wrists, all_wrists = load_wrists(poses_path)
 
     rng = np.random.default_rng(seed)
-    eligible = build_eligible(players, scope_ids, wrists)
+    eligible = build_eligible(players, scope_ids, mean_wrists, all_wrists)
+    all_players_by_frame = build_all_players_by_frame(players, all_wrists)
     if not eligible:
         fail("no eligible on-court players found in players.parquet; cannot "
              "place synthetic hits", ValueError)
-    rallies = build_rallies(eligible, n_frames, fps, rng)
+    rallies = build_rallies(eligible, n_frames, fps, rng,
+                            court_to_image=court.get("court_to_image"),
+                            frame_w=w, frame_h=h,
+                            all_players_by_frame=all_players_by_frame)
     if not rallies:
         fail("could not build any rallies (too few eligible player frames)",
              ValueError)
@@ -797,6 +1313,10 @@ def main(argv: Optional[list] = None) -> int:
           f"bounces={stats['n_bounces']} (at_feet={stats['n_bounces_at_feet']}) "
           f"visible_frames={stats['frames_visible']} "
           f"({stats['ball_visible_frac']:.1%})")
+    by_er = stats.get("by_end_reason_truth", {})
+    if by_er:
+        parts = ", ".join(f"{k}={v}" for k, v in sorted(by_er.items()))
+        print(f"  truth end_reasons: {parts}")
     return 0
 
 

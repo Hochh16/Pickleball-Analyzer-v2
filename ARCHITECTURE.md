@@ -38,7 +38,17 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   semantics, single source of truth for the bounce signal). Same
   synthetic-ball caveat. Lob-by-arc is weak in low-headroom footage (see
   `KNOWN_ISSUES.md` / handoff).
-- **Stages 7–11**: not started.
+- **Stage 7** (segment rallies): **implemented + smoke-tested** (2026-05-29).
+  Groups shots into rallies by `is_serve` and tags each with an
+  `end_reason` from a 7-category set (`serve-fault`, `double-bounce`,
+  `ball-out`, `net-or-short`, `ball-not-returned`, `ball-off-frame`,
+  `unknown`). Uses court-side reasoning from `impact_court_xy_ft` (shots)
+  and `court_xy_ft` (bounces) to classify hitter-side vs receiver-side
+  events and detect kitchen-fault serves. **Role-blind v1**: no
+  `winner_side`, no `track_roles.json` dependency — winner attribution
+  deferred to Stage 8. Same synthetic-ball caveat. See
+  `stages/segment_rallies/contract.md`.
+- **Stages 8–11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
