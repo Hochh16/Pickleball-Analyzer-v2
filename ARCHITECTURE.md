@@ -75,14 +75,27 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   **Thresholds are uncalibrated heuristics** (no rated-footage corpus). Smoke
   test gates on schema + banding + directional monotonicity, not accuracy. See
   `stages/rate/contract.md`.
-- **Stages 10–11**: not started.
+- **Stage 10** (plan improvement): **implemented + smoke-tested** (2026-05-29).
+  Turns `rating.json` (+ `metrics.json`) into `improvement_plan.json` for the
+  **user**: the gap to the next USAPA half-step, prioritized **focus areas**
+  (each with a data-grounded finding + 1–3 drills/cues from a built-in
+  USAPA-anchored library), and a forward-looking **developing_capability**
+  block that scaffolds in the skills not yet measurable (from Stage 9's
+  `skill_coverage`) — so the plan reaches full capability once ball v4 + the
+  new metric/pose stages land. Synthetic-ball-derived focus areas are flagged
+  `provisional` and mildly down-weighted in the priority score (real-data
+  weaknesses rank higher-confidence). Smoke test gates on schema + focus
+  correctness + directional behavior, not accuracy (uncalibrated, like Stage
+  9). See `stages/plan_improvement/contract.md`.
+- **Stage 11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
 `stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`,
 `stages/segment_rallies`, `stages/classify_tracks`, `stages/compute_metrics`,
-`stages/rate`) — Python modules can't start with a digit, so the numbered
-folders in the pipeline diagram below are illustrative, not import paths.
+`stages/rate`, `stages/plan_improvement`) — Python modules can't start with a
+digit, so the numbered folders in the pipeline diagram below are illustrative,
+not import paths.
 
 ## Pipeline-wide assumptions
 
