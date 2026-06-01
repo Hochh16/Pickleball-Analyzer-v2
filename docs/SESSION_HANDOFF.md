@@ -1,10 +1,11 @@
-# Session Handoff: Stage 10 (plan improvement) DONE
+# Session Handoff: Stage 11 (render) DONE — PIPELINE COMPLETE
 
 State of Pickleball-Analyzer-v2 at the end of the May 29 2026 session.
-Supersedes the Stage 9 handoff; now extended through **Stage 10 (plan
-improvement)**. The pipeline is 13 stages, **11 implemented** (1, 2, 2.5, 3, 5,
-5.5, 6, 7, 8, 9, 10); Stage 4/4.5 remain paused; **Stage 11 (render) is the
-only remaining stage.**
+Supersedes the Stage 10 handoff; extended through **Stage 11 (render annotated
+video)**. **The 13-stage pipeline is now end-to-end runnable** — every stage is
+implemented + smoke-tested EXCEPT ball detection (Stage 4/4.5), which is paused.
+The whole chain runs today on synthetic-ball data; every ball-derived output is
+a validated scaffold until real ball detection (v4) lands.
 
 ## Context for the next session
 
@@ -12,135 +13,152 @@ only remaining stage.**
 - Repo: github.com/Hochh16/Pickleball-Analyzer-v2 · Local:
   `C:\Users\hochh\Pickleball-Analyzer-V2`
 - Windows + PowerShell + Python 3.14 (mediapipe 0.10.35, ultralytics 8.4.46,
-  torch 2.11 cpu, pandas + pyarrow).
-- Working agreement: **contract → code → smoke test → commit**, decisions /
+  torch 2.11 cpu, pandas + pyarrow, opencv-python 4.13).
+- Working agreement: **contract → code → smoke test → commit**; decisions /
   limitations flagged for the operator (inputs asked, not guessed) BEFORE
   coding. Each stage's `contract.md` is the source of truth.
-- Standalone Python CLIs, file-path I/O, sidecar JSON per video under `data/`.
-  No DB, no shared state. `ARCHITECTURE.md` + `KNOWN_ISSUES.md` authoritative.
-- Implemented stages live in **importable** folders (`stages/plan_improvement`,
-  `stages/rate`, `stages/compute_metrics`, …); module names can't start with a
+- Standalone Python CLIs, file-path I/O, sidecar outputs per video under
+  `data/`. No DB, no shared state. `ARCHITECTURE.md` + `KNOWN_ISSUES.md`
+  authoritative.
+- Implemented stages live in **importable** folders (`stages/render`,
+  `stages/plan_improvement`, `stages/rate`, …); module names can't start with a
   digit. Per-stage contracts live IN the folder; numbered stubs deleted on
   approval.
 
-### Stage status (post-session)
-- **Stages 1, 2, 2.5, 3**: implemented; unchanged. (2.5 opponent contamination
-  follow-ups still pending — flows into S8/S9/S10, flagged.)
-- **Stage 4** (TrackNetV2 ball): code-complete, weights don't generalize.
-  **Do not touch.**
-- **Stage 4.5** (ball detection): **PAUSED** after v1/v2/v3. **Do not touch.**
-- **Stages 5, 5.5, 6, 7, 8, 9**: implemented; unchanged.
-- **Stage 10** (plan improvement): **NEW** — implemented + smoke-tested (8/8) +
-  committed (`10c8c6f`). Details below.
-- **Stage 11** (render annotated video): not started — the last stage.
+### Stage status (post-session) — ALL IMPLEMENTED except 4/4.5
+- **1 calibrate, 2 track_players, 2.5 classify_tracks, 3 pose** — implemented.
+- **4 track_ball** — code-complete, weights don't generalize. **PAUSED, do not
+  touch.**
+- **4.5 finetune_ball_model** — **PAUSED** after v1/v2/v3 failures. **Do not
+  touch / don't re-attempt v1/v2.**
+- **5 detect_shots, 5.5 detect_bounces, 6 classify_shots, 7 segment_rallies,
+  8 compute_metrics, 9 rate, 10 plan_improvement** — implemented.
+- **11 render** — **NEW** this session, implemented + smoke-tested (9/9) +
+  committed (`5b15815`). Details below.
 
 ## What was done this session
 
-### Built Stage 10 (plan improvement) — NEW stage
-- Contract: `stages/plan_improvement/contract.md`. Code:
-  `stages/plan_improvement/plan_improvement.py`. Smoke (8/8):
-  `stages/plan_improvement/test_plan_improvement.py`.
-- Run: `python -m stages.plan_improvement.plan_improvement data/test_clip --force`
-- **Input:** `rating.json` (S9) + `metrics.json` (S8, optional context).
-- **Output `improvement_plan.json`** for the **user**:
-  - `current` → `target` (next USAPA half-step, cap 5.0; `--target-band`
-    overrides).
-  - `focus_areas[]`: dimensions below target, prioritized. Each has
-    `gap_to_target`, `priority_score`, a **data-grounded finding** (built from
-    rating.json's `driver_metrics` so it can't drift from the rating),
-    `why_it_matters`, **1–3 drills** (from a built-in library, some selected
-    conditionally on driver values), and `data_source`/`confidence`/
-    `provisional_note`.
-  - `strengths[]`: dimensions already ≥ target.
-  - `developing_capability`: **forward-looking scaffold** — the
-    `proxy_or_pending` + `not_captured_yet` skills from Stage 9's
-    `skill_coverage`, each with `unlocked_by` / `will_assess` /
-    `will_recommend`; plus `out_of_scope`.
-  - `reliability`: real vs provisional focus-area counts.
-- **Scope decisions (operator, before coding):**
-  1. **Depth = focus areas + drills/cues** (no scheduling/dosage in v1).
-  2. **Include synthetic weaknesses, flagged `provisional`**; real-data
-     weaknesses rank higher-confidence via
-     `priority_score = gap · weight · (0.5 + 0.5·dim_confidence)` (real ~1.0,
-     synthetic ~0.35 → mild lift, doesn't bury large synthetic gaps).
-  3. **Forward-looking developing_capability block** (the operator's explicit
-     ask: "account for skills measured via synthetic + those developed
-     downstream, so full capability is there once 4/4.5 + critical skills
-     complete"). v1 emits NO recommendations for unmeasured skills — it only
-     documents what completes the plan.
-- **Self-healing flags:** when real ball detection (v4) lands, Stage 9's
-  `data_source` flips synthetic→real, so Stage 10's `provisional` flags clear
-  automatically and those focus areas become high-confidence — no Stage 10
-  change. developing_capability entries migrate into focus_areas as each
-  skill's metric lands (the descriptor table is the migration checklist).
-- **Same honesty model:** loud synthetic + uncalibrated warnings; a warning if
-  the #1 focus area is provisional; reliability counts.
+### Built Stage 11 (render annotated video) — NEW stage, completes the pipeline
+- Contract: `stages/render/contract.md`. Code: `stages/render/render.py`. Smoke
+  (9/9): `stages/render/test_render.py`.
+- Run: `python -m stages.render.render data/test_clip --force`
+  (full clip; slow). Range-limit for dev:
+  `... --start-frame 1000 --max-seconds 5`.
+- **Pure consumer** — recomputes nothing; draws what upstream JSON decided.
+- **Inputs:** `video.mp4` + `court.json` required; everything else optional
+  (missing → that layer skipped + warning, so it tolerates a partial pipeline).
+- **Outputs:**
+  - `annotated.mp4`: the ACTUAL footage + AR overlays — court lines
+    (homography-projected; verified pixel-exact vs the calibrated corners),
+    player boxes + role labels, ball marker + fading trail, shot markers,
+    bounce markers (in/out), rally banner with `end_reason`, HUD card
+    (rating band + estimate + range + #1 focus area, provisional-tagged),
+    top-down **minimap inset** (role dots + bounces in court-feet), and a
+    persistent **SYNTHETIC-BALL watermark**. Optional `--pose` skeleton,
+    `--labels` shot-type text (off by default).
+  - `timeline.json`: synchronized event stream (`rally_start`/`rally_end`/
+    `shot`/`bounce`, sorted by frame) + a `summary` carrying rating + plan.
+    The deferred dashboard's data contract; emitted for the full clip even when
+    the video render is range-limited.
+  - `heatmap_*.png`: standalone position (per role) + ball-landing heatmaps over
+    a court diagram (Stage 8 deferred heatmap *rendering* to here).
+- **Scope decisions (operator, before coding):** annotate real video + minimap
+  inset (not a schematic-only video); heatmaps as standalone PNGs; rating/plan
+  as HUD card + full data in timeline; default optional layer = ball trail
+  (pose + labels flag-gated off).
+- **Synthetic discipline:** the watermark + `summary.synthetic_ball` +
+  warnings make the placeholder status unmissable on the most real-looking
+  output. The minimap deliberately does NOT project the mid-air ball to court
+  (geometrically wrong) — ball appears on the minimap only at bounce frames.
+- **Self-updating:** re-runs unchanged on real footage; the watermark drops
+  automatically once `ball_source != synthetic`.
+- **Perf:** full-clip render is slow (CPU draw + encode, ~8125 frames);
+  `--start-frame/--end-frame/--max-seconds/--fps-out` bound it. Smoke renders
+  ~60 frames.
+- **Verified visually:** extracted an annotated frame — banner, HUD, watermark,
+  role-colored boxes, ball trail, shot marker, minimap all render correctly;
+  court-line projection confirmed pixel-exact against `court.json`'s clicked
+  corners.
 
 ### Docs updated
-- `ARCHITECTURE.md`: Stage 10 status (not-started → implemented), Stage 11 line,
-  importable-folders list (+`stages/plan_improvement`).
+- `ARCHITECTURE.md`: Stage 11 status (not-started → implemented) + a
+  pipeline-complete note; importable-folders list (+`stages/render`).
 
 ### Commits this session
-- `10c8c6f` Stage 10: plan improvement (NEW stage implemented, 11/13 done)
+- `5b15815` Stage 11: render annotated video (NEW stage; pipeline complete)
+
+## The full pipeline (runnable today)
+
+```
+video.mp4
+ → [1] calibrate → court.json, court_zones.json
+ → [2] track_players → players.parquet
+ → [2.5] classify_tracks → track_roles.json
+ → [3] pose → poses.parquet
+ → [4] track_ball → ball.parquet            (PAUSED → tools/synth_ball.py placeholder)
+ → [5] detect_shots → shots.json
+ → [5.5] detect_bounces → bounces.json
+ → [6] classify_shots → classified.json
+ → [7] segment_rallies → rallies.json
+ → [8] compute_metrics → metrics.json
+ → [9] rate → rating.json
+ → [10] plan_improvement → improvement_plan.json
+ → [11] render → annotated.mp4 + timeline.json + heatmap_*.png
+```
 
 ## IMPORTANT caveats for the next session
-- **The ball is still synthetic.** Stages 5–10's ball-derived output is
-  placeholder. On test_clip the plan's #1 focus area is `net_play` (REAL,
-  trustworthy now); the provisional (synthetic) focus areas are a scaffold
-  until ball v4. The real-data part of every output is the durable value today.
-- **Uncalibrated thresholds** (Stages 9 + 10): which drills move which metric
-  is unvalidated. Calibrate with real-data + outcome tracking later.
-- **developing_capability is the roadmap** for full rating/plan capability —
-  it enumerates exactly what each downstream skill needs (ball v4, new metric
-  stages, the Tier-C pose stage).
+- **The ball is still synthetic.** Stages 5–11's ball-derived output is
+  placeholder; the annotated video carries a burned-in watermark. The durable
+  real value today is positioning/movement (players.parquet) — net_play +
+  movement metrics, the player-position heatmaps, and the minimap.
+- **Stages 9 + 10 thresholds are uncalibrated** (no rated-footage corpus).
+- **Stage 2.5 opponent contamination** flows into S8/S9/S10 (flagged).
+- The pipeline being "complete" means **structurally** complete + logically
+  correct given trustworthy inputs — NOT validated for real-world accuracy.
+  That gate is ball v4 + new footage.
 
 ## Local-only artifacts (gitignored — regenerate, don't expect in git)
-`data/` and `*.parquet` are gitignored. To reproduce `data/test_clip/`:
+`data/` and `*.parquet` are gitignored (so are all Stage 11 outputs:
+annotated.mp4, timeline.json, heatmap_*.png — under `data/`). To reproduce
+`data/test_clip/`:
 1. `python -m stages.track_players.test_track`  (needs `user_clicks.json`)
 2. `python -m stages.pose.test_pose`
 3. `python tools/synth_ball.py data/test_clip --seed 1234 --force`
-4. `python -m stages.detect_shots.detect_shots data/test_clip --force`
-5. `python -m stages.detect_bounces.detect_bounces data/test_clip --force`
-6. `python -m stages.classify_shots.classify_shots data/test_clip --force`
-7. `python -m stages.segment_rallies.segment_rallies data/test_clip --force`
-8. `python -m stages.classify_tracks.classify_tracks data/test_clip --force`
-9. `python -m stages.compute_metrics.compute_metrics data/test_clip --force`
-10. `python -m stages.rate.rate data/test_clip --force`
-11. `python -m stages.plan_improvement.plan_improvement data/test_clip --force`
+4–11. detect_shots → detect_bounces → classify_shots → segment_rallies →
+   classify_tracks → compute_metrics → rate → plan_improvement → render
+   (each `python -m stages.<folder>.<module> data/test_clip --force`).
 
-Or run the Stage 10 smoke test, which regenerates the whole chain:
-`python -m stages.plan_improvement.test_plan_improvement`
+Fastest full-chain check: `python -m stages.render.test_render` (regenerates
+the whole chain, renders a short range).
 
 `user_clicks.json` / `roster.json` are gitignored (local-only). If lost:
-re-identify the user to rebuild clicks; recreate `roster.json`
+re-identify the user; recreate `roster.json`
 (`{"schema_version":1,"handedness":{"user":"right","partner":"unknown",
 "opp_left":"unknown","opp_right":"unknown"}}`, `user` = `court.json.dominant_hand`).
 
 ## What's queued for the next session
 
-**Linear pipeline — the LAST stage:**
-1. **Stage 11 — render annotated video.** Output: `annotated.mp4` +
-   `timeline.json`. Consumes the video + ALL upstream JSON (court, players,
-   poses, shots, bounces, classified, rallies, track_roles, metrics, rating,
-   improvement_plan) + Stage 8's heatmap grids. The video-overlay presentation
-   layer (court lines, player roles/boxes, shot/bounce markers, rally
-   end_reasons, optional rating/plan overlay). **Write the contract first.**
-   Decide: what to overlay, how to render heatmaps, whether to burn in the
-   rating/plan or keep them in `timeline.json` for the (deferred) dashboard.
+**No linear pipeline stages remain.** The work is now: make the outputs TRUE,
+and harden/extend.
 
-**Infrastructure / follow-ups:**
+1. **Ball detection v4 (Stage 4/4.5) — the critical unlock.** Needs better
+   footage (see below) and/or a temporal multi-frame approach. When it lands:
+   regenerate `ball.parquet`, re-run 5→11 on real trajectories, re-validate
+   every stage, and CALIBRATE Stages 9/10 against rated footage. Stage 8's
+   `pending_real_ball` auto-feeds S9 dims + clears S10 provisional flags.
 - **Re-wire Stages 3 + 6 to consume `track_roles.json`** (duplicate logic).
-- **Stage 2.5 v2:** multi-region color + tighter far-side filter (improves S8
-  opponent stats + S9/S10 confidence).
-- **Calibrate Stages 9 + 10** once rated footage exists.
-- **Ball v4 → populate Stage 8 `pending_real_ball`**, which auto-firms S9
-  dimensions + clears S10 provisional flags; then re-validate the whole chain.
-- **Tier-C future stages** (ARCHITECTURE.md): pose-technique (also a future S9
-  dimension + S10 focus area), cross-video trends, presentation/UI (post-4.5).
+- **Stage 2.5 v2:** multi-region color + tighter far-side filter (cleans
+  opponent stats/confidence across S8/S9/S10).
+- **Tier-C future stages** (ARCHITECTURE.md): pose-technique analysis (also a
+  future S9 dimension + S10 focus area + S11 overlay), cross-video trend
+  tracking, and the **presentation/UI dashboard** (deferred to post-4.5;
+  `timeline.json` + `metrics.json` + `rating.json` are its data contract).
+- **Render polish** (optional): HUD/banner overlap nit, overlay colors/sizes,
+  GPU/parallel encode for full-clip speed.
 
 **Footage (offline, David):** better source video for Stage 4.5 + more headroom
 (higher mount 10–15 ft, 4K/60fps, faster shutter, simpler backgrounds, fewer
-adjacent courts).
+adjacent courts). This is the single highest-leverage next input.
 
 ## Things to NOT touch between sessions
 - Stage 4 (`stages/track_ball/`) + Stage 4.5 (`stages/finetune_ball_model/`):
@@ -155,11 +173,12 @@ Open a new Claude session and paste:
     ARCHITECTURE.md, KNOWN_ISSUES.md, and the relevant stage contract.md
     before proposing anything.
 
-    Stages through 10 are done and committed. The ball is still a synthetic
-    placeholder (Stage 4.5 paused), so Stages 5-10 are validated for logical
-    correctness, not accuracy. Stage 11 (render annotated video) is the last
-    pipeline stage — I'd like to build it. [or: Stages 3/6 role re-wire,
-    Stage 2.5 v2, or a Tier-C stage — see What's queued]
+    The full 13-stage pipeline is implemented + committed (Stage 11 render
+    done) and runs end-to-end on the synthetic-ball placeholder. Every
+    ball-derived output is a scaffold until real ball detection (Stage 4/4.5).
+    I'd like to work on [ball detection v4 / better-footage intake / Stage 2.5
+    v2 / Stages 3+6 role re-wire / a Tier-C stage / render polish] — see
+    What's queued.
 
 ---
 
