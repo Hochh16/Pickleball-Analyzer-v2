@@ -87,15 +87,30 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   weaknesses rank higher-confidence). Smoke test gates on schema + focus
   correctness + directional behavior, not accuracy (uncalibrated, like Stage
   9). See `stages/plan_improvement/contract.md`.
-- **Stage 11**: not started.
+- **Stage 11** (render annotated video): **implemented + smoke-tested**
+  (2026-05-29). **Pure consumer** — draws upstream decisions onto the actual
+  source video and emits `annotated.mp4` + `timeline.json` + standalone heatmap
+  PNGs; recomputes nothing. Overlays: court lines (homography-projected; verified
+  pixel-exact against the calibrated corners), player boxes + roles, ball marker
+  + trail, shot/bounce markers, rally/end_reason banner, HUD card (rating + top
+  focus area), top-down minimap inset, and a persistent synthetic-ball watermark.
+  `timeline.json` is the scrubbable event stream (the deferred dashboard's data
+  contract). Built/tested on the existing `data/test_clip/video.mp4`; re-runs
+  unchanged on real footage (watermark drops when `ball_source != synthetic`).
+  See `stages/render/contract.md`.
+
+**Pipeline status: all 11 logical stages (13 numbered) are implemented and
+smoke-tested EXCEPT ball detection (Stage 4/4.5), which is paused. The chain is
+end-to-end runnable today on synthetic-ball data; every ball-derived output is a
+validated scaffold until real ball detection (v4) lands.**
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
 `stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`,
 `stages/segment_rallies`, `stages/classify_tracks`, `stages/compute_metrics`,
-`stages/rate`, `stages/plan_improvement`) — Python modules can't start with a
-digit, so the numbered folders in the pipeline diagram below are illustrative,
-not import paths.
+`stages/rate`, `stages/plan_improvement`, `stages/render`) — Python modules
+can't start with a digit, so the numbered folders in the pipeline diagram below
+are illustrative, not import paths.
 
 ## Pipeline-wide assumptions
 
