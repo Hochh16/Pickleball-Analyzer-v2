@@ -62,14 +62,27 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   null `pending_real_ball` placeholders with descriptions. A `reliability`
   block names which families are synthetic-gated vs real. Same synthetic-ball
   caveat for ball-derived families. See `stages/compute_metrics/contract.md`.
-- **Stages 9–11**: not started.
+- **Stage 9** (rate — USAPA): **implemented + smoke-tested** (2026-05-29).
+  Maps `metrics.json` to a USA Pickleball skill rating for the **user**:
+  continuous `estimate` + nearest half-step `band` + confidence `range`, from
+  six USAPA-anchored dimensions (net_play + movement are REAL, ~0.30 of the
+  weight; error_control/shot_skill/serve/rally_consistency are
+  synthetic-derived, ~0.70). **Full rating, loudly flagged** (operator's
+  choice): the estimate uses all dimensions, while a placeholder warning,
+  lowered `confidence`, and a wide `range` carry the synthetic-ball honesty.
+  Emits a `skill_coverage` map (covered / proxy_or_pending / not_captured_yet /
+  out_of_scope) so the rating doesn't imply full competency coverage.
+  **Thresholds are uncalibrated heuristics** (no rated-footage corpus). Smoke
+  test gates on schema + banding + directional monotonicity, not accuracy. See
+  `stages/rate/contract.md`.
+- **Stages 10–11**: not started.
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
 `stages/detect_shots`, `stages/detect_bounces`, `stages/classify_shots`,
-`stages/segment_rallies`, `stages/classify_tracks`, `stages/compute_metrics`) —
-Python modules can't start with a digit, so the numbered folders in the
-pipeline diagram below are illustrative, not import paths.
+`stages/segment_rallies`, `stages/classify_tracks`, `stages/compute_metrics`,
+`stages/rate`) — Python modules can't start with a digit, so the numbered
+folders in the pipeline diagram below are illustrative, not import paths.
 
 ## Pipeline-wide assumptions
 
@@ -215,6 +228,23 @@ Candidate metrics:
 
 Mostly REAL data (pose), so durable now; deferred only because it's its own
 modeling effort, not because it needs the ball. Would feed the Stage 9 rating.
+
+### Proposed — Presentation / UI (deferred to post-4.5)
+
+The pipeline is headless today: inputs are hand-authored/clicked JSON (court
+calibration UI + `user_clicks.json` + `roster.json`), outputs are sidecar JSON,
+and Stage 11 renders *video overlays* (`annotated.mp4` + `timeline.json`). A
+product UI — the input/setup flow (upload → calibrate → identify players →
+roster) and the **output dashboard** (metrics display, USAPA rating + criteria
+table, heatmap visualization, improvement plan) — is a **separate workstream,
+not one of the 13 stages.**
+
+**DECISION (timing):** defer the output dashboard until the analytical pipeline
+produces trustworthy numbers (post real-ball v4), to avoid building on
+placeholder data. The locked JSON schemas (`metrics.json`, `rating.json`,
+`timeline.json`) ARE the UI's data contract, so careful schema design now is the
+real UI prep. The input/setup UI is data-source-independent and could be built
+earlier if needed.
 
 ### Proposed — Cross-video trend tracking
 
