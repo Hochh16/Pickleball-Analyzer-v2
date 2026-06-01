@@ -272,7 +272,7 @@ Two parallel efforts:
    Step back and reassess inputs before assuming the next algorithm
    will work.
 
-## Synthetic ball — Stages 5–8 consume PLACEHOLDER ball data
+## Synthetic ball — Stages 5–9 consume PLACEHOLDER ball data
 
 **Observed:** May 2026, ongoing. The *cause* is the Stage 4.5 pause above;
 this section documents the *downstream consequence and workaround* that every
@@ -292,6 +292,11 @@ label derived from the ball is therefore **placeholder, not measured**:
 - **Stage 8** (compute metrics) — everything in `reliability.synthetic_gated`:
   `by_end_reason`, serve stats, shot mix, third-shot, bounce in/out, error
   attribution, ball-landing heatmap, and all per-player ball-derived stats.
+- **Stage 9** (rate — USAPA) — the rating point estimate is ~0.70
+  synthetic-weighted (error_control, shot_skill, serve, rally_consistency
+  dimensions). Only net_play + movement (~0.30) are real. The rating is a
+  SCAFFOLD until v4: validated for logical correctness, not accuracy, and on
+  top of that its thresholds are uncalibrated (no rated-footage corpus).
 
 **What is NOT affected (durable real value now):** anything derived from
 `players.parquet` / `poses.parquet` / `track_roles.json` — i.e. Stage 8's
