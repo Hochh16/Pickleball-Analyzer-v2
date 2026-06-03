@@ -17,8 +17,16 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   unusable output. The code is not broken in itself — depending on the
   eventual v4 ball-detection approach it will either be re-pointed at new
   weights (stays as-is) or rewritten (e.g. around classical CV). Undecided.
-- **Stage 4.5** (ball-detection calibration): **PAUSED** after three failed
-  approaches; awaiting better source video. See `KNOWN_ISSUES.md`.
+- **Stage 4.5** (ball-detection calibration): **v4 IN PROGRESS** (2026-06-02).
+  New 4K/60fps outdoor footage solved the SNR wall that doomed v1–v3 (measured:
+  ball ~13px, median intensity 71/255, present 88% of frames). v4 trains a
+  temporal TrackNet detector done right — focal loss (fixes v1 BCE/v2 MSE
+  failures), input resolution raised to 1280×720 (the old 512×288 reshrank the
+  ball to ~2px), diverse multi-clip training + held-out-clip generalization
+  test, and court-agnostic trajectory post-processing. See
+  `stages/finetune_ball_model/contract_v4.md`. When v4 lands, `ball.parquet`
+  becomes real and the synthetic caveat across Stages 5–11 lifts (after
+  re-validation).
 - **Stage 5** (detect shots): **implemented + smoke-tested**. Because real ball
   detection is paused, Stage 5 currently runs against a **synthetic placeholder
   `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real

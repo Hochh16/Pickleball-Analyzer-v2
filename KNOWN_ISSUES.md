@@ -147,6 +147,18 @@ progress. Ball detection will be revisited when (a) better source video
 is available from updated camera setups, and/or (b) algorithmic options
 beyond per-frame detection are explored.
 
+> **UPDATE (2026-06-02): UN-PAUSED → v4 in progress.** Both conditions are now
+> met. New **4K/60fps outdoor** footage arrived, and a measured SNR probe
+> (`tools/diag_ball_snr.py` on `data/pb_2min/`) confirmed the SNR wall is gone:
+> ball median intensity **71/255**, local SNR **61×**, **~13px** blob, present
+> in **88%** of mid-flight frames. The one remaining problem is temporal
+> disambiguation from **~372 per-frame distractors** — exactly the "needs
+> multi-frame trajectory info" conclusion below. v4 (temporal TrackNet + focal
+> loss + **raised input resolution** + trajectory post-processing) is the
+> approved approach: `stages/finetune_ball_model/contract_v4.md`. The
+> resolution point is critical — Stage 4's old inference downscaled to 512×288,
+> reshrinking the 4K ball to ~2px; v4 infers at 1280×720.
+
 ### Attempt 1 (v1, contract v0.1.0): Fine-tune Dettor's PPA TrackNetV2 weights
 
 - Setup: Adam lr=1e-4, weighted BCE pos_weight=100, 10,701 user labels

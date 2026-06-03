@@ -1,6 +1,19 @@
 # Stage 4.5 - Ball-Detection Calibration
 
-## STATUS: PAUSED (May 2026)
+## ACTIVE APPROACH: v4 — see `contract_v4.md` (approved 2026-06-02)
+
+**v4 is the current, approved approach** (temporal TrackNet detector on new
+4K/60fps footage, with focal loss, raised input resolution, diverse multi-clip
+training, and trajectory post-processing). A measured SNR probe on the new
+footage showed the ball is now bright + large (median 71/255 intensity, ~13px,
+88% present) — the SNR wall that doomed v1–v3 is gone; the remaining problem is
+temporal disambiguation from ~372 per-frame distractors. Full spec in
+[`contract_v4.md`](contract_v4.md).
+
+**The sections below document v1/v2/v3 (the failed/paused approaches) for the
+record.** They are no longer the active plan.
+
+## STATUS (historical): PAUSED (May 2026)
 
 This contract describes the v3 (classical CV) approach. v3 was attempted
 end-to-end on test_clip and produced a tune accuracy of ~1% (1/100
