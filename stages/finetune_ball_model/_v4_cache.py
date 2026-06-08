@@ -102,27 +102,38 @@ def evaluate_cache(model, ds: CacheDataset, device, batch_size=8,
             "tp": tp, "fn": fn, "fp": fp, "tn": tn}
 
 
-def train_from_manifests(train_folders: List[Path], holdout_folder: Path,
-                         cfg: TrainConfig, device=None,
-                         log: Optional[logging.Logger] = None,
+def train_from_manifests(train_folders: List[Path], val_folder: Path,
+                         cfg: TrainConfig, test_folder: Optional[Path] = None,
+                         device=None, log: Optional[logging.Logger] = None,
                          num_workers: int = 4) -> dict:
-    """Train on the train clips' caches, validate on the held-out clip cache.
-    Saves best-by-recall weights + a validation_report.json next to them."""
+    """Train on the train clips; EARLY-STOP on the val clip (same court);
+    measure honest generalization on the TEST clip (different court, never used
+    for training or checkpoint selection). Saves best-by-val-recall weights +
+    a validation_report.json with both val and test recall.
+
+    With the current data: train = same-court clips, val = a held-out
+    same-court clip, test = the different-court clip."""
     log = log or logging.getLogger("train_v4_cache")
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     train_mans = [load_manifest(f) for f in train_folders]
-    held_man = load_manifest(holdout_folder)
+    val_man = load_manifest(val_folder)
     train_ds = CacheDataset(train_mans, augment=True)
-    held_ds = CacheDataset([held_man], augment=False)
-    log.info(f"train samples {len(train_ds)} | held-out {len(held_ds)} "
-             f"({held_man[0]['clip']}) | device {device}")
+    val_ds = CacheDataset([val_man], augment=False)
+    test_ds = test_man = None
+    if test_folder is not None:
+        test_man = load_manifest(test_folder)
+        test_ds = CacheDataset([test_man], augment=False)
+    log.info(f"train {len(train_ds)} | val {len(val_ds)} ({val_man[0]['clip']}) "
+             f"| test {len(test_ds) if test_ds else 0} "
+             f"({test_man[0]['clip'] if test_man else 'none'}) | device {device}")
 
     model = build_model(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs)
     dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
                     num_workers=num_workers)
-    best = -1.0
+    best_val = -1.0
+    best_test = None
     history = []
     for epoch in range(cfg.epochs):
         model.train()
@@ -133,23 +144,38 @@ def train_from_manifests(train_folders: List[Path], holdout_folder: Path,
             opt.zero_grad(); loss.backward(); opt.step()
             tot += loss.item()
         sched.step()
-        m = evaluate_cache(model, held_ds, device)
-        history.append({"epoch": epoch, "loss": tot / max(len(dl), 1), **m})
-        log.info(f"epoch {epoch}: loss {tot/max(len(dl),1):.4f} "
-                 f"held_recall {m['recall']:.3f} fp {m['fp_rate']:.3f}")
-        if m["recall"] > best:
-            best = m["recall"]
+        vm = evaluate_cache(model, val_ds, device)
+        row = {"epoch": epoch, "loss": tot / max(len(dl), 1),
+               "val_recall": vm["recall"], "val_fp": vm["fp_rate"]}
+        history.append(row)
+        msg = (f"epoch {epoch}: loss {row['loss']:.4f} "
+               f"val_recall {vm['recall']:.3f} fp {vm['fp_rate']:.3f}")
+        if vm["recall"] > best_val:
+            best_val = vm["recall"]
+            tm = evaluate_cache(model, test_ds, device) if test_ds else None
+            best_test = tm["recall"] if tm else None
+            if tm:
+                row["test_recall"] = tm["recall"]
+                row["test_fp"] = tm["fp_rate"]
+                msg += f" | TEST_recall {tm['recall']:.3f} fp {tm['fp_rate']:.3f}"
             outp = Path(cfg.out_path)
             outp.parent.mkdir(parents=True, exist_ok=True)
             torch.save({"state_dict": model.state_dict(),
                         "input_shape": (PROC_H, PROC_W),
                         "in_channels": 9, "out_channels": 1,
-                        "held_recall": best,
-                        "holdout_clip": held_man[0]["clip"]}, outp)
+                        "val_recall": best_val, "val_clip": val_man[0]["clip"],
+                        "test_recall": best_test,
+                        "test_clip": test_man[0]["clip"] if test_man else None},
+                       outp)
             (outp.parent / "validation_report.json").write_text(
-                json.dumps({"best_held_recall": best,
-                            "holdout_clip": held_man[0]["clip"],
+                json.dumps({"best_val_recall": best_val,
+                            "test_recall_at_best_val": best_test,
+                            "val_clip": val_man[0]["clip"],
+                            "test_clip": test_man[0]["clip"] if test_man else None,
                             "history": history}, indent=2) + "\n",
                 encoding="utf-8")
-    log.info(f"best held-out recall: {best:.3f}")
-    return {"best_held_recall": best, "history": history}
+        log.info(msg)
+    log.info(f"best val recall {best_val:.3f} | test recall (generalization) "
+             f"{best_test if best_test is not None else 'n/a'}")
+    return {"best_val_recall": best_val, "test_recall": best_test,
+            "history": history}
