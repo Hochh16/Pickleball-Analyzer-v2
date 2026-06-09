@@ -83,9 +83,12 @@ def evaluate_cache(model, ds: CacheDataset, device, batch_size=8,
                    tol=TOL_PX_PROC, conf=CONF_THRESH) -> dict:
     model.eval()
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    cuda = str(device).startswith("cuda")
     tp = fn = fp = tn = 0
     for stack, tgt, px, py in dl:
-        pred = model(stack.to(device)).cpu().numpy()
+        with torch.cuda.amp.autocast(enabled=cuda):
+            out = model(stack.to(device))
+        pred = out.float().cpu().numpy()
         for b in range(pred.shape[0]):
             x, y, val = heatmap_peak(pred[b, 0])
             detected = val >= conf
@@ -132,6 +135,11 @@ def train_from_manifests(train_folders: List[Path], val_folder: Path,
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs)
     dl = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
                     num_workers=num_workers)
+    # Mixed precision: ~halves activation memory + ~2x faster on tensor cores.
+    # 720p TrackNet has large full-res activations, so AMP is what makes a
+    # reasonable batch size fit (fp32 OOMs even a 40 GB A100 at batch 8).
+    cuda = str(device).startswith("cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=cuda)
     best_val = -1.0
     best_test = None
     history = []
@@ -139,9 +147,14 @@ def train_from_manifests(train_folders: List[Path], val_folder: Path,
         model.train()
         tot = 0.0
         for stack, tgt, _, _ in dl:
-            pred = model(stack.to(device))
-            loss = focal_loss(pred, tgt.to(device))
-            opt.zero_grad(); loss.backward(); opt.step()
+            opt.zero_grad()
+            with torch.cuda.amp.autocast(enabled=cuda):
+                pred = model(stack.to(device))
+            # loss in fp32 (log/clamp are unstable in fp16)
+            loss = focal_loss(pred.float(), tgt.to(device).float())
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
             tot += loss.item()
         sched.step()
         vm = evaluate_cache(model, val_ds, device)
