@@ -93,7 +93,13 @@ CONF_THRESH      = 0.30      # heatmap peak >= this -> a detection
 MAX_GAP_FRAMES   = 8         # interpolate confirmed-detection gaps up to this
 OUTLIER_MAX_STEP_PX = 250.0  # source px/frame; det this far from BOTH neighbours dropped
 PROC_H, PROC_W   = 720, 1280
-BATCH = 16 if torch.cuda.is_available() else 1   # frames per forward pass
+# frames per forward pass — scale to GPU memory. A 15GB T4 OOMs at 16 @ 720x1280
+# (~0.9GB/sample), so keep it modest; big GPUs (A100) can push higher.
+if torch.cuda.is_available():
+    _gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    BATCH = 16 if _gb > 32 else (8 if _gb > 20 else 4)
+else:
+    BATCH = 1
 SCHEMA_VERSION = 1
 
 CLIP_DIR = DRIVE/'pb_infer'/CLIP
