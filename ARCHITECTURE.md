@@ -1,6 +1,6 @@
 # Architecture
 
-## Implementation status (2026-05-27)
+## Implementation status (2026-06-12)
 
 This is a design doc; per-stage status lives here as a quick pointer (full
 detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
@@ -12,21 +12,25 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   (click-anchored continuity + height + clothing color). Runs on real player
   tracking (no ball dependency). Unlocks complete user labeling, per-player
   stats, and non-user handedness. See `stages/classify_tracks/contract.md`.
-- **Stage 4** (track ball, TrackNetV2): code-complete, but its detector's
-  weights don't generalize to amateur footage, so it currently produces
-  unusable output. The code is not broken in itself — depending on the
-  eventual v4 ball-detection approach it will either be re-pointed at new
-  weights (stays as-is) or rewritten (e.g. around classical CV). Undecided.
-- **Stage 4.5** (ball-detection calibration): **v4 IN PROGRESS** (2026-06-02).
-  New 4K/60fps outdoor footage solved the SNR wall that doomed v1–v3 (measured:
-  ball ~13px, median intensity 71/255, present 88% of frames). v4 trains a
-  temporal TrackNet detector done right — focal loss (fixes v1 BCE/v2 MSE
-  failures), input resolution raised to 1280×720 (the old 512×288 reshrank the
-  ball to ~2px), diverse multi-clip training + held-out-clip generalization
-  test, and court-agnostic trajectory post-processing. See
-  `stages/finetune_ball_model/contract_v4.md`. When v4 lands, `ball.parquet`
-  becomes real and the synthetic caveat across Stages 5–11 lifts (after
-  re-validation).
+- **Stage 4** (track ball, TrackNetV2): **v4 WORKING** (2026-06-11/12). Rewritten
+  as `stages/track_ball/track_ball_v4.py` (720p inference + trajectory
+  post-processing) against the v4-trained `data/models/ball_model_v4.pt`.
+  Validated vs ground truth on pb_2min frames 300–420: 39/40 labeled balls,
+  **median 4.9px error at 4K**, 100% within 25px. The **first real full-clip
+  `ball.parquet`** (`synthetic: false`) was produced for `data/pb_2min/` via the
+  GPU (Colab) path `stages/track_ball/infer_v4.ipynb`: 7164 frames, detect_frac
+  0.676, all coords in-bounds. Production inference is GPU-only (CPU ~11 s/frame).
+- **Stage 4.5** (ball-detection calibration): **v4 LANDED** (2026-06-11). New
+  4K/60fps footage solved the SNR wall that doomed v1–v3 (ball ~13px, median
+  intensity 71/255, present 88% of frames). v4 trained a temporal TrackNet done
+  right — focal loss (fixes v1 BCE/v2 MSE failures), input raised to 1280×720
+  (old 512×288 reshrank the ball to ~2px), diverse multi-clip training, and
+  court-agnostic trajectory post-processing. Trained weights: **val recall 0.90
+  same-court, 0.54 cross-court** — cross-court generalization is the open work
+  (see `KNOWN_ISSUES.md`), required for varied indoor/outdoor venues. See
+  `stages/finetune_ball_model/contract_v4.md`. The synthetic caveat across
+  Stages 5–11 lifts only **after those stages are re-run** on the real ball
+  (pending — pb_2min still needs Stages 1–3 first).
 - **Stage 5** (detect shots): **implemented + smoke-tested**. Because real ball
   detection is paused, Stage 5 currently runs against a **synthetic placeholder
   `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real
@@ -108,9 +112,13 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   See `stages/render/contract.md`.
 
 **Pipeline status: all 11 logical stages (13 numbered) are implemented and
-smoke-tested EXCEPT ball detection (Stage 4/4.5), which is paused. The chain is
-end-to-end runnable today on synthetic-ball data; every ball-derived output is a
-validated scaffold until real ball detection (v4) lands.**
+smoke-tested. Ball detection (Stage 4/4.5) is no longer paused — v4 is working
+and has produced a real, validated full-clip `ball.parquet` for `data/pb_2min/`.
+The chain has run end-to-end on synthetic-ball data; every ball-derived output
+remains a validated scaffold until Stages 5–11 are re-run on the real ball
+(pending: pb_2min needs Stages 1–3 first). Two open items gate broad reliance on
+the detector: cross-court generalization (0.54 cross-court recall) and inference
+throughput (~2.9 fps, CPU-decode-bound) — see `KNOWN_ISSUES.md`.**
 
 Implemented stages live in **importable** folders (`stages/calibrate`,
 `stages/track_players`, `stages/pose`, `stages/track_ball`,
