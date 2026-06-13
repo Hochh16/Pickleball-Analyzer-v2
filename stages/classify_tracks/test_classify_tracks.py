@@ -11,6 +11,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -119,6 +121,51 @@ def cond_coverage(d: dict) -> bool:
     return True
 
 
+def cond_geometric_agreement(d_click: dict, df: pd.DataFrame) -> bool:
+    """No-clicks DEFAULT path must reproduce the click-based user on test_clip:
+    seed the user geometrically from user_starting_corner (is_user zeroed) and
+    confirm the seeded starting track is the same person the clicks identified."""
+    tmp = Path(tempfile.mkdtemp(prefix="s25geom_"))
+    try:
+        shutil.copy(TEST_FOLDER / "court.json", tmp / "court.json")
+        df2 = df.copy()
+        df2["is_user"] = False  # simulate no clicks -> geometric default path
+        df2.to_parquet(tmp / "players.parquet", index=False)
+        rc = classify_main([str(tmp), "--force", "--log-level", "WARNING"])
+        out = tmp / "track_roles.json"
+        if rc != 0 or not out.exists():
+            _fail(f"geometric (no-clicks) run failed (rc={rc})")
+            return False
+        dg = json.load(out.open(encoding="utf-8"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # the geometric seed track (basis 'starting-corner') must be a click 'user' track
+    seed = [int(t) for t, info in dg["track_roles"].items()
+            if info["role"] == "user" and info["basis"] == "starting-corner"]
+    click_users = set(d_click["roles"]["user"]["track_ids"])
+    if not seed:
+        _fail("geometric run produced no 'starting-corner' user seed")
+        return False
+    if not all(t in click_users for t in seed):
+        _fail(f"geometric seed {seed} is NOT a click-identified user track "
+              f"(may have seeded the partner); click users={sorted(click_users)}")
+        return False
+
+    # and the resulting user-frame coverage should heavily overlap the click run
+    fs = {int(t): set(int(f) for f in g["frame"]) for t, g in df.groupby("track_id")}
+    def uframes(doc):
+        s = set()
+        for t in doc["roles"]["user"]["track_ids"]:
+            s |= fs.get(int(t), set())
+        return s
+    uc, ug = uframes(d_click), uframes(dg)
+    iou = len(uc & ug) / max(1, len(uc | ug))
+    _pass(f"geometric (no-clicks) seed agrees with clicks: seed track {seed} is "
+          f"user; user-frame IoU {iou:.2f}")
+    return True
+
+
 def run_smoke_test() -> int:
     print(f"Stage 2.5 smoke test - fixture: {TEST_FOLDER}")
     print()
@@ -145,6 +192,7 @@ def run_smoke_test() -> int:
         cond_roles_and_sides(d, med_y, court["net_y"]),
         cond_noise_rejection(d, med_y),
         cond_coverage(d),
+        cond_geometric_agreement(d, df),
     ]
     print()
     print(f"{sum(results)}/{len(results)} conditions passed")

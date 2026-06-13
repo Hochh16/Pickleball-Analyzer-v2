@@ -41,6 +41,8 @@ SIMULTANEITY_MAX = 0.30     # frame-overlap with the user => can't be the user
 CONTINUITY_MAX_GAP_S = 4.0  # max time to link a gap segment to a user segment
 CONTINUITY_MAX_DIST_FT = 12.0
 USER_ASSIGN_FLOOR = 0.45    # combined score to claim a gap segment as user
+SEED_EARLY_WINDOW_S = 12.0  # opening window to read the user's starting corner
+SEED_CORNER_MIN_SEP_FT = 2.0  # min court_x gap between near players to seed confidently
 ROLES = ("user", "partner", "opp_left", "opp_right", "noise")
 EPS = 1e-9
 
@@ -68,6 +70,7 @@ def load_court(path: Path) -> dict:
     geom = c.get("court_geometry_feet", {}) or {}
     derived = c.get("derived", {}) or {}
     video = c.get("video", {}) or {}
+    user_inputs = c.get("user_inputs", {}) or {}
     width = geom.get("width_ft", 20.0)
     length = geom.get("length_ft", 44.0)
     return {
@@ -76,6 +79,8 @@ def load_court(path: Path) -> dict:
         "ppf_near": derived.get("pixels_per_foot_at_near_baseline"),
         "ppf_far": derived.get("pixels_per_foot_at_far_baseline"),
         "fps": video.get("fps") or 30.0,
+        "user_baseline": user_inputs.get("user_baseline", "near"),
+        "user_starting_corner": user_inputs.get("user_starting_corner"),
     }
 
 
@@ -151,6 +156,62 @@ def continuity_score(cand: dict, user_tracks: List[dict], fps: float) -> float:
     return best
 
 
+def seed_user_by_corner(near: List[dict], df: pd.DataFrame, court: dict,
+                        log: logging.Logger):
+    """Geometric default seed (no clicks): among near-side tracks, the user is
+    the one in `user_starting_corner` during the opening window.
+
+    Court origin (0,0) is the user's near-LEFT corner, so on the near side
+    `starting_corner="left"` => smallest court_x, "right" => largest.
+    Returns (seed_list, confidence, warnings).
+    """
+    warnings: List[str] = []
+    corner = court.get("user_starting_corner")
+    if corner not in ("left", "right"):
+        return [], 0.0, [f"user_starting_corner is {corner!r} (expected "
+                         f"'left'/'right'); cannot seed the user geometrically"]
+    if not near:
+        return [], 0.0, ["no near-side tracks to seed the user from"]
+
+    f_min = int(df["frame"].min())
+    early_cut = f_min + SEED_EARLY_WINDOW_S * court["fps"]
+    early = df[(df["frame"] >= f_min) & (df["frame"] <= early_cut)]
+    cand = []  # (track, early_median_court_x)
+    for tr in near:
+        rows = early[early["track_id"] == tr["track_id"]]
+        if len(rows):
+            ex = float(np.nanmedian(rows["court_x_ft"].to_numpy()))
+            if not np.isnan(ex):
+                cand.append((tr, ex))
+    if not cand:
+        cand = [(tr, tr["med_x"]) for tr in near if not np.isnan(tr["med_x"])]
+        if cand:
+            warnings.append("no near-side track present in the opening "
+                            f"{SEED_EARLY_WINDOW_S:.0f}s window; seeded the user "
+                            "from overall median position (less reliable)")
+    if not cand:
+        return [], 0.0, warnings + ["no near-side track has a usable court_x"]
+
+    # left -> smallest court_x, right -> largest
+    cand.sort(key=lambda c: c[1], reverse=(corner == "right"))
+    user_tr, user_x = cand[0]
+    if len(cand) >= 2:
+        sep = abs(user_x - cand[1][1])
+        conf = float(min(0.9, 0.5 + 0.4 * min(1.0, sep / court["width_ft"])))
+        if sep < SEED_CORNER_MIN_SEP_FT:
+            warnings.append(
+                f"near players are close in the opening window (dx={sep:.1f}ft); "
+                f"user/partner seed by starting corner is ambiguous — add "
+                f"user_clicks.json to override if the user role looks wrong")
+            conf = min(conf, 0.5)
+    else:
+        conf = 0.7  # only one near track early (singles, or partner not yet seen)
+    log.info(f"geometric user seed: track {user_tr['track_id']} "
+             f"(starting_corner={corner}, early court_x={user_x:.1f}ft, "
+             f"conf={conf:.2f})")
+    return [user_tr], conf, warnings
+
+
 def run(folder: Path, args, log: logging.Logger) -> dict:
     if not folder.is_dir():
         fail(f"not a folder: {folder}", FileNotFoundError)
@@ -162,6 +223,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         fail(f"players.parquet not found: {players_path}", FileNotFoundError)
 
     court = load_court(folder / "court.json")
+    if court.get("user_baseline") == "far":
+        fail("court.json user_baseline='far' is not supported by Stage 2.5 v1 "
+             "(near = user/partner pool, far = opponents). Use the near baseline.",
+             ValueError)
     fps = court["fps"]
     df = pd.read_parquet(players_path)
     need = {"frame", "track_id", "is_user", "court_x_ft", "court_y_ft",
@@ -185,13 +250,23 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     near = [tr for tr in live if tr["med_y"] < court["net_y"]]
     far = [tr for tr in live if tr["med_y"] >= court["net_y"]]
 
-    # 2. Seed the user from clicks
+    # 2. Seed the user — clicks override geometry. Default (no clicks) seeds the
+    #    user from court.json's user_starting_corner (the intended Stage-1 design).
+    seed_warnings: List[str] = []
     seed_user = [tr for tr in near if tr["is_user_frac"] > 0.0]
+    if seed_user:
+        seed_basis, seed_conf = "click", 0.95
+    else:
+        seed_user, seed_conf, seed_warnings = seed_user_by_corner(near, df, court, log)
+        seed_basis = "starting-corner"
     if not seed_user:
-        fail("no is_user rows found; Stage 2 must resolve at least one user "
-             "click before track classification can seed the user role", ValueError)
+        fail("could not seed the user: no user_clicks.json and geometric seeding "
+             "from court.json's user_starting_corner found no near-side player in "
+             "the starting corner during the opening window. Provide "
+             "user_clicks.json to override.", ValueError)
     for tr in seed_user:
-        role[tr["track_id"]] = {"role": "user", "confidence": 0.95, "basis": "click"}
+        role[tr["track_id"]] = {"role": "user", "confidence": round(seed_conf, 3),
+                                "basis": seed_basis}
 
     # user identity: frame-weighted mean height, and the set of user-present frames
     hw = [(tr["height_ft"], tr["n"]) for tr in seed_user if not np.isnan(tr["height_ft"])]
@@ -261,7 +336,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"opp_left={len(roles_agg['opp_left']['track_ids'])}, "
              f"opp_right={len(roles_agg['opp_right']['track_ids'])}, "
              f"noise={len(noise_ids)}")
-    log.info(f"user coverage {was_is_user:.1%} (clicks) -> {user_cov:.1%} (roles)")
+    log.info(f"user coverage {was_is_user:.1%} ({seed_basis} seed) -> "
+             f"{user_cov:.1%} (roles)")
 
     out_doc = {
         "schema_version": SCHEMA_VERSION,
@@ -277,7 +353,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "height_tol_ft": HEIGHT_TOL_FT,
             "user_assign_floor": USER_ASSIGN_FLOOR,
         },
-        "warnings": [],
+        "warnings": list(seed_warnings),
         "stage_version": STAGE_VERSION,
         "completed_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
     }

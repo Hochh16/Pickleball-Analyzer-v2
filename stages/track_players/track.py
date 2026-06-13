@@ -109,20 +109,27 @@ def load_court_zones_json(path: Path) -> Dict:
 
 
 def load_user_clicks(path: Path) -> List[Dict]:
+    """User clicks are OPTIONAL. If user_clicks.json is missing or has an empty
+    clicks list, return [] — every detection keeps is_user=False and the user is
+    identified downstream in Stage 2.5 from court.json's user_starting_corner.
+    Clicks, when present, are an override that seeds the user directly."""
     if not path.exists():
-        raise InputError(
-            f"user_clicks.json not found: {path}. "
-            "No user clicks provided. Add at least one click to user_clicks.json."
+        logger.info(
+            f"no user_clicks.json at {path}; proceeding with no clicks "
+            "(user identified in Stage 2.5 from court.json user_starting_corner)"
         )
+        return []
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict) or "clicks" not in data:
         raise InputError('user_clicks.json must be {"clicks": [...]}.')
     clicks = data["clicks"]
-    if not isinstance(clicks, list) or len(clicks) == 0:
-        raise InputError(
-            "No user clicks provided. Add at least one click to user_clicks.json."
-        )
+    if not isinstance(clicks, list):
+        raise InputError('user_clicks.json "clicks" must be a list.')
+    if len(clicks) == 0:
+        logger.info("user_clicks.json has no clicks; proceeding with no clicks "
+                    "(user identified in Stage 2.5 from user_starting_corner)")
+        return []
     out = []
     for i, c in enumerate(clicks):
         try:

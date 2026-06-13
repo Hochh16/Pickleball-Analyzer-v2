@@ -18,7 +18,7 @@ All in the per-video folder:
   - `user_inputs.court_corners_image` — read for diagnostic logging only. Foot-point containment is performed in court-space, not image-space.
 - `court_zones.json` — from Stage 1. Stage 2 reads:
   - `tracking_zone.behind_baseline_ft` and `tracking_zone.beyond_sideline_ft` — scalar buffers (in feet) that extend the court rectangle outward to define the legitimate tracking zone. Stage 2 builds the tracking-zone rectangle as `[-beyond_sideline_ft, width_ft + beyond_sideline_ft] × [-behind_baseline_ft, length_ft + behind_baseline_ft]` in court-space and tests foot points against it.
-- `user_clicks.json` — list of user-identification clicks. Schema:
+- `user_clicks.json` — **OPTIONAL** list of user-identification clicks. Schema:
 ```json
   {
     "clicks": [
@@ -26,7 +26,7 @@ All in the per-video folder:
     ]
   }
 ```
-  Initial run requires at least one click. To resolve gaps reported in `players_pending.json`, append additional clicks and rerun.
+  If the file is **missing or has an empty `clicks` array**, Stage 2 proceeds with **no clicks** — every detection keeps `is_user=False` and the user is identified downstream in Stage 2.5 from `court.json`'s `user_starting_corner` (the default, no-clicking flow). Clicks, when present, are an **override** that seeds the user directly. To resolve gaps reported in `players_pending.json`, append clicks and rerun.
 
 ## Outputs
 
@@ -91,7 +91,7 @@ CLICK_MAX_DISTANCE_PX = 150     # max distance from click to nearest detection
 
 ## Failure modes (loud, never silent)
 
-- `user_clicks.json` missing, malformed, or has empty `clicks` array → fail with: *"No user clicks provided. Add at least one click to user_clicks.json."*
+- `user_clicks.json` missing or empty `clicks` array → NOT a failure: proceed with no clicks (`is_user=False` everywhere; user identified in Stage 2.5 from `user_starting_corner`). Only **malformed** JSON / entries (not a dict with a list `clicks`, or a click missing integer `frame` / numeric `x,y`) → fail loudly.
 - Closest detection to a click is > `CLICK_MAX_DISTANCE_PX` away → fail with: *"Click at frame N (x, y) has no detected person within 150 px. Re-click."*
 - Homography projection produces non-finite values → write NaN for `court_x_ft`/`court_y_ft` and `False` for `in_court`. Do not interpolate.
 - Frame read failure mid-run → fail loudly. No silent truncation.

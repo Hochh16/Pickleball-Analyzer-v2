@@ -60,9 +60,9 @@ players.parquet (S2) + court.json + user_clicks.json + roster.json [+ video.mp4]
 | File | Used for |
 |---|---|
 | `players.parquet` (S2) | per-track court positions, lifetime, `is_user`, `transient`, bbox |
-| `court.json` (S1) | net line (`length_ft`/2), `user_baseline` (near/far), court bounds |
+| `court.json` (S1) | net line (`length_ft`/2), `user_baseline` (near/far), **`user_starting_corner` (left/right)**, court bounds |
 | `court_zones.json` (S1) | tracking-zone buffers (noise bounds) |
-| `user_clicks.json` | the operator's user identifications → seed the `user` role |
+| `user_clicks.json` | **OPTIONAL override.** If present, the operator's user identifications seed/anchor the `user` role (takes precedence). If absent (the default flow), the user is seeded geometrically from `court.json`'s `user_starting_corner` — no clicking required. |
 | `roster.json` | (carried through for downstream; handedness isn't needed to assign roles, but the file's roles define the output vocabulary) |
 | `video.mp4` | OPTIONAL — multi-region clothing-color features. Height + motion-continuity cues are video-free, so the stage still runs (lower confidence) without it. |
 
@@ -118,8 +118,21 @@ stays as the raw click-seed; the authoritative role is here.
 3. **Side split.** Net at `length_ft/2` (= 22). Non-noise tracks with median
    `court_y_ft` < 22 → **near side** (user/partner pool); ≥ 22 → **far side**
    (opponent pool). (`user_baseline` confirms near = user's side.)
-4. **Seed the user.** Tracks with any `is_user=True` rows → `user` (basis
-   "click", high confidence).
+4. **Seed the user.** Two paths, clicks-override-geometry:
+   - **Default (no clicks): geometric seed from `user_starting_corner`.** Among
+     near-side tracks, read each track's median `court_x_ft` over an opening
+     window (first ~12 s). With origin `(0,0)` at the user's near-**left** corner,
+     `starting_corner: "left"` → smallest `court_x`, `"right"` → largest. The
+     near track on the starting-corner side is the `user` (basis
+     "starting-corner"); the other near track is the partner. Confidence scales
+     with the `court_x` separation between the two near players; if they are too
+     close to separate, emit reduced confidence + a warning suggesting a
+     `user_clicks.json` override. This is the intended Stage-1 design
+     (`user_starting_corner` "locks onto the correct player") and needs no
+     per-video clicking.
+   - **Override (clicks present): seed from clicks.** Tracks with any
+     `is_user=True` rows → `user` (basis "click", high confidence). Operator
+     clicks always win over the geometric seed.
 5. **Extend the user + split partner — multi-cue, click-anchored.** The user is
    anchored at the click frames (hard ground truth). The hard part is linking
    the user's other near-side segments and separating them from the partner —
@@ -179,6 +192,10 @@ consistency + the core value metric:
    `user_frame_coverage_was_is_user` (linking extended the ~60% click coverage).
    Bar: a meaningful increase (e.g. ≥ +10 percentage points), proving the
    re-identification actually did something.
+6. **Geometric seed agrees with clicks:** re-run with `is_user` zeroed out (the
+   no-clicks default path) and confirm the geometric `user_starting_corner` seed
+   lands on the **same** starting near-side track the clicks identified — i.e.
+   the corner-based default reproduces the click-based result on `test_clip`.
 
 > Hardcoded track_ids are avoided (they're ByteTrack-run-dependent); checks key
 > off `is_user`, court position, and coverage deltas, which are stable.
@@ -187,8 +204,14 @@ consistency + the core value metric:
 
 - **Required input missing/malformed** → fail loudly. Output exists w/o
   `--force` → `FileExistsError`.
-- **No `is_user` rows at all** (no user seed) → fail with a clear message
-  (Stage 2 must have resolved at least one click first).
+- **No `is_user` rows at all** (no clicks) → NOT a failure: seed the user
+  geometrically from `user_starting_corner` (the default flow). Fail only if
+  BOTH there are no clicks AND geometric seeding finds no near-side player in the
+  starting corner during the opening window → clear message suggesting a
+  `user_clicks.json` override.
+- **`user_baseline: "far"`** → fail loudly: Stage 2.5 v1 assumes the user plays
+  the near baseline (near = user/partner pool, far = opponents). Far-baseline
+  support is out of scope for v1.
 - **Fewer/more than 4 non-noise playing tracks pooled** (e.g. a singles clip, or
   heavy contamination) → still emit best-effort roles + a warning; don't crash.
 - **Appearance matching unavailable** (no video / decode error) → fall back to
