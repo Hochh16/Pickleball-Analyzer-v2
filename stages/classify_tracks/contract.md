@@ -64,7 +64,7 @@ players.parquet (S2) + court.json + user_clicks.json + roster.json [+ video.mp4]
 | `court_zones.json` (S1) | tracking-zone buffers (noise bounds) |
 | `user_clicks.json` | **OPTIONAL override.** If present, the operator's user identifications seed/anchor the `user` role (takes precedence). If absent (the default flow), the user is seeded geometrically from `court.json`'s `user_starting_corner` — no clicking required. |
 | `roster.json` | (carried through for downstream; handedness isn't needed to assign roles, but the file's roles define the output vocabulary) |
-| `video.mp4` | OPTIONAL — multi-region clothing-color features. Height + motion-continuity cues are video-free, so the stage still runs (lower confidence) without it. |
+| `video.mp4` | OPTIONAL but recommended — sampled per-track for **upper/lower-body HSV appearance histograms** (the primary user/partner re-id cue). Height + motion-continuity are video-free, so the stage still runs (lower-confidence fallback) without it. |
 
 CLI: `python -m stages.classify_tracks.classify_tracks <video_folder> [--force]`
 (+ threshold flags; + `--no-appearance` if appearance matching is the default).
@@ -163,6 +163,19 @@ stays as the raw click-seed; the authoritative role is here.
    > + multi-region color — NOT color-only, so matching team kit doesn't break
    > user/partner separation. Color needs the video; continuity + height are
    > video-free, so the stage still runs (lower confidence) without video.
+   > **IMPLEMENTED (2026-06-13): two-anchor appearance re-id.** The previous
+   > version was click-anchored + position-continuity only (no color), and a
+   > single geometric seed (no clicks) under-recovered the user across long
+   > ByteTrack gaps / side-switches (e.g. a 5.8 s gap > the 4 s continuity cap
+   > sent the user's re-appearance to `partner`). Now: anchor the **user** on the
+   > seed (geometric or clicks) and the **partner** on the longest near track
+   > that is simultaneous with the user (so provably a different person). Each
+   > remaining near track is assigned to whichever anchor it is more similar to,
+   > by **appearance (upper+lower HSV histograms, sampled from the video)** as the
+   > primary cue + perspective-normalized **height** + motion **continuity** as
+   > support — a global, position-and-gap-robust assignment, not local 4 s
+   > linking. The hard simultaneity constraint (overlaps the user ⇒ can't be the
+   > user) is kept. Without video, falls back to the height+continuity behavior.
 6. **Opponents L/R.** Far-side tracks split by median `court_x_ft`: lower x →
    `opp_left`, higher → `opp_right`.
    > **DECISION (resolved per review):** provisional `opp_left` / `opp_right` by

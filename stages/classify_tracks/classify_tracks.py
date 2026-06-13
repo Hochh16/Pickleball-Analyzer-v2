@@ -43,6 +43,9 @@ CONTINUITY_MAX_DIST_FT = 12.0
 USER_ASSIGN_FLOOR = 0.45    # combined score to claim a gap segment as user
 SEED_EARLY_WINDOW_S = 12.0  # opening window to read the user's starting corner
 SEED_CORNER_MIN_SEP_FT = 2.0  # min court_x gap between near players to seed confidently
+N_APPEARANCE_SAMPLES = 12   # frames sampled per track for the color signature
+HSV_H_BINS, HSV_S_BINS = 12, 8   # upper/lower-body HSV histogram resolution
+APP_W, HGT_W, CONT_W = 0.60, 0.25, 0.15  # cue weights in user/partner assignment
 ROLES = ("user", "partner", "opp_left", "opp_right", "noise")
 EPS = 1e-9
 
@@ -154,6 +157,95 @@ def continuity_score(cand: dict, user_tracks: List[dict], fps: float) -> float:
                     best = max(best, (1 - dt_s / CONTINUITY_MAX_GAP_S)
                                * (1 - d / CONTINUITY_MAX_DIST_FT))
     return best
+
+
+# --- Appearance (multi-region clothing-color) re-id -------------------------
+
+def _hsv_hist(bgr_crop) -> np.ndarray:
+    import cv2
+    hsv = cv2.cvtColor(bgr_crop, cv2.COLOR_BGR2HSV)
+    # Hue + Saturation only (ignore Value) so lighting changes matter less.
+    hist = cv2.calcHist([hsv], [0, 1], None, [HSV_H_BINS, HSV_S_BINS],
+                        [0, 180, 0, 256])
+    cv2.normalize(hist, hist)
+    return hist.flatten()
+
+
+def extract_track_appearance(df: pd.DataFrame, track_ids, video_path: Path,
+                             log: logging.Logger,
+                             n_samples: int = N_APPEARANCE_SAMPLES) -> Dict[int, dict]:
+    """Sample frames per track, crop the bbox, and build median upper-/lower-body
+    HSV histograms (separate, since teammates often share a top color but differ
+    in bottoms). Returns {tid: {"upper": hist, "lower": hist}}; {} if no usable
+    video, which makes the caller fall back to height + continuity."""
+    try:
+        import cv2
+    except Exception:
+        log.warning("opencv unavailable; appearance re-id disabled")
+        return {}
+    if not Path(video_path).exists():
+        log.warning(f"no {video_path}; appearance re-id disabled "
+                    "(falling back to height + continuity)")
+        return {}
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        log.warning(f"could not open {video_path}; appearance re-id disabled")
+        return {}
+    want = set(int(t) for t in track_ids)
+    cols = ["track_id", "frame", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2"]
+    sub = df[df["track_id"].isin(want)][cols]
+    feats: Dict[int, dict] = {}
+    for tid, t in sub.groupby("track_id"):
+        t = t.sort_values("frame")
+        if len(t) == 0:
+            continue
+        idx = np.unique(np.linspace(0, len(t) - 1,
+                                    min(n_samples, len(t))).astype(int))
+        uh, lh = [], []
+        for r in t.iloc[idx].itertuples(index=False):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(r.frame))
+            ok, fr = cap.read()
+            if not ok:
+                continue
+            H, W = fr.shape[:2]
+            x1 = max(0, min(W - 1, int(r.bbox_x1)))
+            x2 = max(x1 + 1, min(W, int(r.bbox_x2)))
+            y1 = max(0, min(H - 1, int(r.bbox_y1)))
+            y2 = max(y1 + 1, min(H, int(r.bbox_y2)))
+            crop = fr[y1:y2, x1:x2]
+            if crop.size == 0 or crop.shape[0] < 4:
+                continue
+            mid = crop.shape[0] // 2
+            uh.append(_hsv_hist(crop[:mid]))
+            lh.append(_hsv_hist(crop[mid:]))
+        if uh:
+            feats[int(tid)] = {"upper": np.median(np.stack(uh), axis=0),
+                               "lower": np.median(np.stack(lh), axis=0)}
+    cap.release()
+    log.info(f"appearance: built color signatures for {len(feats)}/{len(want)} "
+             "near-side tracks")
+    return feats
+
+
+def combine_feats(feat_list) -> Optional[dict]:
+    """Average several tracks' signatures (e.g. multiple click-seeded user
+    tracks) into one. None if none have features."""
+    fl = [f for f in feat_list if f is not None]
+    if not fl:
+        return None
+    return {"upper": np.mean(np.stack([f["upper"] for f in fl]), axis=0),
+            "lower": np.mean(np.stack([f["lower"] for f in fl]), axis=0)}
+
+
+def appearance_sim(fa: Optional[dict], fb: Optional[dict]) -> Optional[float]:
+    """Cosine similarity in [0,1] of concatenated upper+lower histograms; None if
+    either signature is missing (caller then leans on height + continuity)."""
+    if fa is None or fb is None:
+        return None
+    a = np.concatenate([fa["upper"], fa["lower"]])
+    b = np.concatenate([fb["upper"], fb["lower"]])
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(np.dot(a, b) / denom) if denom > EPS else 0.0
 
 
 def seed_user_by_corner(near: List[dict], df: pd.DataFrame, court: dict,
@@ -276,28 +368,66 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         user_frames |= tr["frame_set"]
     user_tracks = list(seed_user)
 
-    # 3. Near non-seed tracks -> user (gap segments) or partner
-    near_candidates = sorted([tr for tr in near if tr["track_id"] not in role],
-                             key=lambda t: t["f0"])
-    for tr in near_candidates:
-        overlap = len(tr["frame_set"] & user_frames) / max(1, tr["n"])
-        if overlap > SIMULTANEITY_MAX:
-            # present at the same time as the user -> the partner
-            role[tr["track_id"]] = {"role": "partner", "confidence": 0.7,
+    # 3. Near non-seed tracks -> user or partner (two-anchor appearance re-id).
+    #    Anchor the user on the seed and the partner on the longest near track
+    #    simultaneous with the user (provably a different person), then assign
+    #    each remaining near track to whichever anchor it resembles most by
+    #    appearance (primary) + height + continuity. Global and gap/side-switch
+    #    robust, unlike local 4 s continuity linking.
+    near_nonseed = [tr for tr in near if tr["track_id"] not in role]
+    partner_anchor = None
+    for tr in sorted(near_nonseed, key=lambda t: -t["n"]):
+        if len(tr["frame_set"] & user_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX:
+            partner_anchor = tr
+            break
+
+    feat_ids = ({tr["track_id"] for tr in seed_user}
+                | {tr["track_id"] for tr in near_nonseed})
+    if partner_anchor:
+        feat_ids.add(partner_anchor["track_id"])
+    feats = extract_track_appearance(df, feat_ids, folder / "video.mp4", log)
+    user_feat = combine_feats([feats.get(tr["track_id"]) for tr in seed_user])
+    partner_feat = feats.get(partner_anchor["track_id"]) if partner_anchor else None
+    partner_height = partner_anchor["height_ft"] if partner_anchor else np.nan
+    partner_tracks = [partner_anchor] if partner_anchor else []
+
+    def _note_partner(tr, f):
+        nonlocal partner_feat, partner_height
+        partner_tracks.append(tr)
+        if partner_feat is None and f is not None:
+            partner_feat = f
+        if np.isnan(partner_height) and not np.isnan(tr["height_ft"]):
+            partner_height = tr["height_ft"]
+
+    for tr in sorted(near_nonseed, key=lambda t: t["f0"]):
+        f = feats.get(tr["track_id"])
+        if len(tr["frame_set"] & user_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX:
+            # overlaps the user in time -> cannot be the user -> partner
+            role[tr["track_id"]] = {"role": "partner", "confidence": 0.8,
                                     "basis": "simultaneous-with-user"}
+            _note_partner(tr, f)
             continue
-        # gap candidate: could be a user segment during a click gap
-        cont = continuity_score(tr, user_tracks, fps)
-        hsim = height_sim(tr["height_ft"], user_height)
-        score = 0.6 * cont + 0.4 * hsim
-        if score >= USER_ASSIGN_FLOOR:
-            role[tr["track_id"]] = {"role": "user", "confidence": round(score, 3),
-                                    "basis": "continuity+height"}
+        asim_u, asim_p = appearance_sim(f, user_feat), appearance_sim(f, partner_feat)
+        hsim_u = height_sim(tr["height_ft"], user_height)
+        hsim_p = height_sim(tr["height_ft"], partner_height)
+        cont_u = continuity_score(tr, user_tracks, fps)
+        cont_p = continuity_score(tr, partner_tracks, fps)
+        if asim_u is not None and asim_p is not None:
+            u_score = APP_W * asim_u + HGT_W * hsim_u + CONT_W * cont_u
+            p_score = APP_W * asim_p + HGT_W * hsim_p + CONT_W * cont_p
+            basis = "appearance+height"
+        else:
+            u_score = 0.6 * cont_u + 0.4 * hsim_u
+            p_score = 0.6 * cont_p + 0.4 * hsim_p
+            basis = "continuity+height"
+        conf = round(float(min(0.95, 0.5 + abs(u_score - p_score))), 3)
+        if u_score >= p_score:
+            role[tr["track_id"]] = {"role": "user", "confidence": conf, "basis": basis}
             user_frames |= tr["frame_set"]
             user_tracks.append(tr)
         else:
-            role[tr["track_id"]] = {"role": "partner", "confidence": round(1 - score, 3),
-                                    "basis": "near-not-user"}
+            role[tr["track_id"]] = {"role": "partner", "confidence": conf, "basis": basis}
+            _note_partner(tr, f)
 
     # 4. Opponents L/R (provisional by court_x)
     half_x = court["width_ft"] / 2.0
