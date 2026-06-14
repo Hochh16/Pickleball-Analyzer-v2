@@ -33,15 +33,22 @@ the user's court rectangle. Stage 3 applies a strict per-track scope filter
 on top of `transient`:
 
 A track is **in scope** if either:
-- `is_user == True` for any of its rows, OR
-- All of the following are true (a real-player gate):
+- `is_user == True` for any of its rows. **When `track_roles.json` (Stage 2.5)
+  is present, `is_user` is taken from the role `user`** — not the click-only flag
+  in `players.parquet` (which is empty in the no-clicks flow). So every user
+  track, including re-identified / behind-baseline segments the geometric gate
+  would drop, is always posed. (Stage 2.5 is the authority on who the user is;
+  extending the same role-awareness to partner/opponents is a future item — they
+  currently pass the geometric gate below.) OR
+- All of the following are true (the geometric real-player gate, for non-user
+  tracks):
   - `transient == False` (already lifetime ≥ 30 frames and at least one in-zone foot point)
   - `in_court_frac >= 0.50` (at least half the track's foot points project inside the 0×20 ft × 0×44 ft court rectangle)
   - `court_y_ft.max() <= 44.0` (never projects beyond the far baseline — adjacent-court contamination filter)
   - `court_y_ft.min() >= -8.0` (never projects more than 8 ft behind the user's near baseline — bystander/walk-on filter; matches `tracking_zone.behind_baseline_ft`)
   - `lifetime_seconds > 5.0` (track persists longer than 5 seconds)
 
-Tracks failing the gate are not present in `poses.parquet` at all (not
+Tracks failing all clauses are not present in `poses.parquet` at all (not
 emitted as NaN rows). The user is always in scope, even if their other
 metrics would fail the gate (e.g., user serves from far behind the
 baseline).

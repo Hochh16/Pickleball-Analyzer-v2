@@ -183,13 +183,31 @@ def load_players(path: Path) -> pd.DataFrame:
 # -- Scope filter --------------------------------------------------------------
 
 
+def load_track_roles(path: Path) -> Optional[Dict[int, str]]:
+    """Load Stage 2.5 roles as {track_id: role}, or None if absent/unreadable."""
+    if not path.exists():
+        return None
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return {int(t): info["role"] for t, info in d.get("track_roles", {}).items()}
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        logger.warning(f"could not read {path}: {e}; falling back to geometric scope")
+        return None
+
+
 def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
-    """Apply the per-track scope filter described in the contract."""
+    """Apply the per-track scope filter described in the contract.
+
+    `is_user` rows are always in scope (set by the caller from the Stage 2.5
+    role 'user' when track_roles.json is present, so every user track — including
+    re-identified / behind-baseline segments — is posed). Non-user tracks pass
+    the geometric real-player gate."""
     total_player_detections = int(len(df))
     non_transient = df[~df["transient"]]
     non_transient_detections = int(len(non_transient))
 
     user_df = df[df["is_user"]]
+    user_track_ids = set(df.loc[df["is_user"], "track_id"].unique().tolist())
 
     candidates = df[(~df["transient"]) & (~df["is_user"])]
     if len(candidates) == 0:
@@ -223,7 +241,6 @@ def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
     in_scope_df = pd.concat([user_df, in_scope_other], ignore_index=False)
     in_scope_df = in_scope_df.sort_values(["frame", "track_id"]).reset_index(drop=True)
 
-    user_track_ids = set(df.loc[df["is_user"], "track_id"].unique().tolist())
     all_in_scope_tids = sorted(in_scope_track_ids | user_track_ids)
 
     stats = {
@@ -669,6 +686,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     except InputError as e:
         print(f"Input error: {e}", file=sys.stderr)
         return 2
+
+    # Stage 2.5 track_roles.json is the authority on who the user is. When
+    # present, mark is_user from the role 'user' (not the click-only flag in
+    # players.parquet, which is empty in the no-clicks flow) so EVERY user track
+    # — including re-identified / behind-baseline segments the geometric gate
+    # would drop — is always in scope. Partner/opponents still pass the geometric
+    # real-player gate (extending role-awareness to them is a future item).
+    roles = load_track_roles(folder / "track_roles.json")
+    if roles is not None:
+        user_tids = {tid for tid, r in roles.items() if r == "user"}
+        players_df["is_user"] = players_df["track_id"].isin(user_tids)
+        logger.info(f"using track_roles.json: {len(user_tids)} user track(s) "
+                    "drive is_user (always in scope)")
+    else:
+        logger.info("no track_roles.json; using players.parquet is_user + "
+                    "geometric scope filter only")
 
     scope_df, scope_stats = filter_to_scope(players_df, fps)
     n_user = int(scope_df["is_user"].sum())

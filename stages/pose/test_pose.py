@@ -25,7 +25,7 @@ from pandas.api.types import (
 
 from stages.pose.pose import (
     LANDMARK_COLUMNS, PARQUET_COLUMNS,
-    filter_to_scope, load_court_fps, load_players,
+    filter_to_scope, load_court_fps, load_players, load_track_roles,
     main as pose_main,
 )
 
@@ -143,9 +143,20 @@ def condition_1(df: pd.DataFrame) -> bool:
     return True
 
 
+def expected_scope(players_df: pd.DataFrame, fps: float):
+    """Replicate main()'s scope: track_roles drives is_user (role 'user') when
+    present, then the geometric scope filter — so the test matches what was posed."""
+    roles = load_track_roles(TEST_FOLDER / "track_roles.json")
+    pdf = players_df.copy()
+    if roles is not None:
+        user_tids = {t for t, r in roles.items() if r == "user"}
+        pdf["is_user"] = pdf["track_id"].isin(user_tids)
+    return filter_to_scope(pdf, fps)
+
+
 def condition_2(df: pd.DataFrame, players_df: pd.DataFrame, fps: float) -> bool:
-    """Row count in poses.parquet equals in-scope detection count."""
-    scope_df, _ = filter_to_scope(players_df, fps)
+    """Row count in poses.parquet equals in-scope detection count (role-aware)."""
+    scope_df, _ = expected_scope(players_df, fps)
     if len(df) != len(scope_df):
         _fail(
             f"row count mismatch: poses.parquet has {len(df)} rows, "
