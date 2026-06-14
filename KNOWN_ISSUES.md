@@ -58,6 +58,18 @@ consumers, or expanded Stage 2 logic. Options to consider:
 
 This needs design before implementation.
 
+> **UPDATE (2026-06-13): substantially addressed for the USER by Stage 2.5
+> appearance re-id.** Stage 2.5 now follows a person across ByteTrack ID
+> swaps/gaps/side-switches by upper+lower-body clothing-color match + height
+> (anchored on the user seed), not per-frame clicks — so a side-switch or a
+> >4s gap no longer loses the user. Validated on pb_2min: after ByteTrack
+> dropped the user's ID at frame 4868, the re-appearances (tids 1554, 1663,
+> ~5.8s gap) are re-attached to the user, lifting user coverage 68% -> 85.5%
+> (the remainder is genuine off-frame time). Commit `b348d98`. Still open: the
+> same appearance matching is not yet extended to keep the two OPPONENTS
+> continuity-tracked (opp L/R remains provisional), and partner gap-recovery
+> relies on the same cue.
+
 ## Stage 3 - Scope filter is a heuristic, not the right architectural answer
 
 **Observed:** May 2026, while drafting Stage 3 (pose).
@@ -79,6 +91,16 @@ Plus the user is always in scope unconditionally. This brings detections down to
 **The right answer (deferred):** A dedicated stage between Stage 2 and downstream consumers — call it Stage 2.5 or Stage 2b — that classifies each track in players.parquet into one of: `user`, `partner`, `opp_left`, `opp_right`, `noise`. Output is a small JSON file (`track_classification.json`) that downstream stages read instead of re-doing geometric heuristics. This is also where the court-switch ID-swap problem (already in this file) is most naturally addressed: `user` is a logical role across multiple ByteTrack IDs, not a single track ID.
 
 Adding this stage would change ARCHITECTURE.md from 11 stages to 12. Worth doing, but should wait until we have at least one downstream consumer that proves the filter set we settle on. For now, Stage 3's hard-coded filter is the pragmatic option.
+
+> **UPDATE (2026-06-13): Stage 3 now consumes `track_roles.json` for the USER.**
+> The dedicated classification stage (2.5) exists, so the "right answer" is
+> partially realized: when `track_roles.json` is present, Stage 3 takes `is_user`
+> from the role `user` and poses every user-role track regardless of the
+> geometric gate — fixing the case where a real user track was dropped (pb_2min
+> tid 1663, `in_court_frac` 0.40 < 0.50, the user serving/retrieving behind the
+> baseline). Commit `f349141`. Still a heuristic for **partner/opponents**, which
+> remain on the geometric gate; extending role-awareness to them (and having
+> Stages 5+ read roles instead of re-deriving filters) is the remaining work.
 
 ## Stage 3 - Single-person pose model picks wrong person when bboxes overlap
 

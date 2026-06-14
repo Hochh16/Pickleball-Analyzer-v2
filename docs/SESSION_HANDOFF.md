@@ -1,4 +1,4 @@
-# Session Handoff: Stage 4 v4 (real ball detection) — WORKING; first real full-clip `ball.parquet` landed
+# Session Handoff: real ball + real Stages 1–3 done for pb_2min — ready for Stages 5→11
 
 State of Pickleball-Analyzer-v2 at the end of the **June 11–12 2026** session. The
 full 13-stage pipeline was implemented + smoke-tested previously on a **synthetic**
@@ -45,22 +45,39 @@ re-run Stages 5–11 on the real ball.
   longer "paused"), KNOWN_ISSUES.md (v4-landed update, synthetic-caveat-still-applies
   note, two new issues), this handoff.
 
+## DONE 2026-06-13: Stages 1–3 on pb_2min (no clicking) + user-tracking fixes
+
+pb_2min now has the full Stage 1–3 set: `court.json`/`court_zones.json` (operator
+court clicks via `tools/mark_court.py`), `players.parquet`, `track_roles.json`,
+`poses.parquet`. Three improvements landed, driven by "track the user extremely
+well" + "no user-clicking":
+- **No-click user ID** (`4b8e4b8`): operator only sets handedness/baseline/
+  starting-corner; Stage 2.5 seeds the user geometrically from
+  `user_starting_corner`. `user_clicks.json` is now an optional override (Stage 2
+  + 2.5). `tools/mark_user.py` is the override clicker.
+- **Appearance re-id** (`b348d98`): Stage 2.5 follows the user across ByteTrack
+  ID swaps / gaps / side-switches by clothing-color + height. pb_2min user
+  coverage 68% -> **85.5%** (visually verified on a role-overlay clip).
+- **Role-aware pose** (`f349141`): Stage 3 takes `is_user` from the role `user`
+  and poses every user track (incl. behind-baseline 1663). pb_2min: user pose
+  6125 rows @ 99.1% detection, all 3 user tracks `[1, 1554, 1663]`.
+
+**Product note (David):** the final app's input/setup flow must let the user
+select their own handedness; the court/user inputs are product UI, not dev
+fixtures (see memory `project_product_requirements`).
+
 ## NEXT STEPS (me, next session)
 
-The real ball exists for pb_2min but the pipeline hasn't consumed it yet. pb_2min
-has only `video.mp4` + `ball.parquet`; it lacks `court.json`, `players.parquet`,
-`track_roles.json`, `poses.parquet` (only the old `data/test_clip/` has those).
-
-1. **Stages 1–3 on pb_2min** (calibrate → track_players → classify_tracks → pose).
-   - Stage 1 (calibrate) needs **operator court-corner clicks**; Stage 2.5 needs
-     **`user_clicks.json` + `roster.json`** (operator). Flag these inputs before
-     coding (ask, don't guess — see design-review prefs).
-2. **Re-run Stages 5→11 on the real ball + real players**; re-validate each;
-   re-tune Stage 5–10 thresholds for real (noisy, gappy) trajectories vs synthetic.
-   Lift the synthetic caveat **per-stage** as each is re-validated.
-3. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
-4. The Stage 11 synthetic-ball watermark drops automatically once
+pb_2min now has real ball + real players + poses. Push it through the rest:
+1. **Re-run Stages 5→11 on the real ball + real players** (pb_2min); re-validate
+   each; re-tune Stage 5–10 thresholds for real (noisy, gappy) trajectories vs
+   synthetic. Lift the synthetic caveat **per-stage** as each is re-validated.
+2. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
+3. The Stage 11 synthetic-ball watermark drops automatically once
    `ball_source != synthetic`.
+4. Note: Stage 2.5 user coverage is 85.5% (rest is genuine off-frame time);
+   partner/opponent role-awareness + opp L/R continuity are still geometric
+   heuristics (KNOWN_ISSUES) — revisit if downstream opponent stats look off.
 
 Parallel / larger efforts (tracked in KNOWN_ISSUES + a spawned task):
 - **Inference speedup** (GPU decode) — required for the real ≥5-min workload.
@@ -95,12 +112,14 @@ Parallel / larger efforts (tracked in KNOWN_ISSUES + a spawned task):
     ARCHITECTURE.md, KNOWN_ISSUES.md, stages/finetune_ball_model/contract_v4.md
     before proposing anything.
 
-    Stage 4 v4 real ball detection is WORKING — data/pb_2min/ball.parquet is real
-    (synthetic:false) and validated. Next: run Stages 1-3 on pb_2min (needs my
-    court-calibration clicks + user_clicks.json + roster.json), then re-run Stages
-    5-11 on the real ball and lift the synthetic caveat per-stage. Also open:
-    inference throughput (GPU decode) and cross-court generalization.
+    pb_2min now has real ball (synthetic:false) + real Stages 1-3
+    (court.json, players.parquet, track_roles.json, poses.parquet), built with
+    no user-clicking (geometric + appearance re-id; user coverage 85.5%, posed
+    99.1%). Next: re-run Stages 5-11 on pb_2min's real ball + real players,
+    re-validate, lift the synthetic caveat per-stage, calibrate Stages 9/10.
+    Also open: inference throughput (GPU decode), cross-court generalization,
+    and partner/opponent role-awareness.
 
 ---
 
-Generated at session end on June 12, 2026.
+Generated at session end on June 13, 2026.
