@@ -1,6 +1,6 @@
 # Architecture
 
-## Implementation status (2026-06-12)
+## Implementation status (2026-06-14)
 
 This is a design doc; per-stage status lives here as a quick pointer (full
 detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
@@ -29,20 +29,25 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   same-court, 0.54 cross-court** — cross-court generalization is the open work
   (see `KNOWN_ISSUES.md`), required for varied indoor/outdoor venues. See
   `stages/finetune_ball_model/contract_v4.md`. The synthetic caveat across
-  Stages 5–11 lifts only **after those stages are re-run** on the real ball
-  (pending — pb_2min still needs Stages 1–3 first).
-- **Stage 5** (detect shots): **implemented + smoke-tested**. Because real ball
-  detection is paused, Stage 5 currently runs against a **synthetic placeholder
-  `ball.parquet`** produced by `tools/synth_ball.py` (impacts placed at real
-  player positions, flagged `synthetic: true`). Downstream stages must treat
-  ball data as placeholder until a real ball detector (v4) exists.
+  Stages 5–11 lifts **per-stage as each is re-run** on the real ball. **DONE so
+  far: Stages 1–3, 5, 5.5 run on the real ball for pb_2min** (operator-validated);
+  Stages 6–11 pending.
+- **Stage 5** (detect shots): **implemented + smoke-tested; v0.2.0 real-ball
+  adapted** (`8aa9164`). Run on the real v4 ball for pb_2min (304→45 real
+  strikes, operator-validated): 4K resolution + 60fps scaling, teleport-drop,
+  is_user-from-roles, and a net-side ball-handling filter (rejects catch/bounce
+  between points). Still runs on synthetic for the smoke test (real-ball filters
+  gated off). Synthetic caveat lifted for Stage 5 on real clips.
 - **Stage 5.5** (detect bounces): NEW stage (added 2026-05-27; pipeline now 13
-  stages). Reuses Stage 5's impulse signal with the opposite proximity rule to
-  emit every ground bounce, plus a y-velocity-flip tiebreaker that recovers
-  bounces at a player's feet (a common pickleball play). Outputs
-  `bounces.json` with `between_shots`, in/out classification, and `is_at_feet`
-  per bounce. Consumed by Stage 6 (`is_volley`) and downstream by Stage 7
-  (rally-end reasons). Same synthetic-ball caveat. See
+  stages); **v0.2.0 real-ball adapted** (`740fac9`, run on pb_2min, 135→16
+  bounces, operator-validated). Reuses Stage 5's impulse signal with the opposite
+  proximity rule to emit every ground bounce, plus a y-velocity-flip that (on
+  real ball) is required for ALL bounces — a real bounce reverses vertical
+  direction; a mid-air wobble doesn't. Real-ball adds resolution/fps scaling, an
+  apex/off-court filter, and ground-contact refinement (accurate far-court zones).
+  Outputs `bounces.json` with `between_shots`, in/out classification, and
+  `is_at_feet` per bounce. Consumed by Stage 6 (`is_volley`) and downstream by
+  Stage 7 (rally-end reasons). Synthetic caveat lifted for Stage 5.5 on real clips. See
   `stages/detect_bounces/contract.md`.
 - **Stage 6** (classify shots): **implemented + smoke-tested**. Stroke side
   (user only until role classification), shot type, bounce-based volley

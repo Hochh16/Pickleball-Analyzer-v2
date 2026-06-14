@@ -1,12 +1,24 @@
-# Session Handoff: real ball + real Stages 1–3 done for pb_2min — ready for Stages 5→11
+# Session Handoff: real ball through Stages 1–5.5 done for pb_2min — Stage 6 next
 
-State of Pickleball-Analyzer-v2 at the end of the **June 11–12 2026** session. The
+State of Pickleball-Analyzer-v2 at the end of the **June 13–14 2026** session. The
 full 13-stage pipeline was implemented + smoke-tested previously on a **synthetic**
-placeholder ball. Stage 4/4.5 v4 (real ball detection) is now **working**: the
-detector is trained and validated, the inference path is built, and the **first
-real full-clip `ball.parquet` (`synthetic: false`) has been produced for
-`data/pb_2min/`**. The remaining work is to run Stages 1–3 on pb_2min and then
-re-run Stages 5–11 on the real ball.
+placeholder ball. Real ball detection (v4) works, and pb_2min has now been pushed
+through **Stages 1, 2, 2.5, 3, 5, and 5.5 on the REAL ball + real players**, each
+operator-validated and committed. **Next: Stage 6 (classify shots)**, then 7→11.
+
+**Real-vs-synthetic adaptation pattern (applies to every remaining stage 6–11):**
+1. **`is_user` from `track_roles.json`** (role 'user'), NOT players.parquet's
+   click-only flag (empty in the no-clicks flow). Every stage reading is_user.
+2. **Resolution scaling**: px thresholds × `frame_width/1920` (4K = 2×).
+3. **fps scaling**: frame-count windows × `fps/30` (60fps = 2×).
+4. **Real-world-phenomenon filters gated to real ball** (`ball_source=="real"`):
+   the synthetic placeholder lacks the noise/handling, so gating keeps the
+   synthetic smoke bars valid (e.g. Stage 5 net-side ball-handling rejection;
+   Stage 5.5 y-flip-for-all + apex filter).
+5. **Validation = operator spot-check overlays** (render markers on the video,
+   David confirms) — there is no real-data ground truth to auto-grade against.
+6. **Gotcha:** `(x > thresh)` on numpy floats yields a **numpy bool**; `if b is
+   not True` then rejects everything (numpy True ≠ Python True). Wrap in `bool()`.
 
 ## Where the project is
 
@@ -66,18 +78,38 @@ well" + "no user-clicking":
 select their own handedness; the court/user inputs are product UI, not dev
 fixtures (see memory `project_product_requirements`).
 
+## DONE 2026-06-14: Stages 5 + 5.5 on the real ball (pb_2min)
+
+Both operator-validated via spot-check overlays and committed (real-ball
+adaptations per the pattern above):
+- **Stage 5 (detect shots)** `8aa9164`, v0.2.0: 304 → 45 real shots (all real
+  over-net strikes by David's eye). Adaptations: teleport-drop (don't crash on
+  outliers), 4K resolution + 60fps scaling (the fps scaling collapsed 2–3
+  duplicate detections/strike), is_user-from-roles, and a **net-side
+  ball-handling filter** (real players catch/bounce/hold the ball between points
+  = a sharp dir-change at a hand; every rally shot crosses the net, so consecutive
+  same-side impacts = handling — keep the LAST of each run).
+- **Stage 5.5 (detect bounces)** `740fac9`, v0.2.0: 135 → 16 bounces (4/4
+  validated). Adaptations: scaling, **apex/off-court filter** (reject bounces
+  projecting far off-court = ball in the air, not on the ground),
+  **ground-contact refinement** (snap to lowest pixel_y for accurate far-court
+  zones), and **y-flip-for-all on real ball** (a real bounce reverses vertical
+  down→up; impulse-with-no-reversal = mid-air wobble). Deferred: bounce occluded
+  behind the net is missed (ball-quality cap); is_at_feet edge case.
+
 ## NEXT STEPS (me, next session)
 
-pb_2min now has real ball + real players + poses. Push it through the rest:
-1. **Re-run Stages 5→11 on the real ball + real players** (pb_2min); re-validate
-   each; re-tune Stage 5–10 thresholds for real (noisy, gappy) trajectories vs
-   synthetic. Lift the synthetic caveat **per-stage** as each is re-validated.
-2. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
-3. The Stage 11 synthetic-ball watermark drops automatically once
-   `ball_source != synthetic`.
-4. Note: Stage 2.5 user coverage is 85.5% (rest is genuine off-frame time);
-   partner/opponent role-awareness + opp L/R continuity are still geometric
-   heuristics (KNOWN_ISSUES) — revisit if downstream opponent stats look off.
+1. **Stage 6 (classify shots)** — unblocked now (its `bounces.json` exists). Reads
+   shots/players/poses/ball/court/roster + bounces. Apply the adaptation pattern
+   (is_user-from-roles, 4K scaling); validate shot labels (forehand/backhand via
+   handedness, drive/dink/lob, volley) via a spot-check overlay with David.
+2. **Then Stages 7 → 8 → 9 → 10 → 11** on the real ball, same per-stage approach.
+3. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
+4. Stage 11 synthetic-ball watermark drops automatically once `ball_source != synthetic`.
+
+Notes carried forward: Stage 2.5 user coverage 85.5% (rest is genuine off-frame
+time); partner/opponent role-awareness + opp L/R continuity still geometric
+heuristics (KNOWN_ISSUES) — revisit if downstream opponent stats look off.
 
 Parallel / larger efforts (tracked in KNOWN_ISSUES + a spawned task):
 - **Inference speedup** (GPU decode) — required for the real ≥5-min workload.
@@ -112,14 +144,15 @@ Parallel / larger efforts (tracked in KNOWN_ISSUES + a spawned task):
     ARCHITECTURE.md, KNOWN_ISSUES.md, stages/finetune_ball_model/contract_v4.md
     before proposing anything.
 
-    pb_2min now has real ball (synthetic:false) + real Stages 1-3
-    (court.json, players.parquet, track_roles.json, poses.parquet), built with
-    no user-clicking (geometric + appearance re-id; user coverage 85.5%, posed
-    99.1%). Next: re-run Stages 5-11 on pb_2min's real ball + real players,
-    re-validate, lift the synthetic caveat per-stage, calibrate Stages 9/10.
+    pb_2min has real ball (synthetic:false) run through Stages 1,2,2.5,3,5,5.5
+    (court.json, players.parquet, track_roles.json, poses.parquet, shots.json,
+    bounces.json), each operator-validated. Next: Stage 6 (classify shots) on the
+    real ball, then 7-11. Follow the real-vs-synthetic adaptation pattern at the
+    top of this handoff (is_user-from-roles, 4K/fps scaling, real-only filter
+    gating, spot-check validation, numpy-bool gotcha). Then calibrate Stages 9/10.
     Also open: inference throughput (GPU decode), cross-court generalization,
-    and partner/opponent role-awareness.
+    partner/opponent role-awareness.
 
 ---
 
-Generated at session end on June 13, 2026.
+Generated at session end on June 14, 2026.
