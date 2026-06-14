@@ -526,6 +526,39 @@ the rally, not its motion model.
 - **Adjacent-court bounce filtering** — stricter than the v1
   `analyzed_frame_range` window. Follow-up.
 
+## Real-ball adaptations (v0.2.0)
+
+Tuned on the clean 1080p/30fps synthetic ball; v0.2.0 adapts to the real v4 ball
+(4K/60fps, noisy, gappy). Operator-validated on `data/pb_2min` via bounce-overlay
+review (4/4 detected bounces correct). Synthetic smoke bars unchanged — the
+real-ball filters are no-ops or gated off on synthetic data (11/11).
+
+1. **Resolution + fps scaling** (same as Stage 5): px thresholds scale by
+   `frame_width/1920`, frame-count windows by `fps/30`. Collapsed duplicates
+   (135→67 on pb_2min).
+2. **Apex/noise filter** (`BOUNCE_MAX_OUT_OF_COURT_FT=8`): reject candidates whose
+   court projection is far off-court — the ball high in the air (an arc apex,
+   whose y-velocity also flips) or noise, NOT a ground bounce. A real bounce
+   projects accurately (it's on the surface). 67→26.
+3. **Ground-contact refinement**: snap each bounce to the ball's lowest point
+   (max `pixel_y`) for an accurate court position — critical for far-court zone
+   labels (the perspective-compressed far court squeezes kitchen/transition).
+4. **Y-flip required for ALL bounces on real ball** (was at-feet only): a real
+   ground bounce reverses vertical direction (descending→ascending); an impulse
+   with no reversal is the ball wobbling IN THE AIR. **Gated to real ball** — the
+   synthetic placeholder has no mid-air noise and its generator produces some
+   flat non-reversing "bounces", so it keeps impulse-only (preserving the synth
+   recall bar). 26→16, removed the in-air false bounces; "out" 50→5.
+   - *Gotcha:* `descent > floor` etc. yield **numpy** bools; `if flipped is not
+     True` then rejects everything (numpy True is not the Python singleton). Wrap
+     in `bool()`.
+
+Two operator-confirmed residual limitations (deferred, see follow-ups):
+- A bounce **behind the net** can be missed when the ball is occluded there
+  (Stage 4 has no detection → nothing to detect; recall is capped by ball quality).
+- `is_at_feet` can mislabel a bounce that's near a player but headed to their
+  **partner** (proximity heuristic; refine by checking the ball leaves the player).
+
 ## Known follow-ups
 
 - **Very-fast-exchange at-feet bounces.** If a bounce + receive happen

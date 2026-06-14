@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+STAGE_VERSION = "0.2.0"  # 0.2.0: real-ball adaptations (see contract "Real-ball adaptations")
 
 # --- Detection defaults (see contract "Configuration") ----------------------
 # Shared with Stage 5 — same impulse signal, same association radius.
@@ -48,7 +48,12 @@ BALL_COVERAGE_WARN_FRAC = 0.30
 # candidates this close to a shot are treated as duplicates of that shot.
 SHOT_FRAME_EXCLUSION_WINDOW = 3
 
-# Bounce-at-feet tiebreaker.
+# Y-velocity-flip floor. A real ground bounce reverses vertical direction
+# (descending -> ascending); requiring this for every bounce (not just at-feet
+# ones) rejects mid-air noise wobbles. NOTE: the flip currently uses WINDOWED
+# velocity, which smears the sharp 1-frame bounce reversal — the next fix is a
+# displacement-based reversal at the refined ground-contact frame (see contract
+# follow-ups), which should recover synthetic recall without a high floor.
 Y_FLIP_MIN_SPEED_PX_PER_FRAME = 2.0
 AT_FEET_CONFIDENCE_FACTOR = 0.7
 
@@ -58,12 +63,25 @@ COURT_WIDTH_FT = 20.0
 COURT_LENGTH_FT = 44.0
 NET_Y_FT = 22.0
 
+# A real ground bounce projects accurately (the ball is on the surface) — so it
+# lands in-court or, for a ball-out, within a few ft of the lines. A candidate
+# projecting FAR beyond this is the ball high in the air (an arc apex, whose
+# y-velocity also flips) or a noise point, NOT a ground bounce — reject it. Real
+# ball only (the synthetic ball's bounces are all clean/in-court, so it's a no-op
+# there).
+BOUNCE_MAX_OUT_OF_COURT_FT = 8.0
+
 # Court zones — match Stage 6 so cross-stage references stay consistent.
 KITCHEN_MAX_DIST_FT = 9.0
 BASELINE_MIN_DIST_FT = 17.0
 
 FPS_TOLERANCE = 0.5
 EPS = 1e-9
+
+# Real-ball scaling (same as Stage 5): px thresholds tuned at 1080p, frame-count
+# windows tuned at 30fps. Scale by frame_width/1920 and fps/30 for 4K/60fps.
+REFERENCE_WIDTH_PX = 1920.0
+REFERENCE_FPS = 30.0
 
 
 def fail(msg: str, exc=RuntimeError):
@@ -236,7 +254,7 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         return [], {"analyzed_frame_range": [0, 0],
                     "n_candidate_inflections": 0,
                     "n_rejected_at_shot_frame": 0,
-                    "n_rejected_at_player_no_yflip": 0,
+                    "n_rejected_no_yflip": 0,
                     "n_rejected_low_speed": 0,
                     "n_rejected_in_ball_gap": 0,
                     "ball_visible_frac": 0.0}, \
@@ -383,31 +401,39 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         return best[1], best[0][0], best[2]
 
     def y_flipped(i: int) -> Tuple[Optional[bool], Optional[float], Optional[float]]:
+        """A real ground bounce reverses vertical direction: descending (v_y > 0,
+        pixel_y increasing) then ascending (v_y < 0). Required for EVERY bounce —
+        an impulse alone (no reversal) is the ball changing direction in the air.
+        NOTE: uses windowed velocity (bool() guards numpy-bool identity)."""
         v_in, v_out = windowed_velocity(i)
         if v_in is None or v_out is None:
             return None, None, None
         v_y_in = float(v_in[1])
         v_y_out = float(v_out[1])
-        flipped = (v_y_in > +y_flip_floor) and (v_y_out < -y_flip_floor)
+        flipped = bool((v_y_in > +y_flip_floor) and (v_y_out < -y_flip_floor))
         return flipped, v_y_in, v_y_out
 
-    n_rejected_at_player_no_yflip = 0
+    n_rejected_no_yflip = 0
+    require_yflip_away = params["require_yflip_away"]  # real ball only
     surviving: List[Tuple[int, Optional[dict], float, float, bool]] = []
     # tuple = (frame, nearest_player_or_None_if_far, nearest_dist, radius, is_at_feet)
+    # at-feet bounce (near a player): always require the y-flip tiebreaker.
+    # away-from-player bounce: on REAL ball require the y-flip too (an impulse
+    # with NO vertical reversal = the ball changing direction IN THE AIR, a noisy
+    # mid-air wobble, not a ground contact). The synthetic placeholder is clean
+    # (no mid-air noise), so it keeps the impulse-only behavior — that's why this
+    # is gated to real ball. `is_at_feet` is just "at a player's feet" (proximity),
+    # orthogonal to the court zone.
     for f in after_shot_filter:
         bx, by = float(fx[f]), float(fy[f])
         p, dist, radius = nearest_player(f, bx, by)
-        if p is None or dist >= radius:
-            # Standard away-from-players bounce.
-            surviving.append((f, p, dist, radius, False))
-            continue
-        # Candidate is near a player. Apply y-flip tiebreaker.
-        flipped, _, _ = y_flipped(f)
-        if flipped is True:
-            surviving.append((f, p, dist, radius, True))
-        else:
-            # Either explicit no-flip OR indeterminate (insufficient samples).
-            n_rejected_at_player_no_yflip += 1
+        at_player = p is not None and dist < radius
+        if at_player or require_yflip_away:
+            flipped, _, _ = y_flipped(f)
+            if flipped is not True:
+                n_rejected_no_yflip += 1
+                continue
+        surviving.append((f, p, dist, radius, at_player))
 
     # --- Build bounce records.
     def shot_context(f: int) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]:
@@ -439,10 +465,34 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
     n_at_feet = 0
     n_in_court = 0
     n_out = 0
+    n_rejected_far_out = 0
+    m_out = BOUNCE_MAX_OUT_OF_COURT_FT
 
-    for f, p, dist, radius, is_at_feet in surviving:
+    def ground_contact(fd: int) -> int:
+        """Refine a bounce's detection frame to the true ground-contact frame =
+        the ball's lowest point (max pixel_y, since y increases downward) within a
+        small window. The y-flip can fire a few frames before/after contact; at
+        contact the ball is on the surface, so its court projection — and zone —
+        is most accurate (esp. on the perspective-compressed far court)."""
+        w = params["velocity_window_frames"]
+        best_f, best_y = fd, fy[fd]
+        for g in range(max(f_lo, fd - w), min(f_hi, fd + w) + 1):
+            if known[g] and fy[g] > best_y:
+                best_f, best_y = g, fy[g]
+        return best_f
+
+    for fd, p, dist, radius, is_at_feet in surviving:
+        f = ground_contact(fd)  # bounce frame + position refined to ground contact
         bx, by = float(fx[f]), float(fy[f])
         cx, cy = project_to_court(court_M, bx, by)
+        # Reject apex/noise: a real ground bounce projects accurately (in-court or
+        # near the lines for a ball-out); a candidate projecting far out is the
+        # ball high in the air (arc apex) or noise, not a ground bounce.
+        if (not math.isfinite(cx) or not math.isfinite(cy)
+                or cx < -m_out or cx > COURT_WIDTH_FT + m_out
+                or cy < -m_out or cy > COURT_LENGTH_FT + m_out):
+            n_rejected_far_out += 1
+            continue
         in_court, out_side, zone = classify_in_court(cx, cy, tol)
         if not math.isfinite(cx):
             warnings.append(f"bounce at frame {f}: court projection non-finite; "
@@ -467,7 +517,7 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         # and ball-data quality around the bounce. At-feet bounces are
         # downweighted by AT_FEET_CONFIDENCE_FACTOR (they could still be a
         # Stage-5-missed shot that happens to have a y-flip).
-        impulse_term = max(min(1.0, turn[f] / 120.0), min(1.0, sratio[f]))
+        impulse_term = max(min(1.0, turn[fd] / 120.0), min(1.0, sratio[fd]))
         if is_at_feet:
             # Closer to the player ⇒ MORE confident the y-flip means at-feet
             # (rather than coincidence at the edge of the proximity radius).
@@ -533,9 +583,10 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         "n_at_feet": n_at_feet,
         "n_candidate_inflections": n_candidates,
         "n_rejected_at_shot_frame": n_rejected_at_shot_frame,
-        "n_rejected_at_player_no_yflip": n_rejected_at_player_no_yflip,
+        "n_rejected_no_yflip": n_rejected_no_yflip,
         "n_rejected_low_speed": n_low_speed,
         "n_rejected_in_ball_gap": n_gap_rejected,
+        "n_rejected_far_out": n_rejected_far_out,
         "by_zone": {k: v for k, v in by_zone.items() if v > 0},
         "by_out_side": {k: v for k, v in by_out_side.items() if v > 0},
         "ball_visible_frac": round(ball_visible_frac, 4),
@@ -581,21 +632,38 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
 
+    # Resolution + fps scaling (see Stage 5): px thresholds scale by
+    # frame_width/1920, frame-count windows by fps/30. Angle/ratio thresholds are
+    # scale-invariant. Explicit CLI overrides are taken as absolute.
+    res_scale = (float(fw) / REFERENCE_WIDTH_PX) if fw else 1.0
+    fps_scale = float(fps) / REFERENCE_FPS
+    sc_i = lambda base, ov: ov if ov is not None else max(1, int(round(base * fps_scale)))
+    assoc_max_px = (args.assoc_max_px if args.assoc_max_px is not None
+                    else ASSOC_MAX_PX * res_scale)
+    y_flip_min = (args.y_flip_min_speed if args.y_flip_min_speed is not None
+                  else Y_FLIP_MIN_SPEED_PX_PER_FRAME * res_scale)
+    if abs(res_scale - 1.0) > 1e-6 or abs(fps_scale - 1.0) > 1e-6:
+        log.info(f"scaling: res_scale={res_scale:.3f} (fw {fw}), "
+                 f"fps_scale={fps_scale:.3f} (fps {fps})")
+
     params = {
         "fps": float(fps),
         "min_turn_rate_deg": args.min_turn_rate_deg,
         "min_speed_change_ratio": args.min_speed_change_ratio,
-        "impact_window_frames": args.impact_window_frames,
-        "velocity_window_frames": args.velocity_window_frames,
-        "shot_frame_exclusion_window": args.shot_frame_exclusion_window,
+        "impact_window_frames": sc_i(IMPACT_WINDOW_FRAMES, args.impact_window_frames),
+        "velocity_window_frames": sc_i(VELOCITY_WINDOW_FRAMES, args.velocity_window_frames),
+        "shot_frame_exclusion_window": sc_i(SHOT_FRAME_EXCLUSION_WINDOW, args.shot_frame_exclusion_window),
         "assoc_bbox_height_frac": ASSOC_BBOX_HEIGHT_FRAC,
-        "assoc_max_px": args.assoc_max_px,
-        "assoc_max_px_min": ASSOC_MAX_PX_MIN,
-        "min_ball_speed_px_per_frame": MIN_BALL_SPEED_PX_PER_FRAME,
-        "y_flip_min_speed_px_per_frame": args.y_flip_min_speed,
+        "assoc_max_px": assoc_max_px,
+        "assoc_max_px_min": ASSOC_MAX_PX_MIN * res_scale,
+        "min_ball_speed_px_per_frame": MIN_BALL_SPEED_PX_PER_FRAME * res_scale,
+        "y_flip_min_speed_px_per_frame": y_flip_min,
         "at_feet_confidence_factor": AT_FEET_CONFIDENCE_FACTOR,
         "in_court_tolerance_ft": args.in_court_tolerance_ft,
         "ball_coverage_warn_frac": BALL_COVERAGE_WARN_FRAC,
+        "resolution_scale": round(res_scale, 4),
+        "fps_scale": round(fps_scale, 4),
+        "require_yflip_away": ball_source == "real",
     }
 
     log.info(f"ball={len(df_ball)} frames ({ball_source}); "
@@ -614,7 +682,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"{stats['n_in_court']} in / {stats['n_out']} out; "
              f"{stats['n_candidate_inflections']} impulse candidates, "
              f"{stats['n_rejected_at_shot_frame']} at-shot-frame, "
-             f"{stats['n_rejected_at_player_no_yflip']} at-player-no-yflip, "
+             f"{stats['n_rejected_no_yflip']} no-yflip, "
              f"{stats['n_rejected_low_speed']} low-speed)")
 
     out = {
@@ -649,19 +717,21 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
                    dest="min_turn_rate_deg")
     p.add_argument("--min-speed-change-ratio", type=float,
                    default=MIN_SPEED_CHANGE_RATIO, dest="min_speed_change_ratio")
-    p.add_argument("--impact-window-frames", type=int, default=IMPACT_WINDOW_FRAMES,
-                   dest="impact_window_frames")
+    p.add_argument("--impact-window-frames", type=int, default=None,
+                   dest="impact_window_frames", help="default: scaled by fps/30")
     p.add_argument("--velocity-window-frames", type=int,
-                   default=VELOCITY_WINDOW_FRAMES, dest="velocity_window_frames")
-    p.add_argument("--assoc-max-px", type=float, default=ASSOC_MAX_PX,
-                   dest="assoc_max_px")
+                   default=None, dest="velocity_window_frames", help="default: scaled by fps/30")
+    p.add_argument("--assoc-max-px", type=float, default=None,
+                   dest="assoc_max_px", help="default: scaled by frame_width/1920")
     p.add_argument("--y-flip-min-speed", type=float,
-                   default=Y_FLIP_MIN_SPEED_PX_PER_FRAME, dest="y_flip_min_speed",
-                   help="Min |v_y| on each side for the y-velocity-flip tiebreaker")
+                   default=None, dest="y_flip_min_speed",
+                   help="Min |v_y| on each side for the y-velocity-flip tiebreaker "
+                        "(default: scaled by frame_width/1920)")
     p.add_argument("--shot-frame-exclusion-window", type=int,
-                   default=SHOT_FRAME_EXCLUSION_WINDOW,
+                   default=None,
                    dest="shot_frame_exclusion_window",
-                   help="Drop candidates within +/-N frames of any Stage-5 shot")
+                   help="Drop candidates within +/-N frames of any Stage-5 shot "
+                        "(default: scaled by fps/30)")
     p.add_argument("--in-court-tolerance-ft", type=float,
                    default=IN_COURT_TOLERANCE_FT, dest="in_court_tolerance_ft")
     p.add_argument("--log-level", default="INFO",
