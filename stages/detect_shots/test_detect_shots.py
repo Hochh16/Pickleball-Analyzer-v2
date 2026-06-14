@@ -20,7 +20,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from stages.detect_shots.detect_shots import main as detect_main
+import pandas as pd
+
+from stages.detect_shots.detect_shots import main as detect_main, reject_same_side_runs
 
 TEST_FOLDER = Path("data/test_clip")
 SEED = 1234
@@ -212,6 +214,61 @@ def run_smoke_test() -> int:
     (_pass if ok6 else _fail)(f"serve recall {serve_recall:.3f} (bar {SERVE_RECALL_BAR}) "
                               f"- via the separate appearance signal")
     results.append(ok6)
+
+    # --- Phase C: teleport-drop robustness + resolution-scale sanity ---
+    print()
+    print("Phase C: teleport-drop + resolution scaling")
+    bp = TEST_FOLDER / "ball.parquet"
+    bdf = pd.read_parquet(bp)  # clean ball from Phase B
+    vis_idx = bdf.index[bdf["visible"]].tolist()
+    # pick a frame whose immediate neighbors are also visible, so the injected
+    # jump is an unambiguous impossible pair
+    tgt = next((i for i in vis_idx[len(vis_idx) // 4: -1]
+                if (i - 1) in vis_idx and (i + 1) in vis_idx), vis_idx[len(vis_idx) // 2])
+    orig_x = float(bdf.loc[tgt, "pixel_x"])
+    bdf.loc[tgt, "pixel_x"] = orig_x + 5000.0  # physically impossible jump
+    bdf.to_parquet(bp, index=False)
+    rc = run_stage5()
+    if rc != 0:
+        _fail("Stage 5 crashed on injected teleport (should DROP it, not crash)")
+        results.append(False)
+    else:
+        sj = load("shots.json")
+        nd = sj["stats"].get("n_teleport_dropped", 0)
+        rs = sj["params"].get("resolution_scale")
+        amax = sj["params"].get("assoc_max_px")
+        # 1080p test_clip => res_scale 1.0 => px thresholds unchanged (no regression)
+        okC = (nd >= 1 and rs is not None and abs(rs - 1.0) < 1e-6
+               and amax is not None and abs(amax - 120.0) < 1e-6)
+        (_pass if okC else _fail)(
+            f"injected teleport dropped without crashing (n_teleport_dropped={nd}); "
+            f"resolution_scale={rs} at 1080p (=1.0), assoc_max_px={amax} (=120 base)")
+        results.append(okC)
+    # restore the clean value so the fixture isn't left corrupted
+    bdf.loc[tgt, "pixel_x"] = orig_x
+    bdf.to_parquet(bp, index=False)
+
+    # --- Phase D: net-side alternation filter (ball-handling rejection) ---
+    print()
+    print("Phase D: net-side alternation filter")
+    side = {1: "near", 2: "far"}
+    # an alternating rally is fully kept
+    rally = [{"frame": f, "track_id": t} for f, t in [(0, 1), (20, 2), (40, 1), (60, 2)]]
+    k_rally, d_rally = reject_same_side_runs(rally, side, 90)
+    # a same-side run (handling -> shot) collapses to its LAST impact (the shot)
+    run = [{"frame": f, "track_id": 1} for f in (100, 114, 130, 150, 168)]
+    k_run, d_run = reject_same_side_runs(run, side, 90)
+    # same side after a long gap (> reset) is a new rally, kept
+    newrally = [{"frame": 0, "track_id": 1}, {"frame": 200, "track_id": 1}]
+    k_new, d_new = reject_same_side_runs(newrally, side, 90)
+    okD = (len(k_rally) == 4 and d_rally == 0
+           and len(k_run) == 1 and d_run == 4 and k_run[0]["frame"] == 168
+           and len(k_new) == 2 and d_new == 0)
+    (_pass if okD else _fail)(
+        f"alternation filter: rally kept {len(k_rally)}/4 (drop {d_rally}); "
+        f"handling run -> last shot kept {[s['frame'] for s in k_run]} (drop {d_run}); "
+        f"new-rally kept {len(k_new)}/2")
+    results.append(okD)
 
     print()
     print(f"{sum(results)}/{len(results)} checks passed")

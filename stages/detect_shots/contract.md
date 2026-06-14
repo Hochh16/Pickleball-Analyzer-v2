@@ -252,10 +252,18 @@ the placeholder ball produces**. Stage 5 therefore:
    loud `warnings[]` entry and a `WARNING` log line state that all shots are
    placeholder-derived. Downstream stages read `ball_source` and propagate it.
 3. **Validates physical plausibility** before detection:
-   - **Teleport check.** Any consecutive `visible` pair displaced
-     `> max_ball_speed_px_per_frame` is impossible motion → **raise**
-     `ValueError` naming the frames. (A real fast smash is ~tens of px/frame at
-     1080p; the default cap is deliberately generous.)
+   - **Teleport outliers → dropped, not fatal.** Any consecutive known pair
+     displaced `> max_ball_speed_px_per_frame` is impossible motion. Real ball
+     detection (unlike a clean synthetic placeholder) legitimately leaves a few
+     residual outlier frames that survive Stage 4's postprocess; crashing the
+     whole stage on one bad detection is wrong. So Stage 5 **drops** the later
+     frame of each impossible pair (marks it not-visible — a gap), counts it
+     (`n_teleport_dropped`), and warns; it does not raise. Processed
+     left-to-right, this removes isolated spikes (both of a spike's pairs
+     resolve from the one drop). The cap is resolution-scaled (see Configuration)
+     and deliberately generous — a real fast smash is ~tens of px/frame at 1080p,
+     well under it; only physically-impossible jumps are dropped. (Letting them
+     through instead would fabricate shots from the velocity spike.)
    - **Schema invariants.** Re-assert Stage 4's invariants (exactly one of
      `visible`/`interpolated`, NaN rules). Violation → raise.
    - **Coverage warning.** If `ball_visible_frac` over the analyzed range is
@@ -301,7 +309,57 @@ MIN_BALL_SPEED_PX_PER_FRAME = 1.5   # jitter floor
 MAX_BALL_SPEED_PX_PER_FRAME = 400.0 # teleport / corruption cap (~0.2*width)
 BALL_COVERAGE_WARN_FRAC    = 0.30   # warn below this visible+interp fraction
 MIN_SERVE_GAP_S            = 0.7    # not-visible gap before a serve appearance
+REFERENCE_WIDTH_PX         = 1920   # resolution at which the px defaults were tuned
 ```
+
+**Resolution scaling.** The px-space defaults above were tuned on 1080p footage
+(`data/test_clip`). Because the app ingests footage at varied resolutions (e.g.
+pb_2min is 4K/3840-wide), the pixel thresholds — `assoc_max_px`,
+`assoc_max_px_min`, `min_ball_speed_px_per_frame`, `max_ball_speed_px_per_frame`
+— are scaled by `res_scale = frame_width / REFERENCE_WIDTH_PX` (so 2× at 4K). The
+**angle/ratio** triggers (`min_turn_rate_deg`, `min_speed_change_ratio`,
+`min_direction_change_deg`) are scale-invariant and NOT scaled. An explicit CLI
+override (`--assoc-max-px`, `--max-ball-speed-px-per-frame`) is taken as an
+absolute px value (not re-scaled). `res_scale` and `reference_width_px` are
+recorded in `shots.json.params`.
+
+## Real-ball adaptations (v0.2.0)
+
+Stage 5 was developed and tuned on the clean 1080p/30fps synthetic ball. v0.2.0
+adds the adaptations needed for the real v4 ball (4K/60fps, noisy, gappy), all
+validated on `data/pb_2min` (operator-confirmed via shot-overlay review). The
+synthetic smoke bars are unchanged (these adaptations are no-ops or gated off on
+synthetic data, so the logic is still validated there).
+
+1. **Resolution scaling** (above): px thresholds scale by `frame_width/1920`.
+2. **fps scaling**: the frame-count windows (`impact_window_frames`,
+   `velocity_window_frames`) were tuned at 30fps; they scale by `fps/30` (→ 12
+   and 6 at 60fps). At 60fps the unscaled 6-frame merge window was too short and
+   emitted **2–3 duplicate detections per strike**; scaling collapses them.
+   `fps_scale`/`reference_fps` recorded in params.
+3. **Teleport outliers dropped, not fatal** (above): the residual impossible-
+   motion frames real detection leaves are dropped (counted `n_teleport_dropped`).
+4. **`is_user` from roles**: `is_user` is taken from `track_roles.json`'s role
+   `user` (Stage 2.5), not players.parquet's click-only flag (empty in the
+   no-clicks flow). Without it, every shot was mislabeled `is_user=false`.
+5. **Ball-handling rejection (net-side alternation, real ball only).** The real
+   ball includes the **between-points ritual** the synthetic never had — players
+   **catching / holding / bouncing** the ball (each a sharp direction-change at a
+   hand → a false "shot"). Physical rule: every rally shot **crosses the net**, so
+   the striker's net side must alternate; a run of consecutive **same-side**
+   impacts means the ball stayed on one side = handling. The filter keeps the
+   **last** impact of each same-side run (handling precedes the real shot — you
+   catch/bounce, then serve/hit) and drops the rest. Net side comes from each
+   track's **median `court_y_ft`** vs the net (`length_ft/2`) — robust for every
+   track, role-independent. Runs split on a side change or a gap >
+   `handling_reset_frames` (= `HANDLING_RESET_S`·fps; a new rally). **Gated to
+   real ball** (`ball_source=="real"`) because the synthetic generator doesn't
+   model strict net-crossing alternation. Count: `n_rejected_handling`.
+   - *Known limitation:* with very gappy ball, if an opposite-side shot falls
+     entirely in a detection gap, the two real same-side shots around it can look
+     consecutive and one may be dropped — and a player catching the ball *without*
+     then hitting it leaves one residual false positive (kept as the run's last).
+     Rally-context cleanup (Stage 7) is the natural place to refine this.
 
 ## Test fixture: synthetic ball generator (`tools/synth_ball.py`)
 

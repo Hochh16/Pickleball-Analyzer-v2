@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+STAGE_VERSION = "0.2.0"  # 0.2.0: real-ball adaptations (see contract "Real-ball adaptations")
 
 # --- Detection defaults (see contract "Configuration") ----------------------
 MIN_TURN_RATE_DEG = 45.0
@@ -46,6 +46,9 @@ BALL_COVERAGE_WARN_FRAC = 0.30
 FPS_TOLERANCE = 0.5
 WRIST_VISIBILITY_FLOOR = 0.5
 MIN_SERVE_GAP_S = 0.7  # not-visible gap before a serve (dead time vs detection gap)
+HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window = ball-handling
+REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresholds scale by frame_width/this
+REFERENCE_FPS = 30.0  # fps the frame-count windows were tuned at; they scale by fps/this
 
 EPS = 1e-9
 
@@ -79,9 +82,25 @@ def load_court(path: Path) -> dict:
     if M.shape != (3, 3):
         fail(f"image_to_court must be 3x3, got {M.shape}", ValueError)
     video = c.get("video", {}) or {}
+    geom = c.get("court_geometry_feet", {}) or {}
+    length_ft = float(geom.get("length_ft", 44.0))
     return {"image_to_court": M, "fps": video.get("fps"),
             "frame_width": video.get("frame_width"),
-            "frame_height": video.get("frame_height")}
+            "frame_height": video.get("frame_height"),
+            "net_y_ft": length_ft / 2.0}
+
+
+def load_track_roles(path: Path) -> Optional[Dict[int, str]]:
+    """Stage 2.5 roles as {track_id: role}, or None if absent/unreadable. The
+    authority on who the user is — players.parquet's is_user is click-only and
+    empty in the no-clicks flow."""
+    if not path.exists():
+        return None
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return {int(t): info["role"] for t, info in d.get("track_roles", {}).items()}
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+        return None
 
 
 def load_ball_meta(path: Path) -> dict:
@@ -119,25 +138,38 @@ def load_ball(path: Path, log: logging.Logger) -> pd.DataFrame:
     return df
 
 
-def index_players(path: Path) -> Tuple[Dict[int, List[dict]], int]:
+def index_players(path: Path, net_y_ft: float,
+                  user_tids: Optional[set] = None
+                  ) -> Tuple[Dict[int, List[dict]], int, Dict[int, str]]:
+    """Index non-transient players by frame. `is_user` comes from `user_tids`
+    (the Stage 2.5 role 'user') when provided, else from players.parquet's
+    click-only flag (empty in the no-clicks flow). Also returns each track's
+    net side ('near'/'far') from its median court_y — robust for every track
+    (role-independent), used by the ball-handling alternation filter."""
     if not path.exists():
         fail(f"players.parquet not found: {path}", FileNotFoundError)
     df = pd.read_parquet(path)
-    need = {"frame", "track_id", "is_user", "transient",
+    need = {"frame", "track_id", "is_user", "transient", "court_y_ft",
             "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2", "foot_x", "foot_y"}
     missing = need - set(df.columns)
     if missing:
         fail(f"players.parquet missing columns: {sorted(missing)}", ValueError)
     df = df[~df["transient"]]
+    side_by_track: Dict[int, str] = {}
+    for tid, med_y in df.groupby("track_id")["court_y_ft"].median().items():
+        if not np.isnan(med_y):
+            side_by_track[int(tid)] = "near" if med_y < net_y_ft else "far"
     by_frame: Dict[int, List[dict]] = {}
     for r in df.itertuples(index=False):
+        tid = int(r.track_id)
+        is_user = (tid in user_tids) if user_tids is not None else bool(r.is_user)
         by_frame.setdefault(int(r.frame), []).append({
-            "track_id": int(r.track_id), "is_user": bool(r.is_user),
+            "track_id": tid, "is_user": is_user,
             "bbox": (float(r.bbox_x1), float(r.bbox_y1),
                      float(r.bbox_x2), float(r.bbox_y2)),
             "foot": (float(r.foot_x), float(r.foot_y)),
         })
-    return by_frame, len(df)
+    return by_frame, len(df), side_by_track
 
 
 def index_poses(path: Path) -> Dict[Tuple[int, int], List[Tuple[float, float]]]:
@@ -186,13 +218,56 @@ def project_to_court(M: np.ndarray, px: float, py: float) -> Tuple[float, float]
 
 # --- Core detection ----------------------------------------------------------
 
+def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
+                          reset_frames: int) -> Tuple[List[dict], int]:
+    """Net-side alternation / ball-handling rejection. Every rally shot crosses
+    the net, so the striker's net side must alternate; a run of consecutive
+    same-side impacts means the ball stayed on one side — a player catching /
+    holding / bouncing the ball between points, not rally shots (you can't
+    legally hit twice in a row).
+
+    Within each same-side run, keep the LAST impact and drop the earlier ones:
+    handling precedes the real shot (you catch/bounce, THEN serve/hit), so the
+    last same-side impact before the ball finally crosses is the real one. Runs
+    are split by a side change or a gap longer than reset_frames (a new rally).
+    Returns (kept, n_dropped)."""
+    shots_sorted = sorted(shots, key=lambda x: x["frame"])
+    kept: List[dict] = []
+    n_dropped = 0
+    run: List[dict] = []
+    prev_side: Optional[str] = None
+    prev_frame: Optional[int] = None
+
+    def flush():
+        nonlocal n_dropped
+        if run:
+            kept.append(run[-1])        # keep the LAST of the same-side run
+            n_dropped += len(run) - 1
+
+    for s in shots_sorted:
+        side = side_by_track.get(s["track_id"])
+        same_run = (run and side is not None and side == prev_side
+                    and prev_frame is not None
+                    and (s["frame"] - prev_frame) <= reset_frames)
+        if same_run:
+            run.append(s)
+        else:
+            flush()
+            run = [s]
+        prev_side, prev_frame = side, s["frame"]
+    flush()
+    kept.sort(key=lambda x: x["frame"])
+    return kept, n_dropped
+
+
 def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
-           log: logging.Logger, params: dict) -> Tuple[List[dict], dict, List[str]]:
+           log: logging.Logger, params: dict,
+           side_by_track: Optional[Dict[int, str]] = None) -> Tuple[List[dict], dict, List[str]]:
     n = len(df_ball)
-    fx = df_ball["pixel_x"].to_numpy()
-    fy = df_ball["pixel_y"].to_numpy()
-    vis = df_ball["visible"].to_numpy()
-    interp = df_ball["interpolated"].to_numpy()
+    fx = df_ball["pixel_x"].to_numpy(copy=True)
+    fy = df_ball["pixel_y"].to_numpy(copy=True)
+    vis = df_ball["visible"].to_numpy(copy=True)
+    interp = df_ball["interpolated"].to_numpy(copy=True)
     known = vis | interp
     warnings: List[str] = []
 
@@ -201,15 +276,28 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         return [], {"analyzed_frame_range": [0, 0]}, ["ball has no usable positions; zero shots."]
     f_lo, f_hi = int(known_idx[0]), int(known_idx[-1])
 
-    # --- Defense: teleport / impossible-motion check on contiguous known pairs
+    # --- Defense: drop teleport / impossible-motion outliers (don't crash).
+    #     Real ball detection leaves a few residual bad detections that survive
+    #     Stage 4's postprocess; crashing the whole stage on one is wrong. Drop
+    #     the later frame of each impossible pair (-> a gap). Left-to-right, this
+    #     removes isolated spikes (both of a spike's pairs resolve from one drop).
     max_speed = params["max_ball_speed_px_per_frame"]
+    n_teleport_dropped = 0
     for i in range(f_lo + 1, f_hi + 1):
         if known[i] and known[i - 1]:
             d = math.hypot(fx[i] - fx[i - 1], fy[i] - fy[i - 1])
             if d > max_speed:
-                fail(f"ball.parquet has impossible motion: {d:.0f} px between "
-                     f"frames {i-1} and {i} (> {max_speed:.0f} px/frame cap). "
-                     f"Ball data is corrupt.", ValueError)
+                vis[i] = False
+                interp[i] = False
+                known[i] = False
+                fx[i] = np.nan
+                fy[i] = np.nan
+                n_teleport_dropped += 1
+    if n_teleport_dropped:
+        msg = (f"dropped {n_teleport_dropped} ball detection(s) with impossible "
+               f"motion (> {max_speed:.0f} px/frame); treated as gaps.")
+        warnings.append(msg)
+        log.warning(msg)
 
     # --- Per-frame single-frame velocity, turn rate, speed-change ratio
     def vel(i):  # single-frame velocity into frame i (requires i-1, i known & contiguous)
@@ -382,6 +470,16 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             "speed_change_ratio": round(float(sratio[f]), 3),
             "confidence": round(conf, 3),
         })
+
+    # --- Net-side alternation filter (real ball only). Rejects ball-handling
+    #     (catch / hold / bounce between points) that the synthetic placeholder
+    #     never produces. Gated to real ball because the synthetic generator does
+    #     not model strict net-crossing alternation.
+    if params.get("handling_filter"):
+        shots, n_handling = reject_same_side_runs(
+            shots, side_by_track or {}, params["handling_reset_frames"])
+    else:
+        n_handling = 0
     impulse_frames = sorted(s["frame"] for s in shots)
 
     # --- Serves (ball appears near a player after dead time) ----------------
@@ -453,6 +551,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_rejected_ball_gap": n_gap_rejected,
         "n_rejected_low_speed": n_low_speed,
         "n_merged_duplicates": suppressed,
+        "n_teleport_dropped": n_teleport_dropped,
+        "n_rejected_handling": n_handling,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
     }
@@ -475,7 +575,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     court = load_court(court_path)
     ball_meta = load_ball_meta(ball_meta_path)
     df_ball = load_ball(ball_path, log)
-    players_by_frame, n_player_rows = index_players(players_path)
+    roles = load_track_roles(folder / "track_roles.json")
+    user_tids = None
+    if roles is not None:
+        user_tids = {tid for tid, r in roles.items() if r == "user"}
+        log.info(f"using track_roles.json: is_user from {len(user_tids)} user track(s)")
+    players_by_frame, n_player_rows, side_by_track = index_players(
+        players_path, court["net_y_ft"], user_tids)
     poses = index_poses(poses_path)
 
     # fps consistency
@@ -495,20 +601,53 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     fw = court["frame_width"] or ball_meta.get("video_width")
     fh = court["frame_height"] or ball_meta.get("video_height")
 
+    # Resolution scaling: px thresholds were tuned at 1080p; scale them by
+    # frame_width / REFERENCE_WIDTH_PX so they adapt to 4K and other resolutions.
+    # Angle/ratio thresholds are scale-invariant and not scaled. An explicit CLI
+    # px override is taken as absolute (not re-scaled).
+    res_scale = (float(fw) / REFERENCE_WIDTH_PX) if fw else 1.0
+    assoc_max_px = (args.assoc_max_px if args.assoc_max_px is not None
+                    else ASSOC_MAX_PX * res_scale)
+    max_ball_speed = (args.max_ball_speed_px_per_frame
+                      if args.max_ball_speed_px_per_frame is not None
+                      else MAX_BALL_SPEED_PX_PER_FRAME * res_scale)
+    if abs(res_scale - 1.0) > 1e-6:
+        log.info(f"resolution scale {res_scale:.3f} (frame_width {fw} / "
+                 f"{REFERENCE_WIDTH_PX:.0f}); px thresholds scaled accordingly")
+
+    # Frame-rate scaling: the frame-count windows were tuned at 30fps. Scale them
+    # by fps/REFERENCE_FPS so the merge + velocity windows keep the same real-time
+    # duration (e.g. the 0.2s merge window = 12 frames at 60fps, not 6) — this is
+    # what collapses the per-strike duplicate detections on high-fps footage.
+    fps_scale = float(fps) / REFERENCE_FPS
+    impact_window = (args.impact_window_frames if args.impact_window_frames is not None
+                     else max(1, int(round(IMPACT_WINDOW_FRAMES * fps_scale))))
+    velocity_window = (args.velocity_window_frames if args.velocity_window_frames is not None
+                       else max(1, int(round(VELOCITY_WINDOW_FRAMES * fps_scale))))
+    if abs(fps_scale - 1.0) > 1e-6:
+        log.info(f"fps scale {fps_scale:.3f} (fps {fps} / {REFERENCE_FPS:.0f}); "
+                 f"impact_window={impact_window}, velocity_window={velocity_window} frames")
+
     params = {
         "fps": float(fps),
         "min_turn_rate_deg": args.min_turn_rate_deg,
         "min_speed_change_ratio": args.min_speed_change_ratio,
         "min_direction_change_deg": MIN_DIRECTION_CHANGE_DEG,
-        "impact_window_frames": args.impact_window_frames,
-        "velocity_window_frames": args.velocity_window_frames,
+        "impact_window_frames": impact_window,
+        "velocity_window_frames": velocity_window,
         "assoc_bbox_height_frac": ASSOC_BBOX_HEIGHT_FRAC,
-        "assoc_max_px": args.assoc_max_px,
-        "assoc_max_px_min": ASSOC_MAX_PX_MIN,
-        "min_ball_speed_px_per_frame": MIN_BALL_SPEED_PX_PER_FRAME,
-        "max_ball_speed_px_per_frame": args.max_ball_speed_px_per_frame,
+        "assoc_max_px": assoc_max_px,
+        "assoc_max_px_min": ASSOC_MAX_PX_MIN * res_scale,
+        "min_ball_speed_px_per_frame": MIN_BALL_SPEED_PX_PER_FRAME * res_scale,
+        "max_ball_speed_px_per_frame": max_ball_speed,
         "ball_coverage_warn_frac": BALL_COVERAGE_WARN_FRAC,
         "serve_gap_frames": int(round(MIN_SERVE_GAP_S * float(fps))),
+        "handling_reset_frames": int(round(HANDLING_RESET_S * float(fps))),
+        "handling_filter": ball_source == "real",
+        "resolution_scale": round(res_scale, 4),
+        "reference_width_px": REFERENCE_WIDTH_PX,
+        "fps_scale": round(fps_scale, 4),
+        "reference_fps": REFERENCE_FPS,
     }
 
     log.info(f"ball={len(df_ball)} frames ({ball_source}); "
@@ -516,7 +655,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"poses indexed for {len(poses)} (frame,track) pairs")
 
     shots, stats, warnings = detect(df_ball, players_by_frame, poses,
-                                    court["image_to_court"], log, params)
+                                    court["image_to_court"], log, params,
+                                    side_by_track)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': shots are derived from "
@@ -561,15 +701,20 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
                    dest="min_turn_rate_deg")
     p.add_argument("--min-speed-change-ratio", type=float,
                    default=MIN_SPEED_CHANGE_RATIO, dest="min_speed_change_ratio")
-    p.add_argument("--impact-window-frames", type=int, default=IMPACT_WINDOW_FRAMES,
-                   dest="impact_window_frames")
-    p.add_argument("--velocity-window-frames", type=int,
-                   default=VELOCITY_WINDOW_FRAMES, dest="velocity_window_frames")
-    p.add_argument("--assoc-max-px", type=float, default=ASSOC_MAX_PX,
-                   dest="assoc_max_px")
-    p.add_argument("--max-ball-speed-px-per-frame", type=float,
-                   default=MAX_BALL_SPEED_PX_PER_FRAME,
-                   dest="max_ball_speed_px_per_frame")
+    p.add_argument("--impact-window-frames", type=int, default=None,
+                   dest="impact_window_frames",
+                   help="absolute frame override (default: IMPACT_WINDOW_FRAMES scaled by fps/30)")
+    p.add_argument("--velocity-window-frames", type=int, default=None,
+                   dest="velocity_window_frames",
+                   help="absolute frame override (default: VELOCITY_WINDOW_FRAMES scaled by fps/30)")
+    p.add_argument("--assoc-max-px", type=float, default=None,
+                   dest="assoc_max_px",
+                   help="absolute px override (default: ASSOC_MAX_PX scaled by "
+                        "frame_width/1920)")
+    p.add_argument("--max-ball-speed-px-per-frame", type=float, default=None,
+                   dest="max_ball_speed_px_per_frame",
+                   help="absolute px override (default: MAX_BALL_SPEED scaled by "
+                        "frame_width/1920)")
     p.add_argument("--log-level", default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"], dest="log_level")
     return p.parse_args(argv)
