@@ -196,7 +196,9 @@ Features per shot:
 
 Rule order (first match wins; thresholds tunable, tuned on the smoke test):
 1. `is_serve` (from Stage 5) → **serve**.
-2. `arc_height_frac ≥ lob_min_arc_frac` → **lob**.
+2. `arc_height_frac ≥ lob_min_arc_frac` AND `post_speed_ftps < drive_min_speed_ftps`
+   → **lob**. (A lob is lofted **and** slow; the speed gate was added for the real
+   ball, where a fast drive can show a slight measured bow → false lob.)
 3. `contact_height == high` AND `post_speed_ftps ≥ drive_min_speed_ftps` →
    **overhead**.
 4. `post_speed_ftps ≥ drive_min_speed_ftps` (flat, fast) → **drive**.
@@ -208,7 +210,12 @@ Rule order (first match wins; thresholds tunable, tuned on the smoke test):
    **dink**.
 7. `post_speed_ftps ≤ dink_max_speed_ftps` AND `contact_zone in {transition,
    baseline}` → **drop**.
-8. otherwise → **unknown** (recorded honestly, counts toward `n_unknown_type`).
+8. **tweener tiebreak** (`dink_max < post_speed_ftps < drive_min`, the 16–25 ft/s
+   dead-zone) — speed alone is ambiguous here, and on the real ball depth
+   foreshortening corrupts pixel-speed, so resolve by trajectory **shape**:
+   `arc_height_frac ≥ drive_drop_arc_split` → **drop** (lofted), else → **drive**
+   (flat). Added for the real ball (drains the old "unknown" dead-zone).
+9. otherwise → **unknown** (recorded honestly, counts toward `n_unknown_type`).
 
 > **Reset** (per review): a fast ball returned softly, valid only when the
 > players are off the baseline and the reply settles into the kitchen. v1 keys
@@ -239,6 +246,23 @@ means the receiver's return is NOT a volley. The first shot of a rally
 > drift from the canonical bounce signal. Stage 6 now consumes `bounces.json`
 > directly — single source of truth, includes at-feet bounces the old scan
 > missed. Output schema unchanged; `stage_version` bumped 0.1.0 → 0.2.0.
+
+> **DECISION (volley on the REAL ball, v0.2.0 → v0.3.0, 2026-06-15).** On the
+> real (v4) ball the `bounces.json` lookup **under-detects volleys' opposite**:
+> Stage 5.5's bounce LIST is tuned for *precision* (exact zone stats; it filters
+> apex/in-air wobble), so it misses real bounces → those shots wrongly read as
+> volleys. The volley *flag* wants **recall** ("did the ball bounce at all
+> between these two shots?"), a different objective than the bounce *list*. So
+> v0.3.0 **decouples** them: `is_volley`'s primary signal is a recall-focused
+> **local trajectory scan** between the two shots — a ground bounce is an
+> *interior local peak in pixel_y* (ball momentarily lowest on screen) with the
+> ball descending into it and rebounding up out of it. (Crucially NOT the global
+> pixel_y max: the segment starts at a high pixel_y because the previous contact
+> is low on screen, and the outgoing arc's apex is a pixel_y *minimum* — both are
+> ignored.) `bounces.json` is kept only as a **fallback** when the inter-shot ball
+> is too occluded to judge locally. Validated on pb_2min: operator-confirmed
+> volley/bounced on a 7-shot spot-check; pipeline volleys 27 → 9. Output schema
+> unchanged; `stage_version` 0.2.0 → 0.3.0.
 
 ## Defenses against placeholder / bad data
 
@@ -315,7 +339,10 @@ schema/consistency only.
 
 ## Stage version
 
-`0.1.0`.
+`0.3.0`. (0.1.0 → 0.2.0: volley via `bounces.json` lookup. 0.2.0 → 0.3.0,
+real-ball: volley via recall-focused local trajectory scan (bounce list = fallback);
+lob requires below-drive speed; tweener (16–25 ft/s) arc-shape tiebreak drains the
+"unknown" dead-zone; fps + resolution scaling. Output schema unchanged.)
 
 ## Out of scope (deferred)
 
@@ -348,3 +375,21 @@ schema/consistency only.
   measure, or rely on speed + apex-time, when better-framed (higher-mounted)
   footage exists. Until then, lob is best-effort; the smoke test validates the
   lob *rule* by unit check rather than end-to-end accuracy.
+- **Depth/height corrupts pixel-speed → drive-vs-drop confusion (real ball).**
+  Shot type leans on `post_speed_ftps`, derived from pixel-speed × a planar
+  `ppf` scalar at the contact point. A drive hit straight **down-court (in
+  depth)** covers almost no pixels/frame, so it reads as slow and is
+  pixel-for-pixel indistinguishable from a slow drop (observed on pb_2min f3541:
+  a true drive measured 4.2 px/f → labeled "drop"). The tweener arc-tiebreak
+  (rule 8) helps the 16–25 ft/s band, but a depth-drive that reads *below* dink
+  speed still can't be separated in 2D. Proper fix: **homography-projected
+  court-plane ball speed** (project ball pixel → court feet per frame; handles
+  depth, residual height bias) — which also feeds Stage 8 metrics — or full 3D
+  ball tracking. Deferred to when ball speed matters for metrics.
+- **Serve labeling depends on Stage 5 `is_serve`.** If Stage 5 misses a serve
+  (serve-detection gap), Stage 6 classifies it by features (often "drive"/"lob"),
+  never "serve". Fix belongs in Stage 5.
+- **Courtesy/between-point feeds read as volleys.** A pre-serve feed (opponent
+  hands the ball over) has no bounce → `is_volley=true`, which is literally
+  correct but pollutes rally stats. Exclude such non-rally shots in **Stage 7
+  (rally segmentation)**, not here.

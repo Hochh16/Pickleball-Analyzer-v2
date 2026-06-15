@@ -1,10 +1,10 @@
-# Session Handoff: real ball through Stages 1–5.5 done for pb_2min — Stage 6 next
+# Session Handoff: real ball through Stages 1–6 done for pb_2min — Stage 7 next
 
-State of Pickleball-Analyzer-v2 at the end of the **June 13–14 2026** session. The
+State of Pickleball-Analyzer-v2 at the end of the **June 15 2026** session. The
 full 13-stage pipeline was implemented + smoke-tested previously on a **synthetic**
 placeholder ball. Real ball detection (v4) works, and pb_2min has now been pushed
-through **Stages 1, 2, 2.5, 3, 5, and 5.5 on the REAL ball + real players**, each
-operator-validated and committed. **Next: Stage 6 (classify shots)**, then 7→11.
+through **Stages 1, 2, 2.5, 3, 5, 5.5, and 6 on the REAL ball + real players**, each
+operator-validated and committed. **Next: Stage 7 (segment rallies)**, then 8→11.
 
 **Real-vs-synthetic adaptation pattern (applies to every remaining stage 6–11):**
 1. **`is_user` from `track_roles.json`** (role 'user'), NOT players.parquet's
@@ -97,13 +97,47 @@ adaptations per the pattern above):
   down→up; impulse-with-no-reversal = mid-air wobble). Deferred: bounce occluded
   behind the net is missed (ball-quality cap); is_at_feet edge case.
 
+## DONE 2026-06-15: Stage 6 (classify shots) on the real ball (pb_2min)
+
+Operator-validated via spot-check overlay and committed. `classified.json`: 45
+shots, types {drive:14, drop:12, serve:8, dink:6, lob:4, reset:1}, **0 unknown**,
+volleys 9. Real-ball adaptations (v0.2.0 → **v0.3.0**):
+- **Volley decoupled from the bounce LIST → recall-focused local trajectory scan.**
+  The precision-tuned Stage 5.5 bounce list under-detects → false volleys. The
+  volley flag now scans the inter-shot ball directly for a **ground bounce =
+  interior local peak in pixel_y** (ball momentarily lowest on screen, descends
+  in + rebounds out). **Gotcha that cost a retry:** do NOT use the *global*
+  pixel_y max — the segment starts at high pixel_y (previous contact is low on
+  screen) and the arc apex is a pixel_y *minimum*; both must be ignored. Bounce
+  list kept only as an occlusion fallback. Pipeline volleys 27 → 9; operator
+  confirmed volley/bounced on a 7-shot window.
+- **Lob requires below-drive speed** (a lob is lofted AND slow; fixed fast drives
+  reading as lobs on the noisy ball).
+- **Tweener arc-shape tiebreak** (16–25 ft/s dead-zone): flat=drive, lofted=drop;
+  drained all 7 "unknown" types into the right bucket.
+- **fps + resolution scaling** of the px/frame thresholds (4K/60fps).
+
+**Three residuals logged in KNOWN_ISSUES (NOT fixable in Stage 6):**
+1. **Depth/height corrupts pixel-speed** → a drive hit down-court reads as slow
+   and mistypes as a drop (f3541: a real drive measured 4.2 px/f). Proper fix =
+   **homography-projected court-plane ball speed** (also feeds Stage 8 metrics)
+   or 3D. The arc-tiebreak only covers the 16–25 ft/s band.
+2. **Serve labeling** depends on Stage 5 `is_serve` (f3470 missed → "drive"). Fix
+   in **Stage 5**.
+3. **Courtesy/between-point feeds** read as volleys (f3148) — correct but not a
+   rally shot. Exclude in **Stage 7 (rally segmentation)**.
+
 ## NEXT STEPS (me, next session)
 
-1. **Stage 6 (classify shots)** — unblocked now (its `bounces.json` exists). Reads
-   shots/players/poses/ball/court/roster + bounces. Apply the adaptation pattern
-   (is_user-from-roles, 4K scaling); validate shot labels (forehand/backhand via
-   handedness, drive/dink/lob, volley) via a spot-check overlay with David.
-2. **Then Stages 7 → 8 → 9 → 10 → 11** on the real ball, same per-stage approach.
+1. **Stage 7 (segment rallies)** on the real ball. Apply the adaptation pattern
+   (is_user-from-roles, 4K/fps scaling). **Own the courtesy-feed exclusion** here:
+   scope stats to actual rallies (serve → last shot), drop pre-serve feeds so
+   f3148-style feeds don't pollute volley/rally counts. Validate rally boundaries
+   with a spot-check.
+2. **Then Stages 8 → 9 → 10 → 11** on the real ball, same per-stage approach. In
+   **Stage 8**, build **homography-projected court-plane ball speed** (KNOWN_ISSUES
+   Stage 6 depth-speed entry) — the right speed signal for metrics, and it
+   retro-improves Stage 6 drive/drop typing.
 3. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
 4. Stage 11 synthetic-ball watermark drops automatically once `ball_source != synthetic`.
 
@@ -144,14 +178,16 @@ Parallel / larger efforts (tracked in KNOWN_ISSUES + a spawned task):
     ARCHITECTURE.md, KNOWN_ISSUES.md, stages/finetune_ball_model/contract_v4.md
     before proposing anything.
 
-    pb_2min has real ball (synthetic:false) run through Stages 1,2,2.5,3,5,5.5
+    pb_2min has real ball (synthetic:false) run through Stages 1,2,2.5,3,5,5.5,6
     (court.json, players.parquet, track_roles.json, poses.parquet, shots.json,
-    bounces.json), each operator-validated. Next: Stage 6 (classify shots) on the
-    real ball, then 7-11. Follow the real-vs-synthetic adaptation pattern at the
-    top of this handoff (is_user-from-roles, 4K/fps scaling, real-only filter
-    gating, spot-check validation, numpy-bool gotcha). Then calibrate Stages 9/10.
-    Also open: inference throughput (GPU decode), cross-court generalization,
-    partner/opponent role-awareness.
+    bounces.json, classified.json), each operator-validated. Next: Stage 7 (segment
+    rallies) on the real ball, then 8-11. Follow the real-vs-synthetic adaptation
+    pattern at the top of this handoff (is_user-from-roles, 4K/fps scaling,
+    real-only filter gating, spot-check validation, numpy-bool gotcha). In Stage 7
+    own the courtesy-feed exclusion; in Stage 8 build homography-projected
+    court-plane ball speed (see KNOWN_ISSUES Stage 6 depth-speed). Then calibrate
+    Stages 9/10. Also open: inference throughput (GPU decode), cross-court
+    generalization, partner/opponent role-awareness, Stage 5 serve-flagging.
 
 ---
 

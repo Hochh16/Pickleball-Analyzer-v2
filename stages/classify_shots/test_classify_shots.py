@@ -83,7 +83,9 @@ def unit_checks() -> bool:
         ((False, 0.10, "mid", 10.0, 30.0, "transition"), "reset"),
         ((False, 0.10, "mid", 10.0, 10.0, "kitchen"), "dink"),
         ((False, 0.10, "mid", 10.0, 10.0, "baseline"), "drop"),
-        ((False, 0.10, "mid", 20.0, 10.0, "transition"), "unknown"),
+        # tweener zone (16-25 ft/s): arc shape breaks the tie -- flat=>drive, lofted=>drop
+        ((False, 0.10, "mid", 20.0, 10.0, "transition"), "drive"),
+        ((False, 0.25, "mid", 20.0, 10.0, "transition"), "drop"),
     ]
     bad = []
     for args, expected in cases:

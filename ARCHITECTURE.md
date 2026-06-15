@@ -30,8 +30,8 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   (see `KNOWN_ISSUES.md`), required for varied indoor/outdoor venues. See
   `stages/finetune_ball_model/contract_v4.md`. The synthetic caveat across
   Stages 5–11 lifts **per-stage as each is re-run** on the real ball. **DONE so
-  far: Stages 1–3, 5, 5.5 run on the real ball for pb_2min** (operator-validated);
-  Stages 6–11 pending.
+  far: Stages 1–3, 5, 5.5, 6 run on the real ball for pb_2min** (operator-validated);
+  Stages 7–11 pending.
 - **Stage 5** (detect shots): **implemented + smoke-tested; v0.2.0 real-ball
   adapted** (`8aa9164`). Run on the real v4 ball for pb_2min (304→45 real
   strikes, operator-validated): 4K resolution + 60fps scaling, teleport-drop,
@@ -49,12 +49,19 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   `is_at_feet` per bounce. Consumed by Stage 6 (`is_volley`) and downstream by
   Stage 7 (rally-end reasons). Synthetic caveat lifted for Stage 5.5 on real clips. See
   `stages/detect_bounces/contract.md`.
-- **Stage 6** (classify shots): **implemented + smoke-tested**. Stroke side
-  (user only until role classification), shot type, bounce-based volley
-  (rewired 2026-05-27 to consume `bounces.json` from Stage 5.5 — same volley
-  semantics, single source of truth for the bounce signal). Same
-  synthetic-ball caveat. Lob-by-arc is weak in low-headroom footage (see
-  `KNOWN_ISSUES.md` / handoff).
+- **Stage 6** (classify shots): **implemented + smoke-tested; v0.3.0 real-ball
+  adapted** (run on pb_2min, 45 shots, 0 unknown, operator-validated). Stroke side
+  (user only until role classification), shot type, volley. On the real ball the
+  **volley flag is decoupled from Stage 5.5's precision bounce list** (which
+  under-detects → false volleys) and uses a recall-focused **local trajectory
+  scan** (ground bounce = interior pixel_y local peak with descent-in + rebound-out;
+  the bounce list is an occlusion fallback). Plus lob-requires-slow, a tweener
+  arc-shape drive/drop tiebreak, and fps/resolution scaling. **Known real-ball
+  limits** (KNOWN_ISSUES): pixel-speed underestimates depth/height → some
+  down-court drives mistype as drops (needs court-plane/3D speed); serve labeling
+  depends on Stage 5 `is_serve`; courtesy feeds read as volleys (Stage 7 to
+  exclude). Synthetic caveat lifted for Stage 6 on real clips. See
+  `stages/classify_shots/contract.md`.
 - **Stage 7** (segment rallies): **implemented + smoke-tested** (2026-05-29).
   Groups shots into rallies by `is_serve` and tags each with an
   `end_reason` from a 7-category set (`serve-fault`, `double-bounce`,

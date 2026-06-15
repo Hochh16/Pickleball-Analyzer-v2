@@ -466,3 +466,44 @@ fine-tune per new venue, NOT a from-scratch retrain). Re-measure with a
 whole-clip cross-court holdout each time. Track recall per venue type. Until the
 gap closes, treat real-ball results on any not-yet-trained court as provisional.
 See `stages/finetune_ball_model/contract_v4.md`.
+
+## Stage 6 — shot type confused by depth/height (pixel-speed limitation)
+
+**Observed:** 2026-06-15, real-ball validation of Stage 6 on pb_2min (operator
+spot-check).
+
+**Problem:** Shot **type** leans on `post_speed_ftps`, computed from the ball's
+*pixel*-speed × a planar pixels-per-foot scalar at the contact point. A ball
+moving in **depth** (a drive hit straight down-court) or at **height** covers few
+pixels per frame, so its real speed is badly underestimated. On pb_2min f3541, a
+true **drive** measured **4.2 px/f** and was indistinguishable from a slow
+**drop** — the drop one shot later (f3740) actually measured *faster* (19 px/f)
+because it moved laterally. Speed thresholds can't separate readings that are
+backwards. (Volley, type-by-arc, and fast lateral shots all validated correctly;
+this affects slow/depth groundstrokes only.)
+
+**Mitigation in place (v0.3.0):** a **tweener arc-shape tiebreak** (16–25 ft/s →
+flat=drive, lofted=drop) drains the old "unknown" dead-zone and fixes the cases
+where speed lands in that band. A depth-drive reading *below* dink speed still
+mistypes as a drop.
+
+**Where to fix:** **homography-projected court-plane ball speed** — project the
+ball pixel → court feet per frame (via `court.json` `image_to_court`) and measure
+displacement in feet, which handles depth (residual bias = ball height above the
+plane). This is also the right speed signal for **Stage 8 metrics**, so do it
+once, there or as a shared helper, rather than patching Stage 6. Full fix = ball
+height / 3D tracking. Deferred until ball speed materially drives a metric.
+
+## Stage 6 — serve labeling & courtesy feeds are upstream/downstream concerns
+
+**Observed:** 2026-06-15, same validation.
+
+**Problem (serve):** if Stage 5 misses a serve (`is_serve` not set), Stage 6
+classifies it by features (e.g. "drive"/"lob") and can never say "serve" — seen
+on pb_2min f3470. **Fix belongs in Stage 5** (serve detection), not Stage 6.
+
+**Problem (courtesy feed):** a between-points feed (opponent hands the ball over
+before a serve) has no bounce, so `is_volley=true` — literally correct but it's
+not a rally shot and would skew rally/volley stats (f3148). **Fix belongs in
+Stage 7** (rally segmentation), which should scope stats to actual rallies and
+exclude pre-serve feeds. Flagged here so the downstream stages own it.

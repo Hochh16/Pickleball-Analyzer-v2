@@ -26,17 +26,26 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.2.0"  # 0.1.0 -> 0.2.0: is_volley now consumes bounces.json
-                         # from Stage 5.5 instead of scanning the ball
-                         # trajectory internally. Output schema unchanged.
+STAGE_VERSION = "0.3.0"  # 0.1.0 -> 0.2.0: is_volley consumed bounces.json.
+                         # 0.2.0 -> 0.3.0 (real-ball): is_volley primary signal is
+                         # a recall-focused LOCAL ball-trajectory scan between
+                         # shots (the precision bounce list under-detects on the
+                         # real ball -> false volleys); bounce list is now a
+                         # fallback for occluded gaps. + lob requires below-drive
+                         # speed; + fps/resolution scaling. Output schema unchanged.
 
 # --- Config (see contract) --------------------------------------------------
 LOB_MIN_ARC_FRAC = 0.35
+DRIVE_DROP_ARC_SPLIT = 0.15  # tweener (16-25 ft/s) tiebreak: flatter=drive, loftier=drop
 DRIVE_MIN_SPEED_FTPS = 25.0
 DINK_MAX_SPEED_FTPS = 16.0
 RESET_MIN_INCOMING_FTPS = 25.0
 POST_TRAJ_FRAMES = 15
 MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
+REFERENCE_FPS = 30.0         # frame-count windows tuned at 30fps; scale by fps/this for 60fps real footage
+REFERENCE_WIDTH_PX = 1920.0  # px thresholds tuned at 1920-wide; scale by frame_width/this (4K = 2x)
+VOLLEY_REBOUND_MIN_PX = 20.0  # min upward rebound after the low point to call a ground bounce (volley test)
+VOLLEY_DESCENT_MIN_PX = 14.0  # min descent into the low point (ball clearly came down)
 SIDE_CONF_FLOOR = 0.5
 KITCHEN_MAX_DIST_FT = 9.0   # effective kitchen depth from net (court_zones)
 BASELINE_MIN_DIST_FT = 17.0  # within ~5ft of the 22ft baseline
@@ -265,12 +274,55 @@ def build_bounces_between_index(bounces_doc: dict) -> Dict[Tuple[int, int], int]
     return idx
 
 
+def bounced_between(by, bknown, f0: int, f1: int,
+                    rebound_min_px: float, descent_min_px: float):
+    """Recall-focused local test for the VOLLEY flag: did the ball bounce off the
+    ground in the open interval (f0, f1) between two consecutive shots?
+
+    This is deliberately decoupled from the precision-tuned Stage 5.5 bounce LIST
+    (which exists for exact zone stats and filters out apex/in-air wobble). For
+    is_volley we only need recall: a ground bounce shows up in screen space as a
+    descending->ascending reversal of the ball -- pixel_y climbs to a clear low
+    point (peak pixel_y) and then rebounds upward. The outgoing arc's apex is the
+    opposite (a pixel_y minimum) and is correctly ignored.
+
+    Returns True  (a down->up rebound occurred -> NOT a volley),
+            False (continuous descent/flat into contact, no rebound -> volley),
+            None  (inconclusive: too little visible trajectory to judge -- the
+                   caller falls back to the bounce list).
+    """
+    n = len(bknown)
+    fr = [k for k in range(f0 + 1, f1) if 0 <= k < n and bool(bknown[k])]
+    if len(fr) < 5:
+        return None  # occluded / too sparse -> let the caller fall back
+    ys = np.array([by[k] for k in fr], dtype=float)
+    # A ground bounce is an INTERIOR local peak in pixel_y (ball at a momentary
+    # lowest-on-screen point) with the ball descending INTO it and rebounding UP
+    # out of it. NOT the global pixel_y max: the trajectory usually starts at a
+    # high pixel_y (the previous contact is low on screen) and the outgoing arc's
+    # apex is a pixel_y MINIMUM -- both must be ignored. Scan for a peak that
+    # dominates a small neighbourhood, with descent-in and rebound-out both real.
+    for j in range(2, len(ys) - 2):
+        lo, hi = max(0, j - 4), min(len(ys), j + 5)
+        if ys[j] < ys[lo:hi].max():
+            continue  # not the local peak in its window -> not the bounce point
+        descent_in = ys[j] - ys[:j].min()      # fell from the arc apex down to here
+        rebound = ys[j] - ys[j + 1:].min()     # rose back up afterwards
+        if descent_in >= descent_min_px and rebound >= rebound_min_px:
+            return True
+    return False
+
+
 # --- Classification ----------------------------------------------------------
 
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone):
     if is_serve:
         return "serve", 0.95
-    if arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC:
+    # A lob is lofted AND slow. On the noisy real ball a fast drive can show a
+    # slight measured bow; require below-drive speed so a fast arced shot isn't
+    # called a lob (it falls through to drive/overhead below).
+    if (arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC
+            and (post_ftps is None or post_ftps < DRIVE_MIN_SPEED_FTPS)):
         return "lob", min(1.0, arc_frac)
     if contact_h == "high" and post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
         return "overhead", 0.7
@@ -284,6 +336,16 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone):
         return "dink", 0.65
     if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("transition", "baseline"):
         return "drop", 0.6
+    # Tweener zone (between dink and drive speed): the speed alone is ambiguous,
+    # and on the real ball depth-foreshortening corrupts pixel-speed (a drive hit
+    # down-court reads slow). Fall back to trajectory SHAPE -- flat => drive,
+    # lofted => drop -- which survives the depth problem. Drains the old "unknown"
+    # dead-zone into the right bucket. (A genuine depth-drive that reads BELOW
+    # dink speed is still indistinguishable from a drop in 2D -- a known limit.)
+    if post_ftps is not None and DINK_MAX_SPEED_FTPS < post_ftps < DRIVE_MIN_SPEED_FTPS:
+        if arc_frac is not None and arc_frac >= DRIVE_DROP_ARC_SPLIT:
+            return "drop", 0.5
+        return "drive", 0.5
     return "unknown", 0.3
 
 
@@ -306,12 +368,25 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     fps = shots_doc.get("fps") or court["fps"]
     if not fps or fps <= 0:
         fail("could not determine fps", ValueError)
+    # fps scaling: the arc/trajectory frame windows were tuned at 30fps; scale
+    # them so they keep the same real-time duration on 60fps footage (speeds are
+    # already in ft/s, so they need no scaling).
+    fps_scale = float(fps) / REFERENCE_FPS
+    max_arc_frames = max(1, int(round(MAX_ARC_FRAMES * fps_scale)))
+    post_traj_frames = max(1, int(round(POST_TRAJ_FRAMES * fps_scale)))
+    # resolution scaling: px thresholds were tuned at 1920-wide footage.
+    frame_width = float(shots_doc.get("frame_width") or REFERENCE_WIDTH_PX)
+    res_scale = frame_width / REFERENCE_WIDTH_PX
+    volley_rebound_px = VOLLEY_REBOUND_MIN_PX * res_scale
+    volley_descent_px = VOLLEY_DESCENT_MIN_PX * res_scale
     user_hand = roster.get("user")
     ball_source = shots_doc.get("ball_source", "real")
 
-    # is_volley is derived from bounces.json: a shot is a volley iff no bounce
-    # sits between it and the previous shot. At-feet bounces count as bounces
-    # (the ball still bounced before the shot, just at the player's feet).
+    # is_volley primary signal: a recall-focused LOCAL trajectory scan of the ball
+    # between consecutive shots (did it bounce off the ground?). This is decoupled
+    # from the precision-tuned Stage 5.5 bounce LIST, which under-detects bounces
+    # on the noisy real ball (missed bounce -> false volley). The bounce list is
+    # kept only as a fallback when the local trajectory is too occluded to judge.
     bounces_between = build_bounces_between_index(bounces_doc)
 
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
@@ -325,10 +400,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # arc is measured over the full OUTGOING segment (to the next shot),
         # capped, so a long lob's bow isn't truncated.
         next_frame = int(shots[i + 1]["frame"]) if i + 1 < len(shots) else None
-        if next_frame is not None and next_frame - f <= MAX_ARC_FRAMES:
+        if next_frame is not None and next_frame - f <= max_arc_frames:
             arc_end = next_frame - 1
         else:
-            arc_end = f + MAX_ARC_FRAMES
+            arc_end = f + max_arc_frames
         tid = int(s["track_id"])
         is_user = bool(s.get("is_user"))
         is_serve = bool(s.get("is_serve"))
@@ -350,16 +425,24 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         hand = user_hand if is_user else None
         side, side_conf = stroke_side(float(impact_x), pose, hand)
 
-        # volley: lookup in bounces.json (Stage 5.5 output). A shot is a volley
-        # iff zero bounces sit between it and the previous shot. At-feet
-        # bounces count as bounces.
+        # volley: a shot is a volley iff the ball did NOT bounce since the
+        # previous shot. Primary = local trajectory scan (recall-focused);
+        # fall back to the Stage 5.5 bounce list only when the ball is too
+        # occluded between the two shots to judge locally.
         shot_id = int(s["shot_id"])
-        if is_serve or prev_shot_id is None:
+        if is_serve or prev_shot_id is None or prev_frame is None:
             is_volley, vol_conf = False, 0.9
         else:
-            n_b = bounces_between.get((prev_shot_id, shot_id), 0)
-            is_volley = (n_b == 0)
-            vol_conf = 0.8
+            local = bounced_between(by, bknown, prev_frame, f,
+                                    volley_rebound_px, volley_descent_px)
+            if local is None:
+                # inconclusive (occluded) -> fall back to the precision bounce list
+                n_b = bounces_between.get((prev_shot_id, shot_id), 0)
+                is_volley = (n_b == 0)
+                vol_conf = 0.5
+            else:
+                is_volley = not local  # bounce found -> not a volley
+                vol_conf = 0.85
 
         out = dict(s)  # carry through all Stage 5 fields
         out.update({
@@ -392,6 +475,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "by_shot_type": dict(by_type),
         "by_stroke_side": dict(by_side),
         "n_volley": sum(1 for s in out_shots if s["is_volley"]),
+        "n_volley_fallback": sum(1 for s in out_shots if s["is_volley_confidence"] == 0.5),
         "n_unknown_type": by_type.get("unknown", 0),
         "n_unknown_side": by_side.get("unknown", 0),
     }
@@ -417,7 +501,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "drive_min_speed_ftps": DRIVE_MIN_SPEED_FTPS,
             "dink_max_speed_ftps": DINK_MAX_SPEED_FTPS,
             "reset_min_incoming_ftps": RESET_MIN_INCOMING_FTPS,
-            "post_traj_frames": POST_TRAJ_FRAMES,
+            "post_traj_frames": post_traj_frames,
+            "max_arc_frames": max_arc_frames,
+            "fps_scale": round(fps_scale, 4),
+            "resolution_scale": round(res_scale, 4),
+            "volley_rebound_min_px": round(volley_rebound_px, 1),
+            "volley_descent_min_px": round(volley_descent_px, 1),
             "bounce_min_turn_deg": BOUNCE_MIN_TURN_DEG,
         },
         "shots": out_shots,
