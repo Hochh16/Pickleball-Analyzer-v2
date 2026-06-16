@@ -27,12 +27,25 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+STAGE_VERSION = "0.2.0"  # 0.1.0 -> 0.2.0 (real ball): rally boundaries from the
+                         # ball-OUT-OF-PLAY signal (a sustained not-in-play run),
+                         # robust to missed shots; + courtesy-feed drop; side from
+                         # Stage 5 hitter_side (not the airborne ball projection).
+                         # Gated to real ball; synthetic path unchanged.
 
 # --- Config (matches contract) ----------------------------------------------
 SERVE_FAULT_MAX_FRAMES = 60       # quick-next-serve = serve fault (~2s @ 30fps)
 NET_Y_FT = 22.0                   # net line in court coordinates
 KITCHEN_DEPTH_FT = 7.0            # kitchen extends 7 ft from net (each side)
+REFERENCE_FPS = 30.0              # frame-count params tuned at 30fps; scale by fps/this
+# Real-ball rally boundaries: a point breaks when the BALL GOES OUT OF PLAY, not
+# when a hit is merely missed. During a point the ball is in flight (known almost
+# every frame, tiny <~0.25s absences); between points it is dead (picked up /
+# reset) for 3-4s. A sustained not-in-play run is the physical, general boundary
+# signal (a raw inter-shot time-gap falsely splits a rally wherever a shot was
+# missed). 1.5s sits far above in-rally occlusions and far below real dead time.
+# Seconds (fps-independent). Gated to the real ball (synthetic keeps is_serve-only).
+BALL_DEAD_RUN_SEC = 1.5
 
 END_REASONS = {"serve-fault", "double-bounce", "ball-out", "net-or-short",
                "ball-not-returned", "ball-off-frame", "unknown"}
@@ -62,6 +75,23 @@ def load_json(path: Path) -> dict:
         fail(f"required input not found: {path}", FileNotFoundError)
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_ball_known(path: Path):
+    """Per-frame 'ball in play' (visible|interpolated), indexed by frame_idx, as
+    a numpy bool array. Drives the real-ball rally boundary (ball-out-of-play
+    runs). Returns None if ball.parquet is absent (caller falls back to serves)."""
+    if not path.exists():
+        return None
+    import numpy as np
+    import pandas as pd
+    df = pd.read_parquet(path, columns=["frame_idx", "visible", "interpolated"])
+    df = df.sort_values("frame_idx")
+    n = int(df["frame_idx"].max()) + 1
+    known = np.zeros(n, dtype=bool)
+    idx = df["frame_idx"].to_numpy()
+    known[idx] = (df["visible"].to_numpy() | df["interpolated"].to_numpy())
+    return known
 
 
 def load_court_fps(path: Path) -> Optional[float]:
@@ -115,45 +145,120 @@ def bounce_in_receivers_kitchen(bounce_court_y: Optional[float],
 
 # --- Boundary segmentation ---------------------------------------------------
 
-def segment_rallies(shots: List[dict]) -> Tuple[List[List[dict]], List[dict]]:
-    """Split the shot stream into rallies by is_serve. Returns
-    (rally_shot_lists, pre_rally_shots). Each rally is a list of shot dicts,
-    starting with a serve. pre_rally_shots are shots before the first serve."""
-    rallies: List[List[dict]] = []
-    pre_rally: List[dict] = []
-    cur: Optional[List[dict]] = None
+def longest_dead_run(a: int, b: int, ball_known) -> int:
+    """Longest run of consecutive NOT-known (ball out of play) frames strictly
+    between frames a and b. The key rally-boundary signal: during a point the
+    ball is in flight (known) with only tiny absences; between points it is dead
+    (picked up / reset) for a long stretch."""
+    n = len(ball_known)
+    best = cur = 0
+    for k in range(a + 1, b):
+        if 0 <= k < n and not ball_known[k]:
+            cur += 1
+            best = max(best, cur)
+        else:
+            cur = 0
+    return best
+
+
+def segment_rallies(shots: List[dict],
+                    ball_known=None,
+                    ball_dead_run_frames: Optional[int] = None,
+                    gap_split: bool = False
+                    ) -> Tuple[List[List[dict]], List[dict]]:
+    """Split the shot stream into rallies. Returns (rally_shot_lists,
+    dropped_shots). Each rally is a list of shot dicts.
+
+    Synthetic path (`gap_split=False`, the contract's v1): a new rally starts at
+    every `is_serve` shot; shots before the first serve are dropped.
+
+    Real-ball path (`gap_split=True`): Stage 5 under-detects serves AND shots, so
+    is_serve alone merges points while a raw inter-shot time-gap falsely splits a
+    rally wherever a hit was missed. The robust, GENERAL boundary is whether the
+    BALL WENT OUT OF PLAY: a new rally starts when the ball had a sustained
+    not-in-play run (`>= ball_dead_run_frames`, the ball picked up / reset between
+    points) since the previous shot, OR at a flagged serve. A missed shot leaves
+    the ball flying (short absences) and does NOT break the rally. Then non-rally
+    segments are dropped: a single shot that is not a flagged serve is a
+    between-points courtesy feed or isolated noise, not a rally."""
+    if not gap_split:
+        rallies: List[List[dict]] = []
+        pre_rally: List[dict] = []
+        cur: Optional[List[dict]] = None
+        for s in shots:
+            if s.get("is_serve"):
+                if cur is not None:
+                    rallies.append(cur)
+                cur = [s]
+            else:
+                if cur is None:
+                    pre_rally.append(s)
+                else:
+                    cur.append(s)
+        if cur is not None:
+            rallies.append(cur)
+        return rallies, pre_rally
+
+    # Real-ball: split on a sustained ball-out-of-play run OR a flagged serve.
+    segments: List[List[dict]] = []
+    cur = None
+    prev_frame: Optional[int] = None
     for s in shots:
-        if s.get("is_serve"):
-            if cur is not None:
-                rallies.append(cur)
+        f = int(s["frame"])
+        dead = (longest_dead_run(prev_frame, f, ball_known)
+                if (prev_frame is not None and ball_known is not None
+                    and ball_dead_run_frames is not None) else 0)
+        starts_new = bool(s.get("is_serve")) or (
+            ball_dead_run_frames is not None and dead >= ball_dead_run_frames)
+        if cur is None:
+            cur = [s]
+        elif starts_new:
+            segments.append(cur)
             cur = [s]
         else:
-            if cur is None:
-                pre_rally.append(s)
-            else:
-                cur.append(s)
+            cur.append(s)
+        prev_frame = f
     if cur is not None:
-        rallies.append(cur)
-    return rallies, pre_rally
+        segments.append(cur)
+
+    rallies, dropped = [], []
+    for seg in segments:
+        if len(seg) == 1 and not seg[0].get("is_serve"):
+            dropped.extend(seg)  # courtesy feed / isolated non-serve hit
+        else:
+            rallies.append(seg)
+    return rallies, dropped
 
 
 # --- End-reason classification ----------------------------------------------
 
 def classify_rally(rally_shots: List[dict], bounces: List[dict],
-                    next_rally_serve_frame: Optional[int]
+                    next_rally_serve_frame: Optional[int],
+                    serve_fault_max_frames: int = SERVE_FAULT_MAX_FRAMES,
+                    real_ball: bool = False
                     ) -> Tuple[str, float, Optional[int], dict]:
     """Returns (end_reason, confidence, ending_bounce_id, end_signals).
     Implements the rule table in the contract: serve-fault > double-bounce >
-    net-or-short > ball-out > ball-not-returned > ball-off-frame > unknown."""
+    net-or-short > ball-out > ball-not-returned > ball-off-frame > unknown.
+
+    On the real ball (`real_ball=True`) the zero-bounce case is labeled
+    **unknown**, not "ball-off-frame": with real bounce recall the absence of a
+    detected rally-ending bounce almost always means the bounce was MISSED, not
+    that the ball flew off-frame, so the off-frame inference (and its hitter-error
+    attribution) is not warranted. Synthetic keeps "ball-off-frame" (clean ball)."""
     last_shot = rally_shots[-1]
     last_shot_id = int(last_shot["shot_id"])
     last_frame = int(last_shot["frame"])
     n_shots = len(rally_shots)
     serve = rally_shots[0]
-    serve_court = serve.get("impact_court_xy_ft") or [None, None]
-    server_side = side_of_net(serve_court[1] if serve_court else None)
-    last_court = last_shot.get("impact_court_xy_ft") or [None, None]
-    hitter_side = side_of_net(last_court[1] if last_court else None)
+    # Side comes from the HITTING PLAYER's ground position (Stage 5 hitter_side),
+    # NOT the airborne ball-contact projection (impact_court_xy_ft), which is
+    # garbage through the ground homography for an elevated contact. Fall back to
+    # the old projection only if hitter_side is absent (pre-0.3.0 shots).
+    server_side = serve.get("hitter_side") or side_of_net(
+        (serve.get("impact_court_xy_ft") or [None, None])[1])
+    hitter_side = last_shot.get("hitter_side") or side_of_net(
+        (last_shot.get("impact_court_xy_ft") or [None, None])[1])
 
     # Find post-last-shot bounces: between_shots[0] == last_shot_id.
     post = [b for b in bounces
@@ -206,7 +311,7 @@ def classify_rally(rally_shots: List[dict], bounces: List[dict],
                 return ("serve-fault", 0.9,
                         int(first_post["bounce_id"]), end_signals)
         if (frames_to_next_serve is not None and 0 < frames_to_next_serve
-                <= SERVE_FAULT_MAX_FRAMES):
+                <= serve_fault_max_frames):
             return ("serve-fault", 0.7,
                     int(first_post["bounce_id"]) if first_post else None,
                     end_signals)
@@ -244,10 +349,14 @@ def classify_rally(rally_shots: List[dict], bounces: List[dict],
         return ("ball-not-returned", 0.75,
                 int(last_bounce["bounce_id"]), end_signals)
 
-    # Rule 6: ball-off-frame.
+    # Rule 6: ball-off-frame (synthetic) / unknown (real). Zero post-last-shot
+    # bounces with play stopped. On the clean synthetic ball this implies the
+    # ball flew off-frame (hitter error); on the real ball it almost always means
+    # the rally-ending bounce was simply missed, so label it honestly "unknown".
     if n_post == 0 and frames_to_next_serve is not None \
             and frames_to_next_serve > 0:
-        return ("ball-off-frame", 0.5, None, end_signals)
+        return (("unknown", 0.3, None, end_signals) if real_ball
+                else ("ball-off-frame", 0.5, None, end_signals))
 
     # Rule 7: unknown.
     return ("unknown", 0.3, None, end_signals)
@@ -283,20 +392,36 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         log.warning("ball_source is SYNTHETIC: rally end_reasons are "
                     "placeholder-derived.")
 
+    # fps scaling: frame-count params were tuned at 30fps. The dead-ball-run
+    # threshold is in seconds (fps-independent). Ball-dead-run rally splitting +
+    # courtesy-feed drop are real-ball adaptations (Stage 5 under-detects serves
+    # AND shots); synthetic keeps is_serve-only.
+    fps_scale = float(fps) / REFERENCE_FPS
+    serve_fault_max_frames = max(1, int(round(SERVE_FAULT_MAX_FRAMES * fps_scale)))
+    ball_dead_run_frames = max(1, int(round(BALL_DEAD_RUN_SEC * float(fps))))
+    gap_split = (ball_source == "real")
+
+    # Ball visibility drives the rally boundary on the real ball: a point breaks
+    # only when the ball goes out of play (sustained not-in-play run).
+    ball_known = load_ball_known(folder / "ball.parquet") if gap_split else None
+
     shots = sorted(classified.get("shots", []), key=lambda s: int(s["frame"]))
     bounces = sorted(bounces_doc.get("bounces", []),
                      key=lambda b: int(b["frame"]))
 
-    rally_groups, pre_rally = segment_rallies(shots)
+    rally_groups, pre_rally = segment_rallies(
+        shots, ball_known=ball_known,
+        ball_dead_run_frames=ball_dead_run_frames, gap_split=gap_split)
     if not rally_groups:
-        log.warning("no serves found; emitting empty rallies list")
+        log.warning("no rallies found; emitting empty rallies list")
 
     out_rallies: List[dict] = []
     for ri, rally_shots in enumerate(rally_groups):
         next_serve_frame = (int(rally_groups[ri + 1][0]["frame"])
                             if ri + 1 < len(rally_groups) else None)
         end_reason, conf, ending_bid, signals = classify_rally(
-            rally_shots, bounces, next_serve_frame)
+            rally_shots, bounces, next_serve_frame, serve_fault_max_frames,
+            real_ball=(ball_source == "real"))
 
         last_shot = rally_shots[-1]
         last_frame = int(last_shot["frame"])
@@ -322,6 +447,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "serve_shot_id": int(serve["shot_id"]),
             "server_track_id": int(serve["track_id"]),
             "server_is_user": bool(serve.get("is_user", False)),
+            # True when this rally's start was inferred from a dead-time gap
+            # rather than a flagged serve (Stage 5 serve-detection gap). Stage 8
+            # should treat server attribution / serve-fault stats as lower
+            # confidence for these. Always False on the synthetic path.
+            "serve_is_inferred": bool(gap_split and not serve.get("is_serve")),
             "end_reason": end_reason,
             "end_reason_confidence": round(conf, 3),
             "ending_bounce_id": ending_bid,
@@ -352,11 +482,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         warnings.append("ball_source is 'synthetic': rally end_reasons are "
                         "derived from PLACEHOLDER ball data.")
     if pre_rally:
-        warnings.append(f"{len(pre_rally)} shot(s) preceded the first serve "
-                        f"and were dropped (unassigned). "
+        kind = ("non-rally shot(s) (pre-first-rally or courtesy/between-point "
+                "feeds)" if gap_split else "shot(s) preceded the first serve")
+        warnings.append(f"{len(pre_rally)} {kind} were dropped (unassigned). "
                         f"Shot_ids: {[int(s['shot_id']) for s in pre_rally]}")
     if not out_rallies:
-        warnings.append("no rallies emitted (no is_serve shots in classified.json)")
+        warnings.append("no rallies emitted (no serve/rally boundaries found)")
 
     log.info(f"segmented {len(out_rallies)} rallies; "
              f"by_end_reason={by_end_reason}; "
@@ -369,9 +500,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "ball_source": ball_source,
         "fps": float(fps),
         "params": {
-            "serve_fault_max_frames": SERVE_FAULT_MAX_FRAMES,
+            "serve_fault_max_frames": serve_fault_max_frames,
             "net_y_ft": NET_Y_FT,
             "kitchen_depth_ft": KITCHEN_DEPTH_FT,
+            "fps_scale": round(fps_scale, 4),
+            "gap_split": gap_split,
+            "ball_dead_run_sec": BALL_DEAD_RUN_SEC if gap_split else None,
+            "ball_dead_run_frames": ball_dead_run_frames if gap_split else None,
+            "ball_known_loaded": ball_known is not None,
         },
         "rallies": out_rallies,
         "stats": stats,

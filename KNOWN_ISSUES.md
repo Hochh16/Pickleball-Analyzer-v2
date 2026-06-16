@@ -507,3 +507,58 @@ before a serve) has no bounce, so `is_volley=true` — literally correct but it'
 not a rally shot and would skew rally/volley stats (f3148). **Fix belongs in
 Stage 7** (rally segmentation), which should scope stats to actual rallies and
 exclude pre-serve feeds. Flagged here so the downstream stages own it.
+
+## Stage 4 — adjacent-court ball contamination (single-ball assumption)
+
+**Observed:** 2026-06-16, operator review of pb_2min via Stage 6/7 overlays.
+
+**Problem:** On a **multi-court venue** the single-ball detector locks onto a
+**neighbouring court's ball** when ours is occluded/absent. Those detections
+become phantom shots/serves/rallies (e.g. a "serve" before the point starts; a
+"lob" from the court behind the far baseline, which overlaps our airborne-ball
+image zone and is NOT separable by position).
+
+**Mitigation in place (Stage 5 v0.3.0):** trajectory-coherence gates reject the
+phantoms at the shot level — a serve must launch a *sustained* run, and an
+impulse impact's ball run must not *teleport in*. This removed the operator-flagged
+phantoms on pb_2min without touching real shots.
+
+**Root cause / proper fix:** the **ball detector** (Stage 4) is single-ball and
+court-blind. A court-aware or multi-ball-disambiguating detector (track our ball
+as the trajectory continuous with our players' play) would fix it at the source
+and also help recall. Until then the Stage 5 gates are the safety net.
+
+## Stage 4 — ball-detection recall is the dominant downstream limiter
+
+**Observed:** 2026-06-16, foundation review.
+
+**Problem:** On pb_2min the ball is detected (`visible|interpolated`) in only
+**~62% of frames**. Some is genuine occlusion (ball behind a player, motion blur,
+off-frame) that no detector recovers; some is detector miss. This **cascades**:
+missed ball at an impact → **missed shot** (rally looks shorter, sides incomplete);
+missed bounce → **`unknown` rally end_reason** + missed volleys; missed serve
+launch → **serve under-detection**. The rally *boundaries* are now robust to this
+(Stage 7 uses the ball-out-of-play signal), but shot/bounce/serve **completeness**
+is capped by detector recall.
+
+**Where to fix:** improve **Stage 4 v4 recall** (retrain with more data + the
+cross-court diversity already tracked above; consider longer-gap trajectory
+interpolation). This is the highest-leverage foundation investment — it improves
+shots, bounces, serves, and end_reason at once. Forcing detections out of gaps in
+Stage 5 instead is rejected: it reintroduces the contamination above.
+
+## Stages 5/7 — airborne ball-contact projection is unusable (resolved by hitter_side)
+
+**Observed:** 2026-06-15/16.
+
+**Problem:** A shot's `impact_court_xy_ft` (ball-contact pixel → court via the
+ground homography) is **physically meaningless**: the contact is airborne, and an
+elevated point projects toward the horizon (observed court_y up to ~1900 ft on a
+44-ft court). Any side/zone/in-out logic built on it is noise.
+
+**Resolved:** Stage 5 v0.3.0 emits `hitter_court_xy_ft`/`hitter_side` from the
+hitting **player's ground position**; Stage 7 uses `hitter_side`. `impact_court_xy_ft`
+is retained for debugging only. (Ground-truth **bounce** positions remain valid —
+bounces are on the ground, so their court projection is sound.) A true ball court
+position (for shot speed → Stage 6 types, Stage 8 metrics) still needs ball
+height / 3D — see the Stage 6 depth-speed entry.

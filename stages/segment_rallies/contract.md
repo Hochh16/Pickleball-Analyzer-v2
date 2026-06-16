@@ -1,10 +1,13 @@
 # Stage 7 — Segment Rallies
 
-**Status:** DRAFT for review. Groups the shot stream into rallies and tags
-each rally with how it ended. Boundaries are trivial now that Stage 5 emits
-`is_serve` on every serve and Stage 5.5 emits every bounce — the work is in
-the **end_reason classification**, which leans on `bounces.json` for ball-out,
-double-bounce, and serve-fault signals.
+**Status:** IMPLEMENTED; **v0.2.0 real-ball adapted** (run on pb_2min,
+operator-validated rally boundaries). Groups the shot stream into rallies and
+tags each rally with how it ended. NOTE: the v0.1.0 assumption that "boundaries
+are trivial because Stage 5 flags every serve" proved **false on the real ball**
+(serves under-detected, shots missed) — boundaries now come from the **ball
+going out of play** (see "Real-ball adaptations (v0.2.0)" below). end_reason
+leans on `bounces.json`, but real bounce recall is low, so most real-ball
+end_reasons are currently `unknown` (honest).
 
 **Role-blind v1** (per the scope decision at the start of the session): no
 winner_side attribution, no track_roles.json consumption. Winner-side and
@@ -508,11 +511,47 @@ patterns that don't produce a bounce (`no_bounce`).
       completes without crash and Stage 7 still emits a non-empty
       `rallies[]`.
 
+## Real-ball adaptations (v0.2.0)
+
+The v0.1.0 contract above assumes Stage 5 flags every serve and emits clean
+shots. On the real v4 ball neither holds: serves are under-detected, shots are
+missed (ball-detection recall), and the shot **court projection is unusable**.
+v0.2.0 adapts (all gated to the real ball; synthetic keeps the v0.1.0 path,
+smoke unchanged):
+
+1. **Rally boundaries from the ball going OUT OF PLAY, not `is_serve`.** Pure
+   `is_serve` boundaries merge many points into mega-rallies (serves missed),
+   and a raw inter-shot **time-gap** falsely splits a rally wherever a hit was
+   missed. The robust, **general physical signal** is ball visibility: during a
+   point the ball is in flight (`visible|interpolated` almost every frame, tiny
+   <~0.25s absences); between points it is dead (picked up / reset) for 3–4s. A
+   new rally starts when the ball had a sustained not-in-play run
+   (`>= ball_dead_run_frames` = `BALL_DEAD_RUN_SEC`·fps, default 1.5s) since the
+   previous shot, OR at a flagged serve. A missed shot leaves the ball flying →
+   **no false split**. Stage 7 therefore **reads `ball.parquet`** on the real
+   ball (added input). Validated on pb_2min (operator-confirmed rally banners).
+2. **Side from `hitter_side` (Stage 5), not the ball projection.**
+   `impact_court_xy_ft` is garbage for an airborne contact (see Stage 5 v0.3.0);
+   `hitter_side`/`server_side` now come from Stage 5's `hitter_side` (the hitting
+   player's ground position), falling back to the old projection only if absent.
+3. **Zero-bounce end_reason → `unknown` (not `ball-off-frame`).** With real bounce
+   recall, no detected rally-ending bounce almost always means the bounce was
+   *missed*, not that the ball flew off-frame — so the off-frame inference (and
+   its hitter-error attribution) isn't warranted. Synthetic (clean ball) keeps
+   `ball-off-frame`. **Most real end_reasons are currently `unknown`** — honest;
+   end_reason becomes useful only when bounce recall improves (Stage 4/5.5).
+4. **Courtesy/non-rally feed drop.** A single non-serve shot bounded by dead time
+   is dropped (counted in `unassigned_shots`). *Limitation:* a courtesy feed that
+   flows straight into the serve (no dead-ball between) stays in the rally as its
+   first shot — separating it needs serve detection (deferred). `serve_is_inferred`
+   marks rallies whose start was a gap, not a flagged serve.
+
 ## Stage version
 
-`0.1.0` (initial). Increment minor for behavior changes preserving
-the `rallies.json` schema; bump `schema_version` for breaking schema
-changes.
+`0.2.0`. (0.1.0 initial → 0.2.0 real-ball: ball-out-of-play rally boundaries,
+`hitter_side`-based sides, real-ball `unknown` end_reason, feed drop.) Increment
+minor for behavior changes preserving the `rallies.json` schema. (v0.2.0 adds
+the additive field `serve_is_inferred`; schema kept.)
 
 ## Out of scope (deferred)
 

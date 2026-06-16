@@ -30,14 +30,20 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   (see `KNOWN_ISSUES.md`), required for varied indoor/outdoor venues. See
   `stages/finetune_ball_model/contract_v4.md`. The synthetic caveat across
   Stages 5–11 lifts **per-stage as each is re-run** on the real ball. **DONE so
-  far: Stages 1–3, 5, 5.5, 6 run on the real ball for pb_2min** (operator-validated);
-  Stages 7–11 pending.
-- **Stage 5** (detect shots): **implemented + smoke-tested; v0.2.0 real-ball
-  adapted** (`8aa9164`). Run on the real v4 ball for pb_2min (304→45 real
-  strikes, operator-validated): 4K resolution + 60fps scaling, teleport-drop,
-  is_user-from-roles, and a net-side ball-handling filter (rejects catch/bounce
-  between points). Still runs on synthetic for the smoke test (real-ball filters
-  gated off). Synthetic caveat lifted for Stage 5 on real clips.
+  far: Stages 1–3, 5, 5.5, 6, 7 run on the real ball for pb_2min** (operator-validated);
+  Stages 8–11 pending. The **next foundation investment is Stage 4 ball-detection
+  recall** (the dominant downstream limiter — see `KNOWN_ISSUES.md`).
+- **Stage 5** (detect shots): **implemented + smoke-tested; v0.3.0 real-ball
+  adapted**. v0.2.0 (`8aa9164`): 4K/60fps scaling, teleport-drop,
+  is_user-from-roles, net-side ball-handling filter. **v0.3.0** (foundation
+  hardening, operator-validated on the full pb_2min clip): **adjacent-court
+  contamination gates** (a serve must launch a sustained ball run; an impulse
+  impact's run must not teleport in — rejects neighbouring-court phantom
+  shots/serves), **reliable `hitter_court_xy_ft`/`hitter_side`** from the hitting
+  player's GROUND position (the airborne `impact_court_xy_ft` projection is
+  unusable), and **serve de-duplication**. Recall is ball-detection-limited
+  (~62% ball-visible) — a Stage 4 limit. Real-ball filters gated off on synthetic
+  (smoke unchanged). See `KNOWN_ISSUES.md` (contamination, recall, projection).
 - **Stage 5.5** (detect bounces): NEW stage (added 2026-05-27; pipeline now 13
   stages); **v0.2.0 real-ball adapted** (`740fac9`, run on pb_2min, 135→16
   bounces, operator-validated). Reuses Stage 5's impulse signal with the opposite
@@ -62,16 +68,19 @@ detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
   depends on Stage 5 `is_serve`; courtesy feeds read as volleys (Stage 7 to
   exclude). Synthetic caveat lifted for Stage 6 on real clips. See
   `stages/classify_shots/contract.md`.
-- **Stage 7** (segment rallies): **implemented + smoke-tested** (2026-05-29).
-  Groups shots into rallies by `is_serve` and tags each with an
-  `end_reason` from a 7-category set (`serve-fault`, `double-bounce`,
-  `ball-out`, `net-or-short`, `ball-not-returned`, `ball-off-frame`,
-  `unknown`). Uses court-side reasoning from `impact_court_xy_ft` (shots)
-  and `court_xy_ft` (bounces) to classify hitter-side vs receiver-side
-  events and detect kitchen-fault serves. **Role-blind v1**: no
-  `winner_side`, no `track_roles.json` dependency — winner attribution
-  deferred to Stage 8. Same synthetic-ball caveat. See
-  `stages/segment_rallies/contract.md`.
+- **Stage 7** (segment rallies): **implemented + smoke-tested; v0.2.0 real-ball
+  adapted** (operator-validated on pb_2min). Groups shots into rallies + tags an
+  `end_reason`. On the real ball, **rally boundaries come from the ball going
+  OUT OF PLAY** (a sustained not-in-play run between shots), NOT `is_serve` —
+  serves are under-detected and a raw time-gap falsely splits a rally wherever a
+  hit was missed; the ball-out-of-play signal is the general physical boundary
+  (so Stage 7 now reads `ball.parquet` on the real ball). Side comes from Stage
+  5's `hitter_side` (the airborne `impact_court_xy_ft` is unusable); the
+  zero-bounce end_reason is `unknown` on the real ball (a missed bounce, not an
+  off-frame ball), so most real end_reasons are `unknown` until bounce recall
+  improves. **Role-blind v1**: no `winner_side`. Synthetic keeps the is_serve
+  path (smoke unchanged). See `stages/segment_rallies/contract.md` and
+  `KNOWN_ISSUES.md`.
 - **Stage 8** (compute metrics): **implemented + smoke-tested** (2026-05-29).
   Aggregates `classified.json` + `rallies.json` + `bounces.json` +
   `players.parquet` + `track_roles.json` into `metrics.json`: match summary
