@@ -155,14 +155,32 @@ volleys 9. Real-ball adaptations (v0.2.0 → **v0.3.0**):
 
 ## NEXT STEPS (me, next session)
 
-1. **Improve Stage 4 ball-detection recall** (David's chosen priority — the
-   dominant downstream limiter). On pb_2min the ball is detected in only ~62% of
-   frames → missed shots, missed bounces (mostly-`unknown` end_reason), missed
-   serves. Closing this cascades to shots/bounces/serves/end_reason at once.
-   Approaches: retrain v4 with more data + cross-court diversity (already tracked),
-   and/or longer-gap trajectory interpolation. Tie in the **adjacent-court
-   contamination** root cause (Stage 4 single-ball — see KNOWN_ISSUES); a
-   court-aware detector helps both recall and contamination.
+1. **Improve Stage 4 ball detection — the agreed high-impact "do it now" work**
+   (before building Stages 8–11, to avoid compounding errors into every stat).
+   **Refined diagnosis (2026-06-16):** the "62% ball-visible" was misleading —
+   **in-rally recall is ~92%**; the dead-time drags the average down. The real
+   miss is **FAST-BALL under-detection**: at a hard hit the ball moves ~250 px/f
+   and is **lost to motion blur** (tracked max only ~67 px/f in the missed region
+   vs 252 in clean rallies), so the shot has no ball at impact. An **impact-recovery
+   experiment (gap-based) was built and REVERTED** — it only recovers *gap-hidden*
+   shots, not these fast-ball misses (the ball is "visible" but slow/jittery, not
+   absent). So the fix is genuinely **detector quality**, not a Stage 5 heuristic.
+   **Plan = ONE combined retrain:**
+   (a) **fast-ball / motion-blur recall** — label more hard-hit / blurred-ball
+       frames (the same-court outdoor clips are a rich source);
+   (b) **cross-court generalization** — add the different-court + indoor clips
+       (closes the 0.90 same-court vs **0.54 cross-court** gap, a hard product
+       requirement). Do both in one training pass, not several.
+   **Operator data on hand (David, 2026-06-16):** 4 outdoor videos of the SAME
+   (pb_2min) court + 1 outdoor video at a DIFFERENT court + 1 indoor video. The
+   different-court + indoor are the generalization set; the same-court clips add
+   fast-ball examples. (Training is GPU/Colab, operator-driven, like `infer_v4`.)
+   Also fold in the **adjacent-court contamination** root cause (Stage 4
+   single-ball — KNOWN_ISSUES); a court-aware/continuity detector helps recall +
+   contamination together.
+   **Resume here:** quantify the fast-ball failure modes on pb_2min (speed/blur
+   correlation, where misses cluster) to target labeling, set up the
+   label→retrain→validate loop, then drive Colab.
 2. **Then Stages 8 → 9 → 10 → 11** on the real ball. In **Stage 8**, build
    **court-plane / height-aware ball speed** (KNOWN_ISSUES Stage 6 depth-speed) —
    the right speed signal for metrics; retro-improves Stage 6 drive/drop typing.
