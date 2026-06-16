@@ -1,10 +1,36 @@
-# Session Handoff: real ball through Stages 1–6 done for pb_2min — Stage 7 next
+# Session Handoff: real ball through Stages 1–7 done for pb_2min — Stage 4 recall next
 
-State of Pickleball-Analyzer-v2 at the end of the **June 15 2026** session. The
+State of Pickleball-Analyzer-v2 at the end of the **June 16 2026** session. The
 full 13-stage pipeline was implemented + smoke-tested previously on a **synthetic**
 placeholder ball. Real ball detection (v4) works, and pb_2min has now been pushed
-through **Stages 1, 2, 2.5, 3, 5, 5.5, and 6 on the REAL ball + real players**, each
-operator-validated and committed. **Next: Stage 7 (segment rallies)**, then 8→11.
+through **Stages 1, 2, 2.5, 3, 5, 5.5, 6, and 7 on the REAL ball + real players**,
+each operator-validated and committed. A **foundation-hardening pass** on Stage 5
+(contamination + projection + serve dedup) and Stage 7 (ball-out-of-play rally
+boundaries) followed. **Next (David's call): improve Stage 4 ball-detection
+recall** — the dominant downstream limiter — then Stages 8→11.
+
+## DONE 2026-06-16: foundation hardening (Stage 5 v0.3.0 + Stage 7 v0.2.0)
+
+Operator review of the FULL pb_2min clip (not just the per-shot overlay) exposed
+data-quality issues that corrupt stats. Fixed + validated + committed:
+- **Stage 5 v0.3.0** (`066d63e`): **adjacent-court contamination gates**
+  (serve-must-launch-a-sustained-run + impulse-impact-must-not-teleport-in —
+  rejects neighbouring-court phantom shots/serves the single-ball detector grabs
+  when ours is occluded); **reliable `hitter_court_xy_ft`/`hitter_side`** from the
+  hitting player's GROUND position (the airborne `impact_court_xy_ft` projection
+  is garbage — court_y up to ~1900 ft on a 44-ft court); **serve de-duplication**.
+- **Stage 7 v0.2.0** (`14def29`): **rally boundaries from the ball going OUT OF
+  PLAY** (sustained not-in-play run), NOT `is_serve`/time-gap. KEY INSIGHT: during
+  a point the ball is in flight (visible ~every frame, <0.25s absences); between
+  points it's dead 3-4s. A missed shot leaves the ball flying → no false split.
+  This is a **general physical signal**, the thing that finally made David's rally
+  boundaries correct ("top labels are correct"). Side from `hitter_side`;
+  zero-bounce end_reason → `unknown` on real ball.
+
+**Residuals (all tied to deferred work, NOT new hacks):** serve→drive labels +
+courtesy-feed-as-rally-start (need serve detection); drive↔drop/dink type errors
+(2D depth-speed limit, need court-plane/3D ball speed); missed shots + mostly-
+`unknown` end_reason (ball-detection recall). See `KNOWN_ISSUES.md`.
 
 **Real-vs-synthetic adaptation pattern (applies to every remaining stage 6–11):**
 1. **`is_user` from `track_roles.json`** (role 'user'), NOT players.parquet's
@@ -129,17 +155,24 @@ volleys 9. Real-ball adaptations (v0.2.0 → **v0.3.0**):
 
 ## NEXT STEPS (me, next session)
 
-1. **Stage 7 (segment rallies)** on the real ball. Apply the adaptation pattern
-   (is_user-from-roles, 4K/fps scaling). **Own the courtesy-feed exclusion** here:
-   scope stats to actual rallies (serve → last shot), drop pre-serve feeds so
-   f3148-style feeds don't pollute volley/rally counts. Validate rally boundaries
-   with a spot-check.
-2. **Then Stages 8 → 9 → 10 → 11** on the real ball, same per-stage approach. In
-   **Stage 8**, build **homography-projected court-plane ball speed** (KNOWN_ISSUES
-   Stage 6 depth-speed entry) — the right speed signal for metrics, and it
-   retro-improves Stage 6 drive/drop typing.
+1. **Improve Stage 4 ball-detection recall** (David's chosen priority — the
+   dominant downstream limiter). On pb_2min the ball is detected in only ~62% of
+   frames → missed shots, missed bounces (mostly-`unknown` end_reason), missed
+   serves. Closing this cascades to shots/bounces/serves/end_reason at once.
+   Approaches: retrain v4 with more data + cross-court diversity (already tracked),
+   and/or longer-gap trajectory interpolation. Tie in the **adjacent-court
+   contamination** root cause (Stage 4 single-ball — see KNOWN_ISSUES); a
+   court-aware detector helps both recall and contamination.
+2. **Then Stages 8 → 9 → 10 → 11** on the real ball. In **Stage 8**, build
+   **court-plane / height-aware ball speed** (KNOWN_ISSUES Stage 6 depth-speed) —
+   the right speed signal for metrics; retro-improves Stage 6 drive/drop typing.
 3. **Calibrate Stages 9/10** against real rallies (uncalibrated until now).
 4. Stage 11 synthetic-ball watermark drops automatically once `ball_source != synthetic`.
+
+**Real-ball boundary lesson (carry forward):** the GENERAL rally-boundary signal
+is **ball-out-of-play** (sustained not-in-play run), not serves or time-gaps —
+robust to missed shots. The same "use a physical signal, gate real-only, validate
+by operator spot-check" pattern applies to every remaining real-ball adaptation.
 
 Notes carried forward: Stage 2.5 user coverage 85.5% (rest is genuine off-frame
 time); partner/opponent role-awareness + opp L/R continuity still geometric
