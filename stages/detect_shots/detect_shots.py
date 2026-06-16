@@ -29,7 +29,9 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.2.0"  # 0.2.0: real-ball adaptations (see contract "Real-ball adaptations")
+STAGE_VERSION = "0.3.0"  # 0.2.0: real-ball adaptations (see contract "Real-ball
+                         # adaptations"). 0.3.0: adjacent-court contamination gates
+                         # (serve-run-length + impulse teleport-in), real ball only.
 
 # --- Detection defaults (see contract "Configuration") ----------------------
 MIN_TURN_RATE_DEG = 45.0
@@ -47,6 +49,16 @@ FPS_TOLERANCE = 0.5
 WRIST_VISIBILITY_FLOOR = 0.5
 MIN_SERVE_GAP_S = 0.7  # not-visible gap before a serve (dead time vs detection gap)
 HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window = ball-handling
+# Adjacent-court contamination gates (real ball only). On a multi-court venue the
+# single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
+# producing phantom shots/serves. Two trajectory-coherence gates reject them:
+MIN_SERVE_RUN_S = 0.13  # a real serve launches a SUSTAINED run; a blip serve
+                        # (other-court ball appearing briefly) does not. (8f @60fps)
+TELEPORT_IN_PX_PER_FRAME = 40.0  # ref px/frame @1920 (scaled by frame_width/1920):
+                        # an impulse impact whose ball run TELEPORTED in (jumped
+                        # from where our ball actually was) is the other court's ball.
+SERVE_DEDUP_S = 2.0     # two serve detections this close with no rally shot between
+                        # = a pre-serve artifact + the real serve; keep the longer run.
 REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresholds scale by frame_width/this
 REFERENCE_FPS = 30.0  # fps the frame-count windows were tuned at; they scale by fps/this
 
@@ -149,7 +161,7 @@ def index_players(path: Path, net_y_ft: float,
     if not path.exists():
         fail(f"players.parquet not found: {path}", FileNotFoundError)
     df = pd.read_parquet(path)
-    need = {"frame", "track_id", "is_user", "transient", "court_y_ft",
+    need = {"frame", "track_id", "is_user", "transient", "court_x_ft", "court_y_ft",
             "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2", "foot_x", "foot_y"}
     missing = need - set(df.columns)
     if missing:
@@ -168,6 +180,7 @@ def index_players(path: Path, net_y_ft: float,
             "bbox": (float(r.bbox_x1), float(r.bbox_y1),
                      float(r.bbox_x2), float(r.bbox_y2)),
             "foot": (float(r.foot_x), float(r.foot_y)),
+            "court_xy": (float(r.court_x_ft), float(r.court_y_ft)),
         })
     return by_frame, len(df), side_by_track
 
@@ -439,8 +452,58 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         w0, w1 = max(0, f - W), min(n, f + W + 1)
         return float(vis[w0:w1].mean()) if w1 > w0 else 0.0
 
+    net_y = params["net_y_ft"]
+
+    def hitter_fields(p):
+        """Reliable shot court-position from the HITTING PLAYER's GROUND position
+        (court_xy from players.parquet), NOT the airborne ball-contact projection
+        (impact_court_xy_ft), which explodes through the ground homography for an
+        elevated contact. Downstream side logic (Stage 7) must use these."""
+        cx, cy = p.get("court_xy", (float("nan"), float("nan")))
+        side = None
+        if not math.isnan(cy):
+            side = "near" if cy < net_y else "far"
+        xy = [round(cx, 2), round(cy, 2)] if not math.isnan(cx) else [None, None]
+        return xy, side
+
+    # --- Adjacent-court contamination gates (real ball only) ----------------
+    def run_bounds(f):
+        """[start, end] of the contiguous known-ball run containing frame f."""
+        a = f
+        while a - 1 >= 0 and known[a - 1]:
+            a -= 1
+        z = f
+        while z + 1 < n and known[z + 1]:
+            z += 1
+        return a, z
+
+    def teleport_in_pxpf(f):
+        """How far (px/frame) the ball jumped from its last known position
+        BEFORE the run containing f. A real rally ball is continuous; a
+        neighbouring-court ball picked up mid-gap jumps in implausibly."""
+        a, _ = run_bounds(f)
+        p = a - 1
+        while p >= 0 and not known[p]:
+            p -= 1
+        if p < 0:
+            return 0.0
+        d = math.hypot(fx[a] - fx[p], fy[a] - fy[p])
+        return d / max(a - p, 1)
+
+    contam_filter = bool(params.get("contamination_filter"))
+    min_serve_run = params["min_serve_run_frames"]
+    teleport_thresh = params["teleport_in_px_per_frame"]
+    serve_dedup_frames = params["serve_dedup_frames"]
+    n_rejected_serve_blip = 0
+    n_rejected_teleport = 0
+
     # --- Impulse shots (rally hits) ----------------------------------------
     for f in accepted:
+        # Adjacent-court gate: reject an impact whose ball run teleported in
+        # (the rally ball is continuous; a neighbouring-court ball is not).
+        if contam_filter and teleport_in_pxpf(f) > teleport_thresh:
+            n_rejected_teleport += 1
+            continue
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:
@@ -460,6 +523,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             "is_serve": False, "detection_method": "impulse",
             "impact_pixel_xy": [round(bx, 2), round(by, 2)],
             "impact_court_xy_ft": court_xy(f, bx, by),
+            "hitter_court_xy_ft": hitter_fields(p)[0],
+            "hitter_side": hitter_fields(p)[1],
             "player_distance_px": round(float(dist), 2), "assoc_basis": basis,
             "pre_velocity_px_per_frame": vfield(pre),
             "post_velocity_px_per_frame": vfield(post),
@@ -507,6 +572,11 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         launch = [(fx[ff] - fx[f]) / (ff - f), (fy[ff] - fy[f]) / (ff - f)]
         if math.hypot(*launch) < min_speed:
             continue
+        # Adjacent-court gate: a real serve launches a SUSTAINED ball run; a
+        # neighbouring-court ball appearing briefly after dead time does not.
+        if contam_filter and (run_bounds(f)[1] - f + 1) < min_serve_run:
+            n_rejected_serve_blip += 1
+            continue
         if any(abs(f - sf) <= W for sf in impulse_frames):
             continue  # already captured as an impulse shot
         bx, by = float(fx[f]), float(fy[f])
@@ -523,6 +593,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             "is_serve": True, "detection_method": "serve_appearance",
             "impact_pixel_xy": [round(bx, 2), round(by, 2)],
             "impact_court_xy_ft": court_xy(f, bx, by),
+            "hitter_court_xy_ft": hitter_fields(p)[0],
+            "hitter_side": hitter_fields(p)[1],
             "player_distance_px": round(float(dist), 2), "assoc_basis": basis,
             "pre_velocity_px_per_frame": [None, None],
             "post_velocity_px_per_frame": vfield(launch),
@@ -532,6 +604,32 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             "speed_change_ratio": None, "confidence": round(conf, 3),
         })
         n_serves += 1
+
+    # --- Serve de-duplication (real ball) -----------------------------------
+    # A point has exactly one serve. Two serve detections within
+    # serve_dedup_frames with NO rally shot between them = a pre-serve artifact
+    # (e.g. the server bouncing the ball before serving) plus the real serve;
+    # keep the one whose ball run is longer (the launch that starts the rally).
+    n_serve_dedup = 0
+    if contam_filter:
+        serve_shots = sorted((s for s in shots if s["is_serve"]),
+                             key=lambda s: s["frame"])
+        drop_frames: set = set()
+        for i in range(len(serve_shots) - 1):
+            a, b = serve_shots[i], serve_shots[i + 1]
+            if a["frame"] in drop_frames:
+                continue
+            if (b["frame"] - a["frame"] <= serve_dedup_frames
+                    and not any(a["frame"] < imf < b["frame"]
+                                for imf in impulse_frames)):
+                la = run_bounds(a["frame"])[1] - run_bounds(a["frame"])[0]
+                lb = run_bounds(b["frame"])[1] - run_bounds(b["frame"])[0]
+                drop_frames.add(a["frame"] if la < lb else b["frame"])
+        if drop_frames:
+            shots = [s for s in shots
+                     if not (s["is_serve"] and s["frame"] in drop_frames)]
+            n_serves -= len(drop_frames)
+            n_serve_dedup = len(drop_frames)
 
     shots.sort(key=lambda s: s["frame"])
     for i, s in enumerate(shots):
@@ -553,6 +651,9 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_merged_duplicates": suppressed,
         "n_teleport_dropped": n_teleport_dropped,
         "n_rejected_handling": n_handling,
+        "n_rejected_serve_blip": n_rejected_serve_blip,
+        "n_rejected_teleport_in": n_rejected_teleport,
+        "n_serve_deduped": n_serve_dedup,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
     }
@@ -644,6 +745,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "serve_gap_frames": int(round(MIN_SERVE_GAP_S * float(fps))),
         "handling_reset_frames": int(round(HANDLING_RESET_S * float(fps))),
         "handling_filter": ball_source == "real",
+        "contamination_filter": ball_source == "real",
+        "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
+        "teleport_in_px_per_frame": TELEPORT_IN_PX_PER_FRAME * res_scale,
+        "serve_dedup_frames": int(round(SERVE_DEDUP_S * float(fps))),
+        "net_y_ft": court["net_y_ft"],
         "resolution_scale": round(res_scale, 4),
         "reference_width_px": REFERENCE_WIDTH_PX,
         "fps_scale": round(fps_scale, 4),
@@ -668,7 +774,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"{stats['n_merged_duplicates']} merged, "
              f"{stats['n_rejected_no_player']} no-player, "
              f"{stats['n_rejected_ball_gap']} gap-limited, "
-             f"{stats['n_rejected_low_speed']} low-speed)")
+             f"{stats['n_rejected_low_speed']} low-speed, "
+             f"{stats['n_rejected_serve_blip']} serve-blip, "
+             f"{stats['n_rejected_teleport_in']} teleport-in)")
 
     out = {
         "schema_version": SCHEMA_VERSION,

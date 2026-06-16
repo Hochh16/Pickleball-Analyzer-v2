@@ -361,6 +361,45 @@ synthetic data, so the logic is still validated there).
      then hitting it leaves one residual false positive (kept as the run's last).
      Rally-context cleanup (Stage 7) is the natural place to refine this.
 
+## Real-ball adaptations (v0.3.0): contamination, hitter position, serve dedup
+
+Operator review of the full pb_2min clip (via Stages 6–7 overlays) surfaced
+issues the per-shot overlay missed. v0.3.0 adds three fixes, all **gated to the
+real ball** so synthetic smoke is unchanged.
+
+1. **Adjacent-court contamination gates.** On a multi-court venue the single-ball
+   detector grabs a **neighbouring court's ball** when ours is occluded, yielding
+   phantom shots/serves (e.g. a "serve before the point", a "lob" from the court
+   behind). Two trajectory-coherence gates reject them — calibrated on pb_2min
+   with clean separation from real shots:
+   - **Serve must launch a sustained run** (`min_serve_run_frames` =
+     `MIN_SERVE_RUN_S`·fps): a real serve launches a ball run that persists; an
+     other-court blip appears for 2–5 frames then vanishes. (Real serves ran
+     12–267 frames; phantom blips 2–5.) Count `n_rejected_serve_blip`.
+   - **Impulse impact must not TELEPORT in** (`teleport_in_px_per_frame`,
+     res-scaled): the rally ball is spatially continuous; a neighbouring-court
+     ball picked up mid-gap jumps in from far away. (Real impulse impacts: ≤49
+     px/f run-entry jump; a phantom: 168 px/f.) Count `n_rejected_teleport_in`.
+2. **Reliable hitter court-position (`hitter_court_xy_ft`, `hitter_side`).** The
+   ball-contact projection `impact_court_xy_ft` is **garbage for shots**: the
+   contact is **airborne**, and projecting an elevated point through the ground
+   homography explodes toward the horizon (observed court_y up to ~1900 ft on a
+   44-ft court). Every shot now also carries the **hitting player's GROUND
+   position** (from `players.parquet`) and a `near`/`far` `hitter_side` derived
+   from it. Downstream side logic (Stage 7) uses `hitter_side`, not the ball
+   projection. (`impact_court_xy_ft` is retained for debugging only.)
+3. **Serve de-duplication.** A point has one serve; two serve detections within
+   `serve_dedup_frames` (`SERVE_DEDUP_S`·fps) with **no rally shot between** =
+   a pre-serve artifact (e.g. the server bouncing the ball) plus the real serve.
+   Keep the one whose ball run is longer (the launch that starts the rally).
+   Count `n_serve_deduped`.
+
+*Recall is ball-detection-limited.* On pb_2min the ball is detected in only ~62%
+of frames (occlusion / motion blur), so some real shots have no ball at the
+impact and are missed (`n_rejected_ball_gap` are the identifiable ones). This is
+a **Stage 4** limit, not a Stage 5 algorithm gap; forcing shots out of gaps
+reintroduces contamination. Closing it needs better ball-detector recall.
+
 ## Test fixture: synthetic ball generator (`tools/synth_ball.py`)
 
 Because real ball detection is paused (Stage 4.5), Stage 5 is developed and
@@ -442,8 +481,12 @@ has real `players.parquet` + `poses.parquet`):
 
 ## Stage version
 
-`0.1.0` (initial). Increment minor for behavior changes preserving the
-`shots.json` schema; bump `schema_version` for breaking schema changes.
+`0.3.0`. (0.1.0 initial → 0.2.0 real-ball adaptations [resolution/fps scaling,
+teleport-drop, is_user-from-roles, ball-handling rejection] → 0.3.0
+adjacent-court contamination gates + reliable `hitter_court_xy_ft`/`hitter_side`
++ serve de-duplication.) Increment minor for behavior changes preserving the
+`shots.json` schema; bump `schema_version` for breaking schema changes. (v0.3.0
+**adds** fields `hitter_court_xy_ft`/`hitter_side` — additive, schema kept.)
 
 ## Out of scope (deferred)
 
