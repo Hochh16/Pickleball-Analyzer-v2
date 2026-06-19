@@ -91,6 +91,8 @@ classification. `ball_source` and the synthetic warning are **propagated**.
         "post_speed_ftps": 14.2,
         "arc_height_frac": 0.08,
         "contact_height": "low",
+        "landing_court_y": 18.3,
+        "type_from_landing": true,
         "handedness_used": "right",
         "handedness_known": true,
         "facing": "away"
@@ -193,29 +195,44 @@ Features per shot:
   High = lob.
 - `contact_height` ∈ {low, mid, high} — `impact_pixel_y` vs the hitter's
   shoulder/hip y from pose (above shoulders = high; below hips = low).
+- `landing_court_y` (v0.4.0) — the court_y of the **first bounce after the shot**
+  (from `bounces.json`, `between_shots[0] == shot_id`), or null if no landing was
+  detected. **Bounces are on the ground**, so this projects through the homography
+  reliably — unlike the airborne ball contact, whose ground projection explodes
+  (see DECISION below). `features.type_from_landing` records which path was taken.
+
+> **DECISION (v0.4.0 — landing-aware type).** Pixel-speed is depth-corrupted (a
+> down-court drive covers few pixels → reads slow), and projecting the airborne
+> ball to court-feet for a court-plane speed was **validated DEAD** (it explodes
+> toward the horizon — court_y in the hundreds/thousands). The *sound* signal is
+> **where the ball lands**: a drive lands deep, a drop/dink lands in the kitchen
+> (+~2 ft). So when a real bounce landing exists, it drives the type. **Coverage
+> is only ~21% of shots** (bounce recall, Stage 5.5) and inherits its
+> association errors; the other ~79% fall back to the speed/arc rules below at
+> lower confidence. The deep-landing bucket still blurs drive/serve/lob/feed —
+> only `is_serve` (Stage 5) and arc separate them. See SYSTEM_DESIGN.md §3 Stage 6.
 
 Rule order (first match wins; thresholds tunable, tuned on the smoke test):
 1. `is_serve` (from Stage 5) → **serve**.
 2. `arc_height_frac ≥ lob_min_arc_frac` AND `post_speed_ftps < drive_min_speed_ftps`
-   → **lob**. (A lob is lofted **and** slow; the speed gate was added for the real
-   ball, where a fast drive can show a slight measured bow → false lob.)
-3. `contact_height == high` AND `post_speed_ftps ≥ drive_min_speed_ftps` →
-   **overhead**.
-4. `post_speed_ftps ≥ drive_min_speed_ftps` (flat, fast) → **drive**.
-5. **reset** — `pre_speed_ftps ≥ reset_min_incoming_ftps` (hard incoming) AND
-   `post_speed_ftps ≤ dink_max_speed_ftps` (soft reply) AND
-   `contact_zone != baseline` (hitter is up, not deep). A defensive soft block
-   of a fast ball back into the kitchen.
-6. `post_speed_ftps ≤ dink_max_speed_ftps` AND `contact_zone == kitchen` →
-   **dink**.
-7. `post_speed_ftps ≤ dink_max_speed_ftps` AND `contact_zone in {transition,
-   baseline}` → **drop**.
-8. **tweener tiebreak** (`dink_max < post_speed_ftps < drive_min`, the 16–25 ft/s
-   dead-zone) — speed alone is ambiguous here, and on the real ball depth
-   foreshortening corrupts pixel-speed, so resolve by trajectory **shape**:
-   `arc_height_frac ≥ drive_drop_arc_split` → **drop** (lofted), else → **drive**
-   (flat). Added for the real ball (drains the old "unknown" dead-zone).
-9. otherwise → **unknown** (recorded honestly, counts toward `n_unknown_type`).
+   → **lob**. (A lob is lofted **and** slow; resolved before the landing split
+   because a lob also lands deep. The speed gate keeps a fast flat drive with a
+   noisy-high measured bow from being mislabeled a lob.)
+3. **Landing-aware path (v0.4.0) — when `landing_court_y` is not null:**
+   - soft landing (within `kitchen + ~2 ft` of the net, `|landing − net| ≤ 9 ft`):
+     `contact_zone == kitchen` → **dink**, else → **drop**.
+   - deep landing + `contact_height == high` → **overhead**; else → **drive**.
+   - (confidence 0.70–0.78 — the reliable path.)
+4. **Fallback (no landing): speed + arc, lower confidence (0.40–0.60):**
+   - `contact_height == high` AND `post_speed_ftps ≥ drive_min_speed_ftps` → **overhead**.
+   - `post_speed_ftps ≥ drive_min_speed_ftps` (flat, fast) → **drive**.
+   - **reset** — `pre_speed_ftps ≥ reset_min_incoming_ftps` (hard incoming) AND
+     `post_speed_ftps ≤ dink_max_speed_ftps` (soft reply) AND `contact_zone != baseline`.
+   - `post_speed_ftps ≤ dink_max_speed_ftps` AND `contact_zone == kitchen` → **dink**.
+   - `post_speed_ftps ≤ dink_max_speed_ftps` AND `contact_zone in {transition, baseline}` → **drop**.
+   - **tweener tiebreak** (`dink_max < post_speed_ftps < drive_min`, 16–25 ft/s):
+     `arc_height_frac ≥ drive_drop_arc_split` → **drop** (lofted), else → **drive** (flat).
+5. otherwise → **unknown** (recorded honestly, counts toward `n_unknown_type`).
 
 > **Reset** (per review): a fast ball returned softly, valid only when the
 > players are off the baseline and the reply settles into the kitchen. v1 keys

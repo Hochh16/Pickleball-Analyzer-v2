@@ -26,13 +26,21 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.3.0"  # 0.1.0 -> 0.2.0: is_volley consumed bounces.json.
+STAGE_VERSION = "0.4.0"  # 0.1.0 -> 0.2.0: is_volley consumed bounces.json.
                          # 0.2.0 -> 0.3.0 (real-ball): is_volley primary signal is
                          # a recall-focused LOCAL ball-trajectory scan between
                          # shots (the precision bounce list under-detects on the
                          # real ball -> false volleys); bounce list is now a
                          # fallback for occluded gaps. + lob requires below-drive
-                         # speed; + fps/resolution scaling. Output schema unchanged.
+                         # speed; + fps/resolution scaling.
+                         # 0.3.0 -> 0.4.0 (real-ball): LANDING-AWARE shot type --
+                         # the airborne ball's pixel-speed is depth-corrupted and
+                         # its court projection explodes, so when a real bounce
+                         # landing exists (~21% of shots) the landing court_y drives
+                         # the drive/drop/dink split (a sound, ground-projected
+                         # signal); speed/arc remain the fallback otherwise. Adds
+                         # features.landing_court_y + features.type_from_landing.
+                         # See SYSTEM_DESIGN.md Stage 6 ledger for coverage limits.
 
 # --- Config (see contract) --------------------------------------------------
 LOB_MIN_ARC_FRAC = 0.35
@@ -274,6 +282,27 @@ def build_bounces_between_index(bounces_doc: dict) -> Dict[Tuple[int, int], int]
     return idx
 
 
+def build_landing_index(bounces_doc: dict) -> Dict[int, float]:
+    """shot_id -> LANDING court_y: the receiver-side ground-contact court_y of the
+    first bounce after the shot. Bounces are ON THE GROUND, so they project to
+    court coordinates reliably (unlike the airborne ball contact, whose ground-
+    homography projection explodes — see KNOWN_ISSUES Stage 6 depth-speed). This
+    is the SOUND signal for the drive/drop/dink/lob split: a drive lands deep, a
+    drop/dink lands within the kitchen (+~2 ft)."""
+    out: Dict[int, float] = {}
+    for b in sorted(bounces_doc.get("bounces", []), key=lambda b: b.get("frame", 0)):
+        bs = b.get("between_shots", [None, None])
+        if bs[0] is None:
+            continue
+        sid = int(bs[0])
+        if sid in out:
+            continue  # keep the earliest bounce after the shot = its landing
+        cxy = b.get("court_xy_ft")
+        if cxy and cxy[1] is not None:
+            out[sid] = float(cxy[1])
+    return out
+
+
 def bounced_between(by, bknown, f0: int, f1: int,
                     rebound_min_px: float, descent_min_px: float):
     """Recall-focused local test for the VOLLEY flag: did the ball bounce off the
@@ -315,37 +344,55 @@ def bounced_between(by, bknown, f0: int, f1: int,
 
 # --- Classification ----------------------------------------------------------
 
-def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone):
+def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
+                  landing_y=None):
+    """Fused rule classifier. The airborne ball's pixel-speed is depth-corrupted
+    (a drive hit down-court reads slow) and its court projection explodes, so when
+    a real bounce LANDING is available (`landing_y` = the ball's landing court_y)
+    it drives the drive/drop/dink split — a *sound*, ground-projected signal.
+    Falls back to arc + (corrupted) speed only when there's no landing (volleys,
+    missed bounces), at lower confidence. Returns (type, confidence)."""
     if is_serve:
         return "serve", 0.95
-    # A lob is lofted AND slow. On the noisy real ball a fast drive can show a
-    # slight measured bow; require below-drive speed so a fast arced shot isn't
-    # called a lob (it falls through to drive/overhead below).
+    # A lob is a high lofted arc AND slow. It lands deep but is a lob, so resolve
+    # it before the landing-zone split. The speed gate keeps a fast flat drive
+    # with a noisy-high measured arc from being mislabeled a lob.
     if (arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC
             and (post_ftps is None or post_ftps < DRIVE_MIN_SPEED_FTPS)):
-        return "lob", min(1.0, arc_frac)
+        return "lob", min(1.0, max(0.6, arc_frac))
+
+    # --- Landing-aware path: the SOUND signal (bounces project reliably) ---------
+    if landing_y is not None:
+        # soft landing within the kitchen + ~2 ft buffer (operator: a drop/dink
+        # lands up to ~2 ft past the kitchen line, not only inside the kitchen).
+        soft = abs(landing_y - NET_Y_FT) <= KITCHEN_MAX_DIST_FT
+        if soft:
+            # dink hit from the kitchen, drop hit from deeper (third-shot drop)
+            return ("dink", 0.75) if zone == "kitchen" else ("drop", 0.75)
+        # deep landing + not a lob = a flat fast ball -> drive (overhead if struck high)
+        if contact_h == "high":
+            return "overhead", 0.7
+        return "drive", 0.78
+
+    # --- Fallback (no landing): arc + depth-corrupted speed, lower confidence ----
     if contact_h == "high" and post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
-        return "overhead", 0.7
+        return "overhead", 0.6
     if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
-        return "drive", 0.7
+        return "drive", 0.6
     if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
             and post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
             and zone != "baseline"):
-        return "reset", 0.65
+        return "reset", 0.55
     if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone == "kitchen":
-        return "dink", 0.65
+        return "dink", 0.5
     if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("transition", "baseline"):
-        return "drop", 0.6
-    # Tweener zone (between dink and drive speed): the speed alone is ambiguous,
-    # and on the real ball depth-foreshortening corrupts pixel-speed (a drive hit
-    # down-court reads slow). Fall back to trajectory SHAPE -- flat => drive,
-    # lofted => drop -- which survives the depth problem. Drains the old "unknown"
-    # dead-zone into the right bucket. (A genuine depth-drive that reads BELOW
-    # dink speed is still indistinguishable from a drop in 2D -- a known limit.)
+        return "drop", 0.45
+    # Tweener (16-25 ft/s) with no landing: speed is ambiguous + depth-corrupted,
+    # so resolve by trajectory SHAPE -- flat => drive, lofted => drop.
     if post_ftps is not None and DINK_MAX_SPEED_FTPS < post_ftps < DRIVE_MIN_SPEED_FTPS:
         if arc_frac is not None and arc_frac >= DRIVE_DROP_ARC_SPLIT:
-            return "drop", 0.5
-        return "drive", 0.5
+            return "drop", 0.4
+        return "drive", 0.4
     return "unknown", 0.3
 
 
@@ -388,6 +435,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # on the noisy real ball (missed bounce -> false volley). The bounce list is
     # kept only as a fallback when the local trajectory is too occluded to judge.
     bounces_between = build_bounces_between_index(bounces_doc)
+    # shot_id -> landing court_y (sound, ground-projected signal for shot type)
+    landing_index = build_landing_index(bounces_doc)
 
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
     out_shots = []
@@ -418,8 +467,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         arc_frac = arc_height_frac(bx, by, bknown, f, arc_end)
         contact_h = contact_height(float(impact_y), pose)
 
+        # landing court_y from the first bounce after this shot (sound signal)
+        landing_y = landing_index.get(int(s["shot_id"]))
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
-                                             post_ftps, pre_ftps, zone)
+                                             post_ftps, pre_ftps, zone, landing_y)
 
         # stroke side: real only for the user (handedness known + mapped)
         hand = user_hand if is_user else None
@@ -458,6 +509,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
                 "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
                 "contact_height": contact_h,
+                # landing court_y (sound shot-type signal) + whether the type came
+                # from the landing path (reliable) vs the speed/arc fallback.
+                "landing_court_y": round(landing_y, 2) if landing_y is not None else None,
+                "type_from_landing": landing_y is not None,
                 "handedness_used": hand,
                 "handedness_known": hand in ("left", "right"),
             },
