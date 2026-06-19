@@ -17,12 +17,12 @@ Outputs (in the same folder):
     poses.parquet          - per-(frame, track_id) pose with 33 landmarks
     pose_summary.json      - per-track diagnostic and warnings
 
-In-scope detections pass a strict per-track filter (see contract.md):
-    is_user=True
-    OR (transient=False
-        AND in_court_frac >= 0.50
-        AND court_y_ft.max() <= 44.0
-        AND court_y_ft.min() >= -8.0
+In-scope detections (which tracks get posed):
+    is_user=True (Stage 2.5 role 'user')
+    OR role in {partner, opp_left, opp_right}        (track_roles.json present)
+    OR — fallback, no track_roles.json — the geometric gate:
+       (transient=False AND in_court_frac >= 0.50
+        AND court_y_ft.max() <= 44 AND court_y_ft.min() >= -8
         AND lifetime > 5 seconds)
 
 Per-detection processing: for each in-scope detection, the bbox crop is
@@ -58,7 +58,13 @@ MIN_TRACKING_CONFIDENCE = 0.5
 BBOX_PAD_FRAC = 0.10
 USER_DETECTION_RATE_WARNING = 0.5
 
-# Scope filter constants
+# Scope: roles Stage 2.5 assigns to the non-user players we pose. The geometric
+# court_y gate (below) is only the fallback when track_roles.json is absent — it
+# cannot survive far-side projection jitter, so roles are the primary scope.
+# See SYSTEM_DESIGN.md Stage 2/3.
+PLAYER_SCOPE_ROLES = frozenset({"partner", "opp_left", "opp_right"})
+
+# Geometric-fallback scope constants (no track_roles.json).
 SCOPE_MIN_IN_COURT_FRAC = 0.50
 SCOPE_MAX_Y_FT = 44.0
 SCOPE_MIN_Y_FT = -8.0
@@ -195,13 +201,22 @@ def load_track_roles(path: Path) -> Optional[Dict[int, str]]:
         return None
 
 
-def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
-    """Apply the per-track scope filter described in the contract.
+def filter_to_scope(
+    df: pd.DataFrame, fps: float, roles: Optional[Dict[int, str]] = None,
+) -> Tuple[pd.DataFrame, Dict]:
+    """Apply the per-track scope filter (which tracks get posed).
 
-    `is_user` rows are always in scope (set by the caller from the Stage 2.5
-    role 'user' when track_roles.json is present, so every user track — including
-    re-identified / behind-baseline segments — is posed). Non-user tracks pass
-    the geometric real-player gate."""
+    `is_user` rows are always in scope (set by the caller from the Stage 2.5 role
+    'user'). For the OTHER players:
+      * **roles given (track_roles.json present): scope by ROLE** — pose every
+        track Stage 2.5 classified as partner / opponent, and exclude the noise
+        tracks. This is robust where a geometric court_y gate is NOT: far-side
+        foot points jitter past the baseline (the homography is hypersensitive
+        near the horizon, ~4 px/ft), so a court_y threshold either deletes real
+        opponents (max-based) or admits in-court noise (median-based). The role
+        classification is the right discriminator. (See SYSTEM_DESIGN.md §3.)
+      * **no roles (fallback): the conservative geometric gate** (max court_y).
+    """
     total_player_detections = int(len(df))
     non_transient = df[~df["transient"]]
     non_transient_detections = int(len(non_transient))
@@ -210,12 +225,25 @@ def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
     user_track_ids = set(df.loc[df["is_user"], "track_id"].unique().tolist())
 
     candidates = df[(~df["transient"]) & (~df["is_user"])]
-    if len(candidates) == 0:
-        in_scope_track_ids: set = set()
+    candidate_tids = set(candidates["track_id"].unique().tolist())
+
+    if roles is not None:
+        # Role-based scope: the classified non-user players; noise excluded.
+        scope_basis = "role"
+        in_scope_track_ids: set = {
+            tid for tid in candidate_tids
+            if roles.get(tid) in PLAYER_SCOPE_ROLES
+        }
+    elif len(candidates) == 0:
+        scope_basis = "geometric"
+        in_scope_track_ids = set()
     else:
+        # Geometric fallback (no Stage 2.5): conservative max-based gate. Strict
+        # (may drop a jittery far player) but won't admit noise when we have no
+        # role info to discriminate.
+        scope_basis = "geometric"
         g = candidates.groupby("track_id")
         per_track = pd.DataFrame({
-            "n_rows":         g.size(),
             "in_court_frac":  g["in_court"].mean(),
             "y_max":          g["court_y_ft"].max(),
             "y_min":          g["court_y_ft"].min(),
@@ -225,7 +253,6 @@ def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
         per_track["lifetime_sec"] = (
             per_track["frame_max"] - per_track["frame_min"] + 1
         ) / fps
-
         passes = (
             (per_track["in_court_frac"] >= SCOPE_MIN_IN_COURT_FRAC)
             & (per_track["y_max"] <= SCOPE_MAX_Y_FT)
@@ -249,6 +276,7 @@ def filter_to_scope(df: pd.DataFrame, fps: float) -> Tuple[pd.DataFrame, Dict]:
         "in_scope_detections":      int(len(in_scope_df)),
         "in_scope_tracks":          len(all_in_scope_tids),
         "in_scope_track_ids":       all_in_scope_tids,
+        "scope_basis":              scope_basis,
     }
     return in_scope_df, stats
 
@@ -687,23 +715,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Input error: {e}", file=sys.stderr)
         return 2
 
-    # Stage 2.5 track_roles.json is the authority on who the user is. When
-    # present, mark is_user from the role 'user' (not the click-only flag in
-    # players.parquet, which is empty in the no-clicks flow) so EVERY user track
-    # — including re-identified / behind-baseline segments the geometric gate
-    # would drop — is always in scope. Partner/opponents still pass the geometric
-    # real-player gate (extending role-awareness to them is a future item).
+    # Stage 2.5 track_roles.json is the authority on player identity. When
+    # present: mark is_user from the role 'user' (not the click-only flag in
+    # players.parquet, empty in the no-clicks flow) so every user segment is
+    # always in scope, AND scope the non-user players (partner/opponents) by
+    # role too — robust where the geometric court_y gate is not (far-side foot
+    # jitter past the baseline used to delete every opponent from pose).
     roles = load_track_roles(folder / "track_roles.json")
     if roles is not None:
         user_tids = {tid for tid, r in roles.items() if r == "user"}
         players_df["is_user"] = players_df["track_id"].isin(user_tids)
         logger.info(f"using track_roles.json: {len(user_tids)} user track(s) "
-                    "drive is_user (always in scope)")
+                    "drive is_user; partner/opponents scoped by role")
     else:
         logger.info("no track_roles.json; using players.parquet is_user + "
                     "geometric scope filter only")
 
-    scope_df, scope_stats = filter_to_scope(players_df, fps)
+    scope_df, scope_stats = filter_to_scope(players_df, fps, roles)
     n_user = int(scope_df["is_user"].sum())
     n_other = int((~scope_df["is_user"]).sum())
     logger.info(

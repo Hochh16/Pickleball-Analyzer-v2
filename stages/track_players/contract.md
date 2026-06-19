@@ -44,10 +44,11 @@ One row per (frame, track_id). Columns:
 | `is_user` | bool | True if this track is currently the identified user |
 | `user_segment_id` | int (nullable) | Increments each time user identity is re-acquired after a gap. Null for non-user rows. |
 | `bbox_x1, bbox_y1, bbox_x2, bbox_y2` | float | Image-space pixels |
-| `foot_x, foot_y` | float | Bottom-center of bbox, image-space pixels |
-| `court_x_ft, court_y_ft` | float | Foot point projected via homography. NaN if projection is non-finite. |
+| `foot_x, foot_y` | float | Bottom-center of bbox, image-space pixels, **temporally median-smoothed per track** (de-jitter before projection) |
+| `court_x_ft, court_y_ft` | float | Smoothed foot point projected via homography. NaN if projection is non-finite. **Far-side positions are zone-precision only** (~±5 ft near the baseline — the homography is ~4 px/ft there, worsening toward the horizon; see `court_pos_reliable`). |
 | `in_court` | bool | `0 ≤ court_x_ft ≤ width_ft AND 0 ≤ court_y_ft ≤ length_ft` |
 | `transient` | bool | True if track lifetime < 30 frames OR foot points lie entirely outside the tracking-zone rectangle (which already contains the court) |
+| `court_pos_reliable` | bool | False when the projection lands in the horizon-divergence zone (`|court_y|` beyond court + 6 ft) — the far-side foot point's pixel jitter explodes there, so the value is unreliable. Downstream should use far-side **zone**, not exact court_y. |
 
 ### `players_pending.json`
 
@@ -74,7 +75,8 @@ Empty `gaps` array → clean run, no re-identification needed. `warnings` carrie
 8. **Non-user tracks**: All other detected persons are recorded with `is_user=False`. Recording continues uninterrupted during user gaps.
 9. **Gap rows are absent, not interpolated**: During a user gap, no `is_user=True` rows are emitted. If YOLO redetects the user under a new `track_id`, those rows appear as `is_user=False` until a click reclaims them.
 10. **Transient flagging** (post-pass): mark `transient=True` for any track whose lifetime < 30 frames OR whose foot points lie entirely outside the tracking-zone rectangle (computed from `tracking_zone.behind_baseline_ft` and `beyond_sideline_ft`).
-11. **Doubles sanity check** (post-pass): count tracks that (a) persist > 5 seconds AND (b) have ≥ 80% of their lifetime's foot points inside the court rectangle. If count > 4, append a warning to `players_pending.json["warnings"]` listing the count and offending `track_id`s. Likely cause: misconfigured `tracking_zone` or adjacent-court contamination.
+11. **Foot-point smoothing + re-projection** (post-pass): per track, temporally median-smooth `foot_x`/`foot_y` (window ≈ 0.15 s) in **pixel** space — the well-behaved quantity — then re-project to `court_x_ft`/`court_y_ft`, recompute `in_court`, and set `court_pos_reliable`. The far half of the court is compressed to ~4 px/ft near the baseline (worsening toward the horizon), so raw per-frame foot points project to noisy court_y with large spikes past the baseline; smoothing reduces jitter, and `court_pos_reliable=False` flags the horizon-divergence garbage. Far-side absolute position stays low-precision (a camera-geometry limit) — usable as **zone**, not exact court_y. See SYSTEM_DESIGN.md §3 Stage 2.
+12. **Doubles sanity check** (post-pass): count tracks that (a) persist > 5 seconds AND (b) have ≥ 80% of their lifetime's foot points inside the court rectangle. If count > 4, append a warning to `players_pending.json["warnings"]` listing the count and offending `track_id`s. Likely cause: misconfigured `tracking_zone` or adjacent-court contamination.
 
 ## Configuration
 
@@ -108,7 +110,7 @@ python -m stages.track_players.track <video_folder>
 
 `test_track.py` runs against a 30-second clip in `data/test_clip/` and verifies:
 
-1. `players.parquet` exists, is non-empty, and has all 14 expected columns with correct dtypes.
+1. `players.parquet` exists, is non-empty, and has all 15 expected columns with correct dtypes.
 2. At least one row has `is_user=True` (initial click resolved).
 3. Within any single `user_segment_id`, all `is_user=True` rows share the same `track_id`.
 4. For at least one frame, ≥ 2 distinct `track_id` values are present (multi-person tracking working).

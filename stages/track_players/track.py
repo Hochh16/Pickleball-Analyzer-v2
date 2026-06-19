@@ -44,13 +44,24 @@ DOUBLES_PERSIST_SECONDS = 5.0
 DOUBLES_IN_COURT_FRAC = 0.80
 CLICK_MAX_DISTANCE_PX = 150     # max distance from click to nearest detection
 
+# Far-side court positions are hypersensitive: near the far baseline the
+# homography is ~4 px/ft (worsening toward the horizon), so the YOLO bbox-bottom
+# foot point's pixel jitter blows up into +/-5-10 ft of court_y with spikes well
+# past the baseline (observed up to 150 ft on a 44-ft court). We de-jitter the
+# foot point in PIXEL space (well-behaved) with a short temporal median, then
+# re-project, and flag positions in the horizon-divergence zone as low-precision
+# rather than emitting garbage. Near-side rows are essentially unchanged.
+# See SYSTEM_DESIGN.md Stage 2 ledger.
+FOOT_SMOOTH_SEC = 0.15                  # temporal median window for the foot point
+COURT_POS_RELIABLE_MARGIN_FT = 6.0      # |court_y| beyond court+this = unreliable projection
+
 PARQUET_COLUMNS = [
     "frame", "t_sec", "track_id",
     "is_user", "user_segment_id",
     "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2",
     "foot_x", "foot_y",
     "court_x_ft", "court_y_ft",
-    "in_court", "transient",
+    "in_court", "transient", "court_pos_reliable",
 ]
 
 # -- Exceptions ----------------------------------------------------------------
@@ -455,6 +466,52 @@ def doubles_sanity_warning(
 # -- Output --------------------------------------------------------------------
 
 
+def smooth_foot_and_reproject(
+    df: pd.DataFrame, image_to_court: np.ndarray,
+    width_ft: float, length_ft: float, fps: float,
+) -> pd.DataFrame:
+    """De-jitter the foot point and re-project to court coordinates.
+
+    The far half of the court is compressed to a few px/ft near the horizon, so
+    raw per-frame foot points (bbox bottom) project to noisy court_y with large
+    spikes. We median-filter the foot point in PIXEL space per track over a short
+    window (smoothing the well-behaved quantity, not the exploded court_y), then
+    re-project. court_pos_reliable=False marks rows whose projection lands in the
+    horizon-divergence zone (|court_y| beyond court + margin) so downstream can
+    use far-side ZONE but not exact court_y. Near-side rows barely move.
+    """
+    if len(df) == 0:
+        return df
+    win = max(3, int(round(FOOT_SMOOTH_SEC * fps)))
+    if win % 2 == 0:
+        win += 1
+    df = df.sort_values(["track_id", "frame"]).reset_index(drop=True)
+    for col in ("foot_x", "foot_y"):
+        df[col] = df.groupby("track_id")[col].transform(
+            lambda s: s.rolling(win, center=True, min_periods=1).median()
+        )
+    pts = np.column_stack([
+        df["foot_x"].to_numpy(), df["foot_y"].to_numpy(), np.ones(len(df))
+    ])
+    proj = pts @ image_to_court.T
+    w = proj[:, 2]
+    cx = np.where(w != 0, proj[:, 0] / w, np.nan)
+    cy = np.where(w != 0, proj[:, 1] / w, np.nan)
+    df["court_x_ft"] = cx
+    df["court_y_ft"] = cy
+    df["in_court"] = (
+        np.isfinite(cx) & np.isfinite(cy)
+        & (cx >= 0.0) & (cx <= width_ft) & (cy >= 0.0) & (cy <= length_ft)
+    )
+    m = COURT_POS_RELIABLE_MARGIN_FT
+    df["court_pos_reliable"] = (
+        np.isfinite(cx) & np.isfinite(cy)
+        & (cy >= -m) & (cy <= length_ft + m)
+        & (cx >= -m) & (cx <= width_ft + m)
+    )
+    return df
+
+
 def annotated_to_dataframe(annotated: List[Dict]) -> pd.DataFrame:
     rows = []
     for d in annotated:
@@ -477,6 +534,7 @@ def annotated_to_dataframe(annotated: List[Dict]) -> pd.DataFrame:
             "court_y_ft":      float(cy) if np.isfinite(cy) else float("nan"),
             "in_court":        bool(d["in_court"]),
             "transient":       bool(d.get("transient", False)),
+            "court_pos_reliable": True,   # set by smooth_foot_and_reproject()
         })
     df = pd.DataFrame(rows, columns=PARQUET_COLUMNS)
     # Nullable integer dtype so None becomes <NA> in parquet, not NaN-as-float.
@@ -557,6 +615,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     warning = doubles_sanity_warning(annotated, court["fps"])
 
     df = annotated_to_dataframe(annotated)
+    df = smooth_foot_and_reproject(
+        df, court["image_to_court"], court["width_ft"],
+        court["length_ft"], court["fps"],
+    )
     df.to_parquet(out_parquet, index=False)
     logger.info(f"Wrote {out_parquet} ({len(df)} rows)")
 

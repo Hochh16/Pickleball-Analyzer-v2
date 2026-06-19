@@ -245,12 +245,25 @@ These cannot be "fixed later." Each needs an explicit choice; record it here.
 Fix upstream accuracy *before* anything depends on it. Each item lists its lever
 and what it unblocks. (Tractability from the audit; none requires abandoning 2D.)
 
-1. **Stage 2 far-side player drift (C6).** Foot-point refinement / ankle landmark /
-   per-depth correction. Unblocks: opponent pose (Stage 3) → opponent stats +
-   body-mechanics; cleaner role classification. *Tractable, high leverage, no GPU.*
-2. **Stage 2.5 role-awareness (C5).** Extend re-id to partner/opponents + wire roles
-   into Stages 3/6/8. Unblocks: winner-side, per-receiver errors, opponent
-   targeting, non-user stroke side, multi-role rating. *Tractable.*
+1. **Stage 2 far-side player drift (C6).** ✅ **DONE 2026-06-19** (commit pending).
+   Implemented: Stage 2 temporal foot-point smoothing + `court_pos_reliable` flag;
+   **Stage 3 scope is now role-based** (pose user + partner + opponents by Stage-2.5
+   role, geometric gate only as fallback) — the old `court_y.max() ≤ 44` gate
+   deleted every opponent from pose. Validated on pb_2min: **all 10 opponents
+   restored, 0 noise admitted.** Unblocks opponent pose → opponent body-mechanics
+   (F17). *Honest findings:* (a) foot smoothing is **marginal** — far-side error is
+   correlated bbox imprecision × ~4 px/ft horizon compression, not spikes; far-side
+   absolute position stays **zone-precision (~±5 ft)**, a camera-geometry limit
+   (flagged via `court_pos_reliable`). (b) **Role-based scope's robustness now
+   DEPENDS on Stage-2.5 role quality** — clean on pb_2min, messy on the test fixture
+   (38 opp fragments). So it pulled a slice of #2 forward; #2 must be hardened for
+   role-based scope to be robust on messy real videos. (c) Posing all opponents is
+   ~5× the pose compute (throughput note, C8). (d) Far-opponent poses are
+   lower-fidelity (small crops) — relevant to opponent body-mechanics quality.
+2. **Stage 2.5 role-awareness (C5).** Extend re-id to partner/opponents + tighten
+   opp L/R + wire roles into Stages 6/8. (Stage 3 already consumes roles, see #1.)
+   Unblocks: winner-side, per-receiver errors, opponent targeting, non-user stroke
+   side, multi-role rating — AND hardens role-based pose scope (#1). *Tractable.*
 3. **Confidence propagation (C9).** Carry per-shot/-event confidence + sample sizes
    through 6→7→8→9→10→11 so every reported number has an honest reliability. *The
    architectural fix that makes "honest stats" real, not coarse.*
