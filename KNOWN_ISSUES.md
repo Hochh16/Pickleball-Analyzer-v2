@@ -1,5 +1,19 @@
 # Known Issues and Deferred Decisions
 
+> **⚠ `SYSTEM_DESIGN.md` (repo root) is the authoritative whole-system accuracy +
+> dependency ledger as of 2026-06-19** — read it first. It carries the per-stage
+> accuracy, the blast-radius of each limitation, the fundamental-limits decisions,
+> and the foundations-first roadmap. This file remains the detailed issue log.
+> **New discipline (SYSTEM_DESIGN §0):** no deferral without recording its blast
+> radius; a stage isn't done until it meets its downstream's accuracy on REAL data.
+>
+> **Recently addressed (2026-06-19):** far-side player court-position drift —
+> Stage 3 now scopes pose by Stage-2.5 *role* (was a brittle `court_y.max()≤44`
+> gate that deleted all opponents); far-side absolute position is accepted as
+> zone-precision (camera-geometry limit, flagged `court_pos_reliable`). Opponent
+> role classification — opponents are now identity-based `opp_a`/`opp_b` via
+> appearance+continuity re-id (was geometric far-side-x at flat conf 0.5).
+
 Issues observed during development that are not yet resolved, with notes on
 when/where they should be addressed. Update as issues are resolved or as new
 ones are discovered.

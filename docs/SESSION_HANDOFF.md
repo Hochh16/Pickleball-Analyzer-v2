@@ -1,13 +1,74 @@
-# Session Handoff: real ball through Stages 1–7 done for pb_2min — Stage 4 recall next
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-06-19)
 
-State of Pickleball-Analyzer-v2 at the end of the **June 16 2026** session. The
-full 13-stage pipeline was implemented + smoke-tested previously on a **synthetic**
-placeholder ball. Real ball detection (v4) works, and pb_2min has now been pushed
-through **Stages 1, 2, 2.5, 3, 5, 5.5, 6, and 7 on the REAL ball + real players**,
-each operator-validated and committed. A **foundation-hardening pass** on Stage 5
-(contamination + projection + serve dedup) and Stage 7 (ball-out-of-play rally
-boundaries) followed. **Next (David's call): improve Stage 4 ball-detection
-recall** — the dominant downstream limiter — then Stages 8→11.
+> **READ `SYSTEM_DESIGN.md` (repo root) FIRST.** It is the authoritative source of
+> truth: dependency map, per-stage accuracy ledger, the honest trust-map (what's
+> real vs noise *today*), fundamental-limits decisions, the foundations-first
+> roadmap, and the F1–F32 future register. This handoff is the session *log*;
+> SYSTEM_DESIGN.md is the live *state*. It's also pinned in auto-memory.
+
+## The design philosophy (NEW — how we work now)
+
+v1–v3 (and v4 was repeating it) failed from **deferred decisions becoming
+downstream blockers, lost cross-session rationale, and stats reported with no
+honest accuracy accounting.** The countermeasure is SYSTEM_DESIGN.md §0:
+1. A stage isn't "done" until it meets the accuracy its downstream needs,
+   **validated on REAL data**. No "good enough for now, fix later."
+2. **No deferral without recording its blast radius** in the ledger.
+3. **Every session reads SYSTEM_DESIGN.md first** and updates it when decisions change.
+4. **Fundamental limits are decided, not deferred** (accept-with-confidence /
+   fix-at-capture / scope-out).
+
+## Status (end of 2026-06-19 session)
+
+This session pivoted from symptom-patching to a **full whole-system parallel audit**
+→ SYSTEM_DESIGN.md, then began the **foundations-first roadmap**. Commits:
+- `fcddcb6` — **SYSTEM_DESIGN.md** (the audit / source of truth).
+- `94d5b1f` — **Stage 6 v0.4.0**: landing-aware shot type (drive/drop/dink from the
+  bounce landing — sound where the airborne ball's depth-corrupted speed is not;
+  ~21% landing coverage, honest confidence).
+- `4b9c25d` — **Foundation #1**: Stage 2 far-side drift + **role-based pose scope**.
+  Opponents were deleted from pose by a `court_y.max()≤44` gate (far-side jitter
+  spikes past the baseline); now Stage 3 scopes by Stage-2.5 role. Opponents
+  restored (validated pb_2min). Far-side absolute position is **zone-precision
+  (~±5 ft)** — a camera-geometry limit, flagged via `court_pos_reliable`.
+- `736b567` — **Foundation #2 (core)**: opponents grouped into two stable
+  IDENTITIES **`opp_a`/`opp_b`** by appearance + continuity re-id (NOT position
+  L/R — they switch sides), honest moderate confidence. System-wide rename
+  opp_left/opp_right → opp_a/opp_b.
+
+**Roadmap (SYSTEM_DESIGN §6): #1 done · #2 core done · #3 = NEXT.**
+
+## NEXT SESSION: Foundation #3 — confidence propagation (design LOCKED)
+
+Thread honest per-event confidence through Stages 6→11 so **every reported number
+carries its reliability** (the audit's #1 architectural finding: no stage
+propagates per-event confidence; every stat renders as certain even when it rests
+on noise). **Decided with David 2026-06-19:**
+- **Option 2 — inline `{value, confidence, n}` wrappers** on every metric
+  (confidence inseparable from the value; no orphan numbers; chosen over a parallel
+  block because that drifts).
+- **All three stages in one pass: 8 → 9 → 11.**
+- **Stage 8:** `conf_n()` aggregator (mean per-event confidence × small-sample
+  penalty) + `mv()` wrapper; a per-metric **confidence-source map** — clean sources
+  exist (`shot_mix`←`shot_type_confidence`, `bounce_in_out`←bounce confidence,
+  `serve_fault`←`end_reason_confidence`); metrics with **no** per-event source
+  (`rally_length_shots`, `match_span`) need a deliberate decision on what their
+  confidence *means*. That per-metric mapping is the real work.
+- **Stage 9:** read `.value`; set per-dimension confidence from each metric's real
+  `.confidence` (retire the coarse synthetic/real heuristic).
+- **Stage 11/timeline:** surface per-metric confidence so the report gates each number.
+- **Honest caveat to document:** captures classification-noise + sample-size, **NOT
+  recall-bias** (Stage 8 can't see missed events — that stays a documented limit).
+
+## Parallel tracks (David chose; queued, not started)
+- **z-recovery feasibility spike** — parabola/gravity ball-height from a single
+  camera; informs the SYSTEM_DESIGN §5 ball-height/3D decision (currently "investigate first").
+- **Input-UI + reporting skeleton** — #2 surfaced a concrete need: non-user
+  handedness needs a UI to show the operator "who is `opp_a`" before they can label it.
+
+---
+
+_Below: the prior session log (history; superseded by SYSTEM_DESIGN.md for current state)._
 
 ## DONE 2026-06-16: foundation hardening (Stage 5 v0.3.0 + Stage 7 v0.2.0)
 

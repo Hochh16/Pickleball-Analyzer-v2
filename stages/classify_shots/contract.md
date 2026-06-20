@@ -52,7 +52,7 @@ From the per-video folder:
 | `ball.parquet` | Stage 4 / synth | post-impact **trajectory** (arc shape) for a few frames after contact |
 | `court.json` | Stage 1 | homography, `derived.pixels_per_foot_at_*` for speed scaling |
 | `court_zones.json` | Stage 1 | kitchen/transition/baseline depth bands |
-| `roster.json` | setup (NEW, asked up front) | per-player **handedness** by logical role (user / partner / opp_left / opp_right) |
+| `roster.json` | setup (NEW, asked up front) | per-player **handedness** by logical role (user / partner / opp_a / opp_b) |
 
 CLI flags (defaults in Configuration): `--force`, `--log-level`, plus the
 threshold knobs (`--dink-max-speed-ftps`, `--drive-min-speed-ftps`,
@@ -127,8 +127,8 @@ when the signal is too weak/ambiguous, emit `"unknown"` rather than guess.
 ### Axis A — stroke side (forehand / backhand)
 
 1. **Handedness — asked up front for all players.** A new `roster.json`
-   captures handedness per **logical role** (user, partner, opp_left,
-   opp_right), collected during setup (operator answers; safer and more
+   captures handedness per **logical role** (user, partner, opp_a,
+   opp_b), collected during setup (operator answers; safer and more
    accurate than auto-detecting paddle hand on the serve). Knowing all four
    enables high-value analysis later (e.g. "hit to the opponent's backhand").
    **But applying it needs role identity:** Stage 6 must know which track_id is
@@ -153,12 +153,12 @@ when the signal is too weak/ambiguous, emit `"unknown"` rather than guess.
      "handedness": {
        "user":     "right",
        "partner":  "unknown",
-       "opp_left": "unknown",
-       "opp_right":"unknown"
+       "opp_a": "unknown",
+       "opp_b":"unknown"
      }
    }
    ```
-   The `opp_left` / `opp_right` labels are provisional until the role stage
+   The `opp_a` / `opp_b` labels are provisional until the role stage
    pins which person is which. v1 reads only `handedness.user` (must match
    `court.json.dominant_hand`); the rest is stored for when roles exist.
 2. **Facing.** From pose, decide if the player faces toward or away from the
@@ -377,7 +377,7 @@ lob requires below-drive speed; tweener (16–25 ft/s) arc-shape tiebreak drains
 - **Player-role classification is the key unlock.** Non-user handedness
   (collected in `roster.json`) and per-player analysis like "hit to the
   opponent's backhand" need a stage that maps logical roles (user / partner /
-  opp_left / opp_right) to track_ids over the match — the "Stage 2.5" noted in
+  opp_a / opp_b) to track_ids over the match — the "Stage 2.5" noted in
   `KNOWN_ISSUES.md`. Until it exists, non-user stroke side is `unknown`.
 - **Reset & volley depend on bounce/landing + opponent position.** v1 uses the
   ball-trajectory bounce check (volley) and hitter-position+speed (reset); the

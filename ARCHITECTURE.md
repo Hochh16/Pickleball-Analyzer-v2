@@ -1,5 +1,15 @@
 # Architecture
 
+> **⚠ `SYSTEM_DESIGN.md` (repo root) is the AUTHORITATIVE source of truth as of
+> 2026-06-19** — the whole-system accuracy ledger, dependency map, trust-map,
+> fundamental-limits decisions, and the foundations-first roadmap. Read it first.
+> This file is the high-level design frame; SYSTEM_DESIGN.md governs current
+> state, accuracy, and work order. **Design discipline (SYSTEM_DESIGN §0):** a
+> stage isn't "done" until it meets its downstream's accuracy needs on REAL data;
+> no deferral without recording its blast radius. Recent: Stage 6 v0.4.0
+> (landing-aware type), Foundation #1 (role-based pose scope), Foundation #2
+> (opponents are now identity-based `opp_a`/`opp_b`, not position L/R).
+
 ## Implementation status (2026-06-14)
 
 This is a design doc; per-stage status lives here as a quick pointer (full
