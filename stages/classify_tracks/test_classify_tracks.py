@@ -22,8 +22,8 @@ from stages.classify_tracks.classify_tracks import load_court, main as classify_
 
 TEST_FOLDER = Path("data/test_clip")
 COVERAGE_GAIN_BAR = 0.10
-ROLES = {"user", "partner", "opp_left", "opp_right", "noise"}
-PLAYING = {"user", "partner", "opp_left", "opp_right"}
+ROLES = {"user", "partner", "opp_a", "opp_b", "noise"}
+PLAYING = {"user", "partner", "opp_a", "opp_b"}
 
 
 def _fail(m): print(f"  FAIL: {m}")
@@ -85,7 +85,7 @@ def cond_roles_and_sides(d: dict, med_y: dict, net_y: float) -> bool:
         ys = [med_y[t] for t in d["roles"][role]["track_ids"] if t in med_y]
         return float(np.median(ys)) if ys else float("nan")
     near = max(side_median("user"), side_median("partner"))
-    far = min(side_median("opp_left"), side_median("opp_right"))
+    far = min(side_median("opp_a"), side_median("opp_b"))
     if not (near < net_y):
         _fail(f"user/partner not near-side (median y {near:.1f} >= net {net_y})")
         return False

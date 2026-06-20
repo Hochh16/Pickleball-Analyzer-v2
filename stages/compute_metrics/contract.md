@@ -14,9 +14,15 @@ per-team error counts.
 
 ## Scope decisions (settled with the operator before drafting)
 
+> **NOTE (2026-06-19):** opponents are now identity-based **`opp_a` / `opp_b`**
+> (Stage 2.5), not position L/R. This contract's older `opp_left`/`opp_right`
+> prose and any left/right-by-court_x opponent semantics below are **stale** and
+> belong to the deferred real-ball Stage 8 rework (SYSTEM_DESIGN.md #7); the code
+> uses `opp_a`/`opp_b`.
+>
 > **DECISION (attribution = all roles, best-effort).** Stage 8 consumes
 > `track_roles.json` and emits per-role stats for all four roles
-> (`user`, `partner`, `opp_left`, `opp_right`). Each role carries its
+> (`user`, `partner`, `opp_a`, `opp_b`). Each role carries its
 > `role_confidence` (mean of its tracks' confidences from Stage 2.5) and a
 > `role_contaminated` flag when confidence is below a floor, because Stage 2.5
 > opponent roles are known-contaminated. Shots/positions whose `track_id` maps

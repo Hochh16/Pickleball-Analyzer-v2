@@ -44,9 +44,13 @@ COURT_WID_FT = 20.0
 MOVE_MIN_STEP_FT = 0.25       # per-frame foot delta below this = jitter
 RALLY_LEN_BUCKETS = ["1", "2-4", "5-8", "9+"]
 
-PLAYING_ROLES = ["user", "partner", "opp_left", "opp_right"]
+# NOTE: opponents are identity-based (opp_a/opp_b), NOT position L/R (Stage 2.5).
+# Any left/right-by-court_x semantics in this stage is stale and belongs to the
+# deferred real-ball Stage 8 rework (SYSTEM_DESIGN.md #7); the vocab is renamed
+# here for consistency only.
+PLAYING_ROLES = ["user", "partner", "opp_a", "opp_b"]
 NEAR_ROLES = ["user", "partner"]
-FAR_ROLES = ["opp_left", "opp_right"]
+FAR_ROLES = ["opp_a", "opp_b"]
 HITTER_ERRORS = {"ball-out", "net-or-short", "ball-off-frame"}
 RECEIVER_ERRORS = {"double-bounce", "ball-not-returned"}
 
@@ -91,8 +95,8 @@ def zone_from_court_y(court_y: float) -> str:
 
 def lateral_from_court_x(court_x: float) -> str:
     """Left / center / right by court_x thirds. Convention: left = low court_x,
-    right = high court_x (court-coordinate, matching Stage 2.5's opp_left/right
-    split, NOT player-egocentric)."""
+    right = high court_x (court-coordinate, NOT player-egocentric). This is a
+    position descriptor only; opponents are identity-based (opp_a/opp_b)."""
     third = COURT_WID_FT / 3.0
     if court_x < third:
         return "left"
@@ -163,10 +167,10 @@ def build_role_maps(track_roles_doc: Optional[dict], shots: List[dict],
     log.warning("track_roles.json unavailable: falling back to user-only "
                 "attribution from is_user; partner/opponents will be empty.")
     user_tids = sorted({int(s["track_id"]) for s in shots if s.get("is_user")})
-    role_to_tids = {"user": user_tids, "partner": [], "opp_left": [], "opp_right": []}
+    role_to_tids = {"user": user_tids, "partner": [], "opp_a": [], "opp_b": []}
     tid_to_role = {t: "user" for t in user_tids}
     role_confidence = {"user": 0.95 if user_tids else 0.0,
-                       "partner": 0.0, "opp_left": 0.0, "opp_right": 0.0}
+                       "partner": 0.0, "opp_a": 0.0, "opp_b": 0.0}
     return tid_to_role, role_to_tids, role_confidence, True
 
 

@@ -1,15 +1,16 @@
 """Stage 2.5 — classify tracks into player roles.
 
 Map ByteTrack track_ids (players.parquet) to logical roles:
-user / partner / opp_left / opp_right / noise. A role is a set of track_ids over
+user / partner / opp_a / opp_b / noise. A role is a set of track_ids over
 time (ByteTrack swaps IDs on crossings). See contract for the full spec.
 
-v1 is the VIDEO-FREE core: noise filter -> near/far side -> seed the user from
-clicks -> separate user/partner with the "two people at once" simultaneity
-constraint + click-anchored motion continuity + perspective-normalized height
-(so matching team kit doesn't break it) -> provisional opponent L/R. Multi-region
-clothing-colour matching is a documented fast-follow (helps the easy
-different-colour case; height + continuity carry the same-colour case).
+Noise filter -> near/far side -> seed the user from clicks -> separate
+user/partner with the "two people at once" simultaneity constraint +
+click-anchored motion continuity + perspective-normalized height (so matching
+team kit doesn't break it). Opponents are grouped into two stable IDENTITIES
+opp_a / opp_b by the same two-anchor appearance + continuity re-id (NOT position
+L/R -- they switch sides), at honestly moderate confidence (far-side crops are
+small, so appearance colour is noisier). See SYSTEM_DESIGN.md foundation #2.
 
 Usage:
     python -m stages.classify_tracks.classify_tracks data/test_clip [--force]
@@ -46,7 +47,8 @@ SEED_CORNER_MIN_SEP_FT = 2.0  # min court_x gap between near players to seed con
 N_APPEARANCE_SAMPLES = 12   # frames sampled per track for the color signature
 HSV_H_BINS, HSV_S_BINS = 12, 8   # upper/lower-body HSV histogram resolution
 APP_W, HGT_W, CONT_W = 0.60, 0.25, 0.15  # cue weights in user/partner assignment
-ROLES = ("user", "partner", "opp_left", "opp_right", "noise")
+OPP_CONF_CAP = 0.75  # far-side appearance is noisier -> cap opponent conf < near-side 0.95
+ROLES = ("user", "partner", "opp_a", "opp_b", "noise")
 EPS = 1e-9
 
 
@@ -429,11 +431,85 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             role[tr["track_id"]] = {"role": "partner", "confidence": conf, "basis": basis}
             _note_partner(tr, f)
 
-    # 4. Opponents L/R (provisional by court_x)
-    half_x = court["width_ft"] / 2.0
-    for tr in far:
-        side = "opp_left" if tr["med_x"] < half_x else "opp_right"
-        role[tr["track_id"]] = {"role": side, "confidence": 0.5, "basis": "far-side-x"}
+    # 4. Opponents -> two stable IDENTITIES opp_a / opp_b by appearance + continuity.
+    #    The far-side mirror of the user/partner two-anchor re-id: anchor opp_a on
+    #    the longest far track, opp_b on the longest far track SIMULTANEOUS with it
+    #    (provably a different person), then assign each remaining far track to
+    #    whichever identity it resembles (appearance primary + height + continuity),
+    #    with the can't-be-two-places simultaneity hard constraint. Identity-based,
+    #    NOT position L/R -- opponents switch sides, so a court_x split is unstable.
+    #    Confidence is honestly MODERATE: far-side crops are small, so appearance
+    #    color is noisier than near-side (cap below the near-side 0.95). The
+    #    per-frame side, when a stat needs it, is derived downstream from position.
+    #    See SYSTEM_DESIGN.md foundation #2.
+    if far:
+        far_by_len = sorted(far, key=lambda t: -t["n"])
+        a_anchor = far_by_len[0]
+        b_anchor = None
+        for tr in far_by_len[1:]:
+            if len(tr["frame_set"] & a_anchor["frame_set"]) / max(1, tr["n"]) > SIMULTANEITY_MAX:
+                b_anchor = tr
+                break
+        opp_feats = extract_track_appearance(
+            df, {t["track_id"] for t in far}, folder / "video.mp4", log)
+        a_feat = opp_feats.get(a_anchor["track_id"])
+        a_height = a_anchor["height_ft"]
+        a_tracks = [a_anchor]
+        a_frames = set(a_anchor["frame_set"])
+        b_feat = opp_feats.get(b_anchor["track_id"]) if b_anchor else None
+        b_height = b_anchor["height_ft"] if b_anchor else np.nan
+        b_tracks = [b_anchor] if b_anchor else []
+        b_frames = set(b_anchor["frame_set"]) if b_anchor else set()
+        role[a_anchor["track_id"]] = {"role": "opp_a", "confidence": 0.6,
+                                      "basis": "longest-far-anchor"}
+        if b_anchor is not None:
+            role[b_anchor["track_id"]] = {"role": "opp_b", "confidence": 0.6,
+                                          "basis": "simultaneous-with-opp_a"}
+
+        def _note_opp(which, tr, f):
+            nonlocal a_feat, a_height, b_feat, b_height
+            if which == "opp_a":
+                a_tracks.append(tr); a_frames.update(tr["frame_set"])
+                if a_feat is None and f is not None: a_feat = f
+                if np.isnan(a_height) and not np.isnan(tr["height_ft"]): a_height = tr["height_ft"]
+            else:
+                b_tracks.append(tr); b_frames.update(tr["frame_set"])
+                if b_feat is None and f is not None: b_feat = f
+                if np.isnan(b_height) and not np.isnan(tr["height_ft"]): b_height = tr["height_ft"]
+
+        for tr in sorted(far, key=lambda t: t["f0"]):
+            tid = tr["track_id"]
+            if tid in role:  # an anchor, already assigned
+                continue
+            f = opp_feats.get(tid)
+            sim_a = len(tr["frame_set"] & a_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX
+            sim_b = (b_anchor is not None
+                     and len(tr["frame_set"] & b_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX)
+            if sim_a and not sim_b and b_anchor is not None:
+                role[tid] = {"role": "opp_b", "confidence": 0.6, "basis": "simultaneous-with-opp_a"}
+                _note_opp("opp_b", tr, f); continue
+            if sim_b and not sim_a:
+                role[tid] = {"role": "opp_a", "confidence": 0.6, "basis": "simultaneous-with-opp_b"}
+                _note_opp("opp_a", tr, f); continue
+            asim_a, asim_b = appearance_sim(f, a_feat), appearance_sim(f, b_feat)
+            hsim_a, hsim_b = height_sim(tr["height_ft"], a_height), height_sim(tr["height_ft"], b_height)
+            cont_a, cont_b = continuity_score(tr, a_tracks, fps), continuity_score(tr, b_tracks, fps)
+            if asim_a is not None and asim_b is not None:
+                a_score = APP_W * asim_a + HGT_W * hsim_a + CONT_W * cont_a
+                b_score = APP_W * asim_b + HGT_W * hsim_b + CONT_W * cont_b
+                basis = "appearance+height"
+            else:
+                a_score = 0.6 * cont_a + 0.4 * hsim_a
+                b_score = 0.6 * cont_b + 0.4 * hsim_b
+                basis = "continuity+height"
+            # far-side appearance is noisier -> cap confidence below near-side 0.95
+            conf = round(float(min(OPP_CONF_CAP, 0.5 + abs(a_score - b_score))), 3)
+            if b_anchor is None or a_score >= b_score:
+                role[tid] = {"role": "opp_a", "confidence": conf, "basis": basis}
+                _note_opp("opp_a", tr, f)
+            else:
+                role[tid] = {"role": "opp_b", "confidence": conf, "basis": basis}
+                _note_opp("opp_b", tr, f)
 
     # 5. Aggregate roles + stats
     roles_agg: Dict[str, dict] = {r: {"track_ids": [], "n_frames": 0} for r in ROLES if r != "noise"}
@@ -463,8 +539,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     log.info(f"roles: user={len(roles_agg['user']['track_ids'])} tracks/"
              f"{roles_agg['user']['n_frames']}f, "
              f"partner={len(roles_agg['partner']['track_ids'])}, "
-             f"opp_left={len(roles_agg['opp_left']['track_ids'])}, "
-             f"opp_right={len(roles_agg['opp_right']['track_ids'])}, "
+             f"opp_a={len(roles_agg['opp_a']['track_ids'])}, "
+             f"opp_b={len(roles_agg['opp_b']['track_ids'])}, "
              f"noise={len(noise_ids)}")
     log.info(f"user coverage {was_is_user:.1%} ({seed_basis} seed) -> "
              f"{user_cov:.1%} (roles)")

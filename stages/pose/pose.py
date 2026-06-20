@@ -19,7 +19,7 @@ Outputs (in the same folder):
 
 In-scope detections (which tracks get posed):
     is_user=True (Stage 2.5 role 'user')
-    OR role in {partner, opp_left, opp_right}        (track_roles.json present)
+    OR role in {partner, opp_a, opp_b}               (track_roles.json present)
     OR — fallback, no track_roles.json — the geometric gate:
        (transient=False AND in_court_frac >= 0.50
         AND court_y_ft.max() <= 44 AND court_y_ft.min() >= -8
@@ -62,7 +62,7 @@ USER_DETECTION_RATE_WARNING = 0.5
 # court_y gate (below) is only the fallback when track_roles.json is absent — it
 # cannot survive far-side projection jitter, so roles are the primary scope.
 # See SYSTEM_DESIGN.md Stage 2/3.
-PLAYER_SCOPE_ROLES = frozenset({"partner", "opp_left", "opp_right"})
+PLAYER_SCOPE_ROLES = frozenset({"partner", "opp_a", "opp_b"})
 
 # Geometric-fallback scope constants (no track_roles.json).
 SCOPE_MIN_IN_COURT_FRAC = 0.50

@@ -260,10 +260,18 @@ and what it unblocks. (Tractability from the audit; none requires abandoning 2D.
    role-based scope to be robust on messy real videos. (c) Posing all opponents is
    ~5× the pose compute (throughput note, C8). (d) Far-opponent poses are
    lower-fidelity (small crops) — relevant to opponent body-mechanics quality.
-2. **Stage 2.5 role-awareness (C5).** Extend re-id to partner/opponents + tighten
-   opp L/R + wire roles into Stages 6/8. (Stage 3 already consumes roles, see #1.)
-   Unblocks: winner-side, per-receiver errors, opponent targeting, non-user stroke
-   side, multi-role rating — AND hardens role-based pose scope (#1). *Tractable.*
+2. **Stage 2.5 role-awareness (C5).** 🔄 **IN PROGRESS 2026-06-19.** Done: opponents
+   are now grouped into **two stable IDENTITIES `opp_a` / `opp_b`** by the same
+   two-anchor appearance + continuity re-id as user/partner (NOT position L/R —
+   they switch sides), at honest moderate confidence (cap 0.75; far crops noisier).
+   System-wide rename opp_left/opp_right → opp_a/opp_b (classify_tracks, pose,
+   compute_metrics, render + tests + contracts). Validated on pb_2min: same correct
+   5/5 partition as the old geometric split, now identity-based + appearance-grounded
+   (conf 0.6–0.75 vs flat 0.5). **This hardens the role-based pose scope (#1).**
+   *Remaining #2:* non-user handedness into Stage 6 stroke-side (needs operator
+   roster input — currently all `unknown`); per-opponent stats wait for the real-ball
+   Stage 8 work (#7); tighten opponent appearance on harder/side-switching clips.
+   Unblocks: opponent body-mechanics, winner-side, per-receiver errors, targeting.
 3. **Confidence propagation (C9).** Carry per-shot/-event confidence + sample sizes
    through 6→7→8→9→10→11 so every reported number has an honest reliability. *The
    architectural fix that makes "honest stats" real, not coarse.*

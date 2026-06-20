@@ -4,7 +4,7 @@
 the original 11); runs after Stage 2, consumed by Stages 6+. Re-ID is multi-cue
 (click-anchored motion continuity + perspective-normalized height [+ multi-region
 clothing color]), so matching team kit doesn't break user/partner separation.
-Opponents get provisional `opp_left`/`opp_right`. Folder `stages/classify_tracks/`,
+Opponents get provisional `opp_a`/`opp_b`. Folder `stages/classify_tracks/`,
 output `track_roles.json`. Smoke test 5/5; user coverage 60% -> 98.6% on
 test_clip.
 
@@ -17,7 +17,7 @@ different-colour case. The stage runs on `players.parquet` + `court.json` only.
 ## Purpose
 
 Map the many ByteTrack `track_id`s in `players.parquet` to the four **logical
-player roles** of a doubles match — `user`, `partner`, `opp_left`, `opp_right`
+player roles** of a doubles match — `user`, `partner`, `opp_a`, `opp_b`
 — plus `noise`, consistently across the whole match. One person is split across
 many track_ids (ByteTrack swaps IDs on every crossing), so a "role" is a set of
 track_ids over time, not a single id.
@@ -77,13 +77,13 @@ CLI: `python -m stages.classify_tracks.classify_tracks <video_folder> [--force]`
   "roles": {
     "user":      {"track_ids": [2, 1393, 2857, 4074], "n_frames": 7200, "court_frac": 0.0},
     "partner":   {"track_ids": [1, 3597], "n_frames": 6800},
-    "opp_left":  {"track_ids": [1260, 3236], "n_frames": 3100},
-    "opp_right": {"track_ids": [4, 3973], "n_frames": 2900}
+    "opp_a":  {"track_ids": [1260, 3236], "n_frames": 3100},
+    "opp_b": {"track_ids": [4, 3973], "n_frames": 2900}
   },
   "track_roles": {
     "2":   {"role": "user",    "confidence": 0.95, "basis": "click"},
     "1":   {"role": "partner", "confidence": 0.7,  "basis": "near-side-largest"},
-    "4":   {"role": "opp_right","confidence": 0.6, "basis": "far-side-x"},
+    "4":   {"role": "opp_b","confidence": 0.6, "basis": "appearance+height"},
     "2863":{"role": "noise",   "confidence": 0.9,  "basis": "out-of-court"}
   },
   "noise_track_ids": [2863, "...hundreds of short/adjacent tracks..."],
@@ -176,12 +176,17 @@ stays as the raw click-seed; the authoritative role is here.
    > support — a global, position-and-gap-robust assignment, not local 4 s
    > linking. The hard simultaneity constraint (overlaps the user ⇒ can't be the
    > user) is kept. Without video, falls back to the height+continuity behavior.
-6. **Opponents L/R.** Far-side tracks split by median `court_x_ft`: lower x →
-   `opp_left`, higher → `opp_right`.
-   > **DECISION (resolved per review):** provisional `opp_left` / `opp_right` by
-   > median x (matches `roster.json`'s labels), at low confidence — opponents
-   > also switch sides, so the L/R label is approximate until appearance
-   > matching is extended to them.
+6. **Opponents → two IDENTITIES `opp_a` / `opp_b`.** The far-side mirror of the
+   user/partner two-anchor re-id: anchor `opp_a` on the longest far track,
+   `opp_b` on the longest far track simultaneous with it (provably a different
+   person), then assign each remaining far track to whichever identity it
+   resembles — **appearance (upper+lower HSV) primary + height + continuity**,
+   with the can't-be-two-places simultaneity hard constraint.
+   > **DECISION (2026-06-19):** opponents are **identity-based, not position L/R**
+   > — they switch sides, so a `court_x` split is unstable. The per-frame side,
+   > when a stat needs it, is derived downstream from position. Confidence is
+   > honestly **moderate** (cap `OPP_CONF_CAP = 0.75`, vs near-side 0.95): far-side
+   > crops are small, so appearance colour is noisier. See SYSTEM_DESIGN.md #2.
 7. **Confidence + emit.** Each track gets role + confidence + basis. Roles
    aggregate their track_ids and frame counts.
 
@@ -192,7 +197,7 @@ There is **no full role ground truth**, so the test combines partial truth +
 consistency + the core value metric:
 
 1. `track_roles.json` parses; every track has a role in
-   {user,partner,opp_left,opp_right,noise} + confidence in [0,1]; roles
+   {user,partner,opp_a,opp_b,noise} + confidence in [0,1]; roles
    aggregate consistently with `track_roles`.
 2. **Click agreement:** every track with `is_user=True` rows is role `user`.
    (Hard requirement — contradicting the operator's clicks is a failure.)
@@ -255,8 +260,8 @@ consistency + the core value metric:
   video-free). Add it to strengthen user/partner and opponent separation in the
   different-colour case; height + continuity already cover the matching-kit case.
 - **Opponent roles are contaminated.** Far-side adjacent-court players (court_y
-  in 22–44, on a court behind) survive the noise filter, so `opp_left`/
-  `opp_right` collect many extra tracks (~19 each on test_clip). Tighten with a
+  in 22–44, on a court behind) survive the noise filter, so `opp_a`/
+  `opp_b` collect many extra tracks (~19 each on test_clip). Tighten with a
   per-track in-court-fraction threshold, far-side simultaneity/continuity (like
   the near side), or appearance once color matching exists. Opponent confidence
   is low (0.5) to reflect this.

@@ -43,7 +43,7 @@ VIDEO_FOURCC = "mp4v"
 # BGR colors
 ROLE_COLORS = {
     "user": (0, 200, 0), "partner": (220, 130, 0),
-    "opp_left": (0, 0, 220), "opp_right": (0, 150, 255),
+    "opp_a": (0, 0, 220), "opp_b": (0, 150, 255),
     "noise": (150, 150, 150),
 }
 WHITE = (255, 255, 255)

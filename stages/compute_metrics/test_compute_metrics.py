@@ -359,7 +359,7 @@ def cond_degradation() -> bool:
         m = load("metrics.json")
         ok = (m["players"]["user"]["n_shots"] >= 0
               and m["players"]["partner"]["n_shots"] == 0
-              and m["players"]["opp_left"]["n_shots"] == 0
+              and m["players"]["opp_a"]["n_shots"] == 0
               and m["sources"]["track_roles"] is None
               and any("track_roles" in w for w in m["warnings"]))
         (_pass if ok else _fail)(
