@@ -25,6 +25,32 @@ real `data/pb_2min` outputs)._
 4. **Fundamental limits are decided, not deferred.** Where single-camera 2D can't
    deliver, we choose: accept-and-report-with-confidence, fix-at-capture, or
    scope-out — and record the choice in §5.
+5. **Synthetic data proves LOGIC, never accuracy.** The synthetic ball exists only
+   to get a pre-training full pass. A green smoke test on synthetic data does NOT
+   validate a stage. **All accuracy validation is on the real clip set, operator-
+   confirmed.** Never call a stage "validated/done" on synthetic.
+6. **"Real" means the whole required scenario set, not one clip.** A stage is done
+   only when validated across **all required venues** — outdoor same-court, outdoor
+   different-court, AND indoor (the product requires varied courts). One-clip
+   validation (e.g. pb_2min alone) is **provisional**, explicitly flagged as such.
+7. **Strict dependency order — no leaping ahead.** Do not build, validate, or
+   "complete" a downstream stage — or a cross-cutting change spanning downstream
+   stages — while any upstream stage it depends on is unvalidated on real data.
+   Lock the foundation first so errors don't compound.
+8. **One stage at a time, operator-in-the-loop.** Present each stage's REAL output
+   for operator validation before proceeding to the next. No batching stages; no
+   multi-step execution plans handed to the operator at once.
+9. **Downstream-sufficiency review is part of "done."** When a stage is updated, it
+   must explicitly assess **what each downstream consumer needs from it — accuracy
+   AND completeness — and confirm the output meets that need** before the stage is
+   called done. A stage that "produces output" but is insufficient for its
+   consumers is NOT done; fix it (if feasible) or record the blast radius (rule 2).
+
+> **2026-06-21 — why rules 5–9 were added.** A session built confidence propagation
+> across Stages 8→9→10→11, validated it on the *synthetic* `test_clip`, called the
+> stages "done," and began validating Stage 11 while Stage 7 was still unvalidated
+> on real data — rebuilding the exact v1–v3 compounding-error failure in a new
+> disguise. Caught by the operator. These rules are the countermeasure.
 
 ---
 
@@ -197,8 +223,14 @@ is a cross-cutting foundational task (§6).**
   rises → Stage 8 cannot compute serve-fault, error-by-player, or point-ending mix.
   The honest-unknown discipline is correct (failures visible, not guessed).
 
-### Stages 8–11 — compute_metrics / rate / plan / render  ·  SYNTHETIC-ONLY
-- **Never run on the real ball.** Scaffolds whose real-data accuracy is unverified.
+### Stages 8–11 — compute_metrics / rate / plan / render  ·  SYNTHETIC-ONLY (confidence mechanism built, UNVALIDATED on real)
+- **Real-data accuracy unverified.** Scaffolds. A 2026-06-21 session added the
+  **confidence-propagation mechanism (C9)** across 8→10 (committed) + 11 (uncommitted)
+  and ran 8–11 once on real pb_2min — but that run is **NOT validated** (§0 rule 5;
+  one clip, synthetic-smoke-tested only). The mechanism is sound and reusable; it is
+  re-validated on real data in §6 item 5, **after** the real-ball upstream is locked.
+- **The architectural gap below is now addressed by the mechanism (inline
+  `{value, confidence, n, limited_by}`), pending real validation.**
 - **Durable now:** position/movement/team stats + player-position heatmaps (Stage 2 derived).
 - **Noise now:** serve_fault_rate, error_attribution, bounce_in_out, third_shot.drop_rate, shot_mix → and therefore the **rating band** (≈70% synthetic weight, no down-weighting) and the **plan priorities**.
 - **Architectural gap:** no per-event confidence propagation; rates divide by
@@ -272,20 +304,36 @@ and what it unblocks. (Tractability from the audit; none requires abandoning 2D.
    roster input — currently all `unknown`); per-opponent stats wait for the real-ball
    Stage 8 work (#7); tighten opponent appearance on harder/side-switching clips.
    Unblocks: opponent body-mechanics, winner-side, per-receiver errors, targeting.
-3. **Confidence propagation (C9).** Carry per-shot/-event confidence + sample sizes
-   through 6→7→8→9→10→11 so every reported number has an honest reliability. *The
-   architectural fix that makes "honest stats" real, not coarse.*
-4. **Stage 5.5 bounce recall (C4).** Displacement-based reversal at the contact
-   frame + symmetric apex filter. Unblocks: shot-type-via-landing coverage (Stage
-   6) AND end_reason (Stage 7) — the cross-cutting stats lever. *Tractable, no GPU.*
-5. **Stage 5 serve detection (C3).** Server-behind-baseline gate + real-data
-   gap-tuning. Unblocks: serve labels (6), server attribution (7), serve-fault (8).
-6. **Stage 4 cross-venue (C7) + throughput (C8).** Run-2 indoor training (blocked on
-   compute units) + GPU-decode. Required for the product's varied-court / many-video
-   reality. *Run-2 set up; awaiting compute.*
-7. **Then** re-run Stages 8–11 on the real ball and lift the synthetic caveat —
-   only after the above, so the stats layer is validated against real, confidence-
-   carrying inputs rather than re-scaffolded on noise.
+> **REORDERED 2026-06-21 (David).** The earlier order put confidence propagation
+> (C9) at #3, ahead of the real-ball foundations, and a session then built + "validated"
+> it on the synthetic ball — violating §0 rules 5–9. Corrected order below: the
+> ball detector must work across **all venues** before any downstream stage can be
+> validated on real data, then lock the real-ball pipeline strictly in dependency
+> order, one stage at a time. #1 and #2 below remain done, but are **provisional —
+> validated on pb_2min (one outdoor court) only** (§0 rule 6); re-confirm across
+> venues when F1 lands.
+
+3. **Stage 4 ball detector across ALL venues (C7) — THE GATING FOUNDATION. NEEDS COMPUTE.**
+   v4 was trained on **4 outdoor same-court clips only**; the **different-court
+   outdoor (0.54) and indoor (0.13) clips were never trained** (contract_v4.md
+   confirms; indoor was explicitly deferred). Retrain v4 to include the
+   different-court + indoor clips (~200-label warm-start fine-tune per venue).
+   **Acceptance: per-venue recall threshold on all 6 clips.** Until this lands, those
+   2 clips can't be trusted through Stage 4, so **Stages 5–11 are unvalidatable on
+   2 of the 6 clips.** Blocked on **Colab compute (David funding)**. Pairs with
+   throughput/GPU-decode (C8).
+4. **Lock the real-ball upstream, one stage at a time, on the real clips:**
+   Stage 5 (shots + **serve detection**, C3) → 5.5 (bounces + **recall fix**, C4) →
+   6 (classify) → 7 (rallies / end_reason). For EACH stage: validate the REAL output
+   with the operator, run the **downstream-sufficiency review** (§0 rule 9 — does its
+   accuracy + completeness meet every consumer's need?), fix if feasible or record
+   the blast radius, then proceed. (Folds in the old bounce-recall + serve items.)
+5. **Stats layer — only on validated foundations:** Stage 8 (metrics +
+   **confidence propagation, C9**) → 9 (rate) → 10 (plan) → 11 (render), re-validated
+   on real clips. **The confidence-propagation mechanism was BUILT 2026-06-21
+   (commits `0d116b2` Stage 8, `8350724` Stage 9, `39b2c41` Stage 10; Stage 11
+   uncommitted) but validated only on the SYNTHETIC ball — per §0 rule 5 it is NOT
+   done. It is re-validated here on real, confidence-carrying inputs.**
 
 Ball **height/3D (C2)** sits across all of this as the §5 decision; the roadmap is
 designed to extract maximum value *without* it (landing/zone/arc for type,
@@ -306,9 +354,21 @@ prerequisite.
    round-trips the locked schemas and honors confidence/reliability. Defer only the
    rich reporting content. (Parallel track.)
 
-**Active work order:** (1) Stage 2 far-side drift → (2) role-awareness → (3) confidence
-propagation → (4) bounce recall → (5) serve detection → (6) cross-venue ball → (7) re-run
-8–11 on real ball. Parallel: z-recovery feasibility spike; input-UI + reporting skeleton.
+**Active work order (REVISED 2026-06-21, David — supersedes the 06-19 order):**
+(1) Stage 2 far-side drift ✅ → (2) role-awareness ✅ [both provisional: pb_2min only]
+→ **(3) Stage 4 cross-venue ball across all 6 clips [NEEDS COMPUTE — David funding]**
+→ (4) lock real-ball upstream 5→5.5→6→7, one stage at a time, operator-validated,
+downstream-sufficiency-reviewed → (5) stats layer 8→9→10→11 + confidence, re-validated
+on real. Parallel: z-recovery feasibility spike; input-UI + reporting skeleton.
+
+> **Why revised:** see §6 reorder note + §0 rules 5–9. The 06-19 order let
+> confidence propagation be built and "validated" on the synthetic ball ahead of the
+> real-ball foundations; the real foundation gap is the ball detector across venues.
+
+**New operator decision (2026-06-21):** Stage 4 v4 trained on outdoor same-court
+only → **retrain to add the different-court + indoor clips; operator purchasing Colab
+compute.** Until then, real-data validation is limited to the same-court outdoor clips
+and is provisional per §0 rule 6.
 
 ---
 

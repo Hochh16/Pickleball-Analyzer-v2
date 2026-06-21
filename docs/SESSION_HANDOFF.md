@@ -1,4 +1,40 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-06-19)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-06-21)
+
+## 2026-06-21 — COURSE CORRECTION + plan reset (read this first)
+
+**What happened:** this session built **Foundation #3 (confidence propagation)** as
+inline `{value, confidence, n, limited_by}` wrappers across Stages **8→9→10→11**
+(commits `0d116b2` S8, `8350724` S9, `39b2c41` S10; **S11 uncommitted**), plus the
+**operator-vs-player separation** in Stage 10 (`operator_considerations`, surfaced
+only when a real limiter bites; David's call). The mechanism is sound and smoke-tested.
+
+**BUT it was validated only on the SYNTHETIC `test_clip`, and the session started
+declaring stages "done" + validating Stage 11 while Stage 7 was still unvalidated on
+real data** — rebuilding the v1–v3 compounding-error failure. **Operator stopped it.**
+
+**Corrections committed this session:**
+- **SYSTEM_DESIGN §0 rules 5–9** added (synthetic ≠ validation; real = all venues;
+  strict dependency order; one stage at a time; downstream-sufficiency review is part
+  of "done"). **Read §0 before any work.**
+- **§6/§7 roadmap REORDERED:** the real foundation gap is the **ball detector across
+  venues**, not confidence. v4 trained on **outdoor same-court only** — different-court
+  (0.54) + indoor (0.13) **never trained** (contract_v4.md). Confidence work is
+  reframed as **built-but-UNVALIDATED**, deferred to after the real-ball upstream is locked.
+
+**NEXT (agreed work order):**
+1. **Stage 4 cross-venue retrain — NEEDS COMPUTE (operator funding Colab).** Add the
+   different-court outdoor + indoor clips (~200-label warm-start/venue); acceptance =
+   per-venue recall on all 6 clips. *Gates real validation of Stages 5–11 on 2 of 6 clips.*
+2. Lock real-ball upstream **5→5.5→6→7**, one stage at a time, operator-validated,
+   each with a downstream-sufficiency review.
+3. Stats layer **8→9→10→11 + confidence**, re-validated on real (reuse this session's code).
+
+**Decide before resuming:** whether to commit the Stage 11 confidence code as
+work-in-progress (smoke-passed, unvalidated) or hold it.
+
+---
+
+# Session Handoff — Pickleball-Analyzer-v2 (prior: updated 2026-06-19)
 
 > **READ `SYSTEM_DESIGN.md` (repo root) FIRST.** It is the authoritative source of
 > truth: dependency map, per-stage accuracy ledger, the honest trust-map (what's
