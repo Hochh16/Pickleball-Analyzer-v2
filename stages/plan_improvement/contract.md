@@ -162,14 +162,27 @@ missing/malformed → fail loudly.
     "n_focus_provisional": 1,
     "note": "1 of 2 focus areas is provisional (synthetic-ball-derived). The plan's real-data focus areas (positioning/movement) are trustworthy now; the rest firm up at ball v4."
   },
+  "operator_considerations": {
+    "_comment": "Analysis-reliability notes for the OPERATOR (separate audience, lower priority than coaching). Surfaced only when a real-data limiter bites; empty otherwise (here: synthetic ball -> suppressed).",
+    "items": []
+  },
   "warnings": [
     "ball_source is 'synthetic': provisional focus areas are derived from PLACEHOLDER ball data — treat as a scaffold until ball detection v4.",
     "Rating + plan thresholds are UNCALIBRATED heuristics (no rated-footage corpus); see KNOWN_ISSUES.md."
   ],
   "params": {"max_focus_areas": 4, "confidence_weight_floor": 0.5},
-  "stage_version": "0.1.0",
+  "stage_version": "0.2.0",
   "completed_at_utc": "2026-05-29T..."
 }
+
+// On a REAL-ball plan with a low-confidence dimension, operator_considerations
+// instead reads e.g.:
+//   "items": [
+//     {"category": "more_data", "limiters": ["sample_size"], "affects": ["serve"],
+//      "action": "Record longer sessions, or combine clips across sessions - these assessments currently rest on few rallies."},
+//     {"category": "capture_quality", "limiters": ["measurement"], "affects": ["shot_skill"],
+//      "action": "Capped by single-camera 2D (no ball height/depth) - a higher-mounted or second camera would improve precision."}
+//   ]
 ```
 
 ### Field notes
@@ -190,6 +203,10 @@ missing/malformed → fail loudly.
     `"synthetic"`/`"provisional"` for the ball-derived dimensions (becomes
     `"real"`/`"high"` automatically when `ball_source == "real"`, since
     rating.json's `data_source` already flips).
+    > **Player coaching stays clean (Foundation #3 decision, David 2026-06-21).**
+    > Focus areas carry NO capture/app advice — analysis-reliability actions live
+    > in the separate `operator_considerations` block below, a different audience
+    > (the operator who records/configures) and lower priority than coaching.
   - `finding` — a plain-language sentence built from the dimension's
     `driver_metrics` (e.g. kitchen %, transition %, error rate). Numbers come
     straight from rating.json so the finding can't drift from the rating.
@@ -206,6 +223,24 @@ missing/malformed → fail loudly.
   produces zero recommendations here; it documents what completes the plan.
 - **`reliability`** — counts of real vs provisional focus areas + a note;
   makes the placeholder dependence machine-readable for Stage 11 / the UI.
+- **`operator_considerations`** — **NEW (Foundation #3).** Analysis-reliability
+  notes for the **OPERATOR** (who records / configures the capture), kept
+  SEPARATE from and lower-priority than the player coaching, and intended for a
+  possibly-different audience. `items` aggregates the limiters that materially
+  bite, each `{category, limiters, affects, action}`:
+  - `category` — `more_data` (limiter `sample_size` → record longer / combine
+    clips) or `capture_quality` (`measurement`/`known_limit` → higher-mounted /
+    second camera; also a `detection_floor` home, though counts rarely bite).
+  - `affects` — the dimension names whose reliability the limiter caps.
+  - `action` — the operator-facing instruction (descriptive about the *capture*,
+    never coaching-imperative).
+  **Surfaced only when a limiter actually bites:** a limiter contributes only for
+  a **real-data** dimension whose `confidence < OPERATOR_CONF_FLOOR` (0.6). On the
+  synthetic ball, ball-derived dims are `data_source: synthetic` and excluded
+  (their gated-low confidence is the placeholder ball, already warned, not an
+  operator-fixable limiter), so `items` is empty — the UI hides the section. The
+  block ties to the two capture-side future levers in KNOWN_ISSUES (throughput
+  for more footage; higher/2nd camera for speed/precision).
 
 There is **no separate `.meta.json`** — metadata lives inside the file.
 
@@ -231,14 +266,20 @@ plus light conditional selection on driver values. v1 content (tunable):
 ## Method
 
 1. **Load + validate.** Read `rating.json` (`schema_version == 1`; fail loudly
-   otherwise) and `metrics.json` if present. Pull `dimensions`,
+   otherwise) and `metrics.json` if present (`schema_version == 2` — Stage 8 v2;
+   read defensively, not consumed for any number). Pull `dimensions`,
    `skill_coverage`, `ball_source`, `rating`.
 2. **Target.** `target.level` = next half-step above `current.band` (cap 5.0),
    or `--target-band`.
 3. **Focus areas.** For each dimension with `subscore < target.level`: compute
    `gap_to_target`, `priority_score`; build `finding` from `driver_metrics`;
-   select drills; set `data_source`/`confidence`/`provisional_note`. Sort by
-   `priority_score` desc, cap at `max_focus_areas`, assign `priority`.
+   select drills; set `data_source`/`confidence`/`provisional_note` (coaching
+   only — no capture/app fields). Sort by `priority_score` desc, cap at
+   `max_focus_areas`, assign `priority`.
+3b. **Operator considerations.** While iterating dimensions, collect each
+   **real-data** dim whose `confidence < OPERATOR_CONF_FLOOR`, bucket its
+   `limited_by` into an operator `category` (`more_data` / `capture_quality`),
+   and emit one item per category present (empty when none bite).
 4. **Strengths.** Dimensions `≥ target.level` → brief list.
 5. **Developing capability.** Map `skill_coverage.proxy_or_pending` +
    `not_captured_yet` through the static descriptor table; pass `out_of_scope`.
@@ -303,6 +344,11 @@ ratings.
 3. **Provisional flags.** Every synthetic-`data_source` focus area has
    `confidence == "provisional"` + non-null `provisional_note`; every real one
    has `confidence == "high"` + null note.
+3b. **Operator considerations.** Player focus areas carry NO operator/capture
+   fields. `operator_considerations.items` is empty on the synthetic ball
+   (suppressed); on a real-ball rating with a low-confidence dimension it fires
+   the right `category` with the canonical `action`, and a high-confidence real
+   dim does NOT trigger.
 4. **Developing capability.** `developing_capability.proxy_or_pending` +
    `not_captured_yet` skill names exactly match rating.json's
    `skill_coverage`; each entry has `unlocked_by` / `will_assess` /
@@ -322,7 +368,13 @@ ratings.
 
 ## Stage version
 
-`0.1.0`.
+`0.2.0` (Foundation #3): accepts Stage 8 `metrics.json` `schema_version 2` (the
+metrics-present guard was bumped 1 → 2; metrics content is still read defensively,
+not consumed for any number) and adds a separate, lower-priority
+`operator_considerations` block (analysis-reliability notes for the operator,
+surfaced only when a real-data limiter bites) — kept cleanly OUT of the player
+coaching. `improvement_plan.json` output `schema_version` stays `1` (additive
+field). `0.1.0` was the initial version.
 
 ## Out of scope (deferred)
 

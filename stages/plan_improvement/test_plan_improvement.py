@@ -26,8 +26,15 @@ from stages.classify_tracks.classify_tracks import main as roles_main
 from stages.compute_metrics.compute_metrics import main as metrics_main
 from stages.rate.rate import main as rate_main
 from stages.plan_improvement.plan_improvement import (
-    main as plan_main, compute_plan, next_half_step,
+    main as plan_main, compute_plan, next_half_step, OPERATOR_ACTION,
 )
+
+VALID_LIMITERS = {"sample_size", "measurement", "known_limit", "detection_floor"}
+# Mirror Stage 9's real behavior: error_control/serve are sample-size-limited,
+# the rest measurement-limited (used to wrap the synthetic test ratings).
+DIM_LIMITERS = {"net_play": "measurement", "movement": "measurement",
+                "error_control": "sample_size", "shot_skill": "measurement",
+                "serve": "sample_size", "rally_consistency": "measurement"}
 
 TEST_FOLDER = Path("data/test_clip")
 SEED = 1234
@@ -36,7 +43,8 @@ GAP_FRAC = 0.20
 REQUIRED_TOP_KEYS = {
     "schema_version", "source_rating", "ball_source", "rated_role", "current",
     "target", "focus_areas", "strengths", "developing_capability",
-    "reliability", "warnings", "params", "stage_version", "completed_at_utc",
+    "reliability", "operator_considerations", "warnings", "params",
+    "stage_version", "completed_at_utc",
 }
 DIM_NAMES = ["net_play", "movement", "error_control", "shot_skill", "serve",
              "rally_consistency"]
@@ -115,6 +123,7 @@ def make_rating(subscores: dict, band="3.5", ball_source="synthetic") -> dict:
             "name": n, "subscore_level": subscores[n], "weight": weights[n],
             "confidence": 1.0 if is_real else 0.35,
             "data_source": "real" if is_real else "synthetic",
+            "limited_by": DIM_LIMITERS[n],
             "driver_metrics": DRIVERS[n],
         })
     return {"schema_version": 1, "ball_source": ball_source,
@@ -157,14 +166,18 @@ def cond_focus_correctness(p) -> bool:
         failures.append("priority not contiguous 1..n")
     if len(fa) > p["params"]["max_focus_areas"]:
         failures.append("exceeds max_focus_areas")
-    # strengths == dims >= target
+    # strengths == dims >= target. focus + strengths cover all dims UNLESS the
+    # focus list is capped at max_focus_areas (then low-priority below-target dims
+    # are legitimately dropped — neither focus nor strength).
     strong_dims = {s["dimension"] for s in p["strengths"]}
     focus_dims = {f["dimension"] for f in fa}
     if strong_dims & focus_dims:
         failures.append("dimension in both focus and strengths")
-    if len(strong_dims) + len(focus_dims) != len(DIM_NAMES):
-        failures.append(f"focus+strengths cover {len(strong_dims)+len(focus_dims)} "
-                        f"!= {len(DIM_NAMES)} dims")
+    covered = len(strong_dims) + len(focus_dims)
+    capped = len(fa) >= p["params"]["max_focus_areas"]
+    if covered != len(DIM_NAMES) and not capped:
+        failures.append(f"focus+strengths cover {covered} != {len(DIM_NAMES)} dims "
+                        f"(focus not capped, so all dims should be covered)")
     if failures:
         _fail(f"focus correctness: {failures[:3]}")
         return False
@@ -213,6 +226,65 @@ def cond_developing(p, rating) -> bool:
     _pass(f"developing capability: matches skill_coverage exactly "
           f"({len(dc['proxy_or_pending'])} proxy + {len(dc['not_captured_yet'])} "
           f"not-captured + {len(dc['out_of_scope'])} oos)")
+    return True
+
+
+def make_real_lowconf_rating() -> dict:
+    """A real-ball rating with genuinely low-confidence dimensions (so an operator
+    limiter bites): serve sample_size-limited, shot_skill measurement-limited,
+    net_play high-confidence (must NOT trigger)."""
+    dims = [
+        {"name": "net_play", "subscore_level": 2.5, "weight": 0.2,
+         "confidence": 0.95, "data_source": "real", "limited_by": "measurement",
+         "driver_metrics": DRIVERS["net_play"]},
+        {"name": "shot_skill", "subscore_level": 2.8, "weight": 0.25,
+         "confidence": 0.45, "data_source": "real", "limited_by": "measurement",
+         "driver_metrics": DRIVERS["shot_skill"]},
+        {"name": "serve", "subscore_level": 2.6, "weight": 0.1,
+         "confidence": 0.40, "data_source": "real", "limited_by": "sample_size",
+         "driver_metrics": DRIVERS["serve"]},
+    ]
+    return {"schema_version": 1, "ball_source": "real",
+            "rating": {"estimate": 3.0, "band": "3.0", "confidence": 0.5},
+            "dimensions": dims, "skill_coverage": SKILL_COVERAGE}
+
+
+def cond_operator_considerations(p) -> bool:
+    """OPERATOR section is separate from player coaching, surfaced only when a
+    real-data limiter bites. (a) Player focus areas carry NO operator fields.
+    (b) On the synthetic-ball pipeline it is SUPPRESSED (empty). (c) On a
+    real-ball low-confidence rating it fires both categories with correct
+    actions; a high-confidence real dim does NOT trigger."""
+    failures = []
+    for f in p["focus_areas"]:
+        if "limited_by" in f or "remedy" in f:
+            failures.append(f"{f['dimension']} leaks operator fields into coaching")
+    oc = p.get("operator_considerations") or {}
+    if "items" not in oc:
+        _fail("operator_considerations missing items")
+        return False
+    if oc["items"]:
+        failures.append(f"synthetic-ball plan should suppress operator items, "
+                        f"got {len(oc['items'])}")
+    plan = compute_plan(make_real_lowconf_rating(), None)
+    items = plan["operator_considerations"]["items"]
+    cats = {it["category"] for it in items}
+    if cats != {"more_data", "capture_quality"}:
+        failures.append(f"real-ball low-conf categories {cats} != both")
+    affected = {a for it in items for a in it["affects"]}
+    if "net_play" in affected:
+        failures.append("high-confidence net_play wrongly flagged for operator")
+    for it in items:
+        if it["action"] != OPERATOR_ACTION[it["category"]]:
+            failures.append(f"action mismatch for {it['category']}")
+        if not it["affects"] or any(l not in VALID_LIMITERS for l in it["limiters"]):
+            failures.append(f"bad affects/limiters in {it['category']}")
+    if failures:
+        _fail(f"operator considerations: {failures[:3]}")
+        return False
+    _pass("operator considerations: no leak into coaching; suppressed on "
+          "synthetic; fires both categories on real-ball low-conf; high-conf "
+          "dim not flagged")
     return True
 
 
@@ -324,6 +396,7 @@ def run_smoke_test() -> int:
     results.append(cond_schema(p))
     results.append(cond_focus_correctness(p))
     results.append(cond_provisional_flags(p))
+    results.append(cond_operator_considerations(p))
     results.append(cond_developing(p, rating))
     results.append(cond_reliability(p))
     results.append(cond_directional())

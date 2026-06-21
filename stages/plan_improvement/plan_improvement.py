@@ -27,14 +27,32 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+SCHEMA_VERSION = 1               # improvement_plan.json schema (additive: +limited_by/remedy)
+METRICS_SCHEMA_VERSION = 2       # Stage 8 metrics.json schema (read-but-not-consumed)
+STAGE_VERSION = "0.2.0"          # Foundation #3 — surface limited_by remedy
 
 # --- Config (matches contract) ----------------------------------------------
 MAX_FOCUS_AREAS = 4
 CONFIDENCE_WEIGHT_FLOOR = 0.5    # min multiplier applied to a dim's leverage
 TARGET_CAP = 5.0                 # USAPA top band
 USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
+# Foundation #3: OPERATOR-side analysis-reliability notes — kept SEPARATE from
+# (and lower-priority than) player coaching. A dimension's limited_by (from
+# Stage 9) maps to an operator action category, surfaced only when a real-data
+# limiter materially bites (confidence < OPERATOR_CONF_FLOOR). The operator (who
+# records/configures the capture) may be a different person than the player.
+OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter bites
+LIMITER_CATEGORY = {"sample_size": "more_data",
+                    "measurement": "capture_quality",
+                    "known_limit": "capture_quality",
+                    "detection_floor": "capture_quality"}
+OPERATOR_ACTION = {
+    "more_data": ("Record longer sessions, or combine clips across sessions - "
+                  "these assessments currently rest on few rallies."),
+    "capture_quality": ("Capped by single-camera 2D (no ball height/depth) - a "
+                        "higher-mounted or second camera would improve precision."),
+}
 
 EPS = 1e-9
 
@@ -303,15 +321,26 @@ def compute_plan(rating: dict, metrics: Optional[dict],
     ball_source = rating.get("ball_source", "real")
 
     focus, strengths = [], []
+    op_hits: Dict[str, dict] = {}   # operator category -> {limiters, affects}
     for d in dims:
         name = d.get("name")
         sub = d.get("subscore_level")
         weight = d.get("weight", 0.0)
         dconf = d.get("confidence", 0.0)
         data_source = d.get("data_source", "synthetic")
+        limited_by = d.get("limited_by", "measurement")
         drivers = d.get("driver_metrics", {}) or {}
         if sub is None:
             continue
+        # Operator note collection (SEPARATE from player coaching): a limiter
+        # "bites" only on REAL-data dimensions whose confidence is materially low.
+        # Synthetic-ball dims are excluded — their gated-low confidence reflects
+        # the placeholder ball (already warned), not an operator-fixable limiter.
+        if data_source == "real" and dconf < OPERATOR_CONF_FLOOR:
+            cat = LIMITER_CATEGORY.get(limited_by, "capture_quality")
+            hit = op_hits.setdefault(cat, {"limiters": set(), "affects": []})
+            hit["limiters"].add(limited_by)
+            hit["affects"].append(name)
         if sub >= target_level:
             strengths.append({
                 "dimension": name,
@@ -396,6 +425,28 @@ def compute_plan(rating: dict, metrics: Optional[dict],
                       "Already at the top band; maintain and refine."),
     }
 
+    # Operator considerations (analysis reliability) — built last, kept separate
+    # from and lower-priority than the player coaching above. Empty `items` when
+    # no real-data limiter bites (the UI surfaces the section only when non-empty).
+    operator_items = []
+    for cat in ("more_data", "capture_quality"):   # stable order
+        if cat in op_hits:
+            h = op_hits[cat]
+            operator_items.append({
+                "category": cat,
+                "limiters": sorted(h["limiters"]),
+                "affects": h["affects"],
+                "action": OPERATOR_ACTION[cat],
+            })
+    operator_considerations = {
+        "_comment": ("Analysis-reliability notes for the OPERATOR (who records / "
+                     "configures the capture) — a possibly-different audience than "
+                     "the player coaching above, and lower priority. Surfaced only "
+                     "when a real-data limiter materially reduces confidence; "
+                     "`items` is empty otherwise (UI hides the section)."),
+        "items": operator_items,
+    }
+
     return {
         "current": {"estimate": rt.get("estimate"), "band": current_band,
                     "confidence": rt.get("confidence")},
@@ -404,6 +455,7 @@ def compute_plan(rating: dict, metrics: Optional[dict],
         "strengths": strengths,
         "developing_capability": developing,
         "reliability": reliability,
+        "operator_considerations": operator_considerations,
     }
 
 
@@ -428,9 +480,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     metrics = None
     if metrics_path.exists():
         metrics = load_json(metrics_path)
-        if metrics.get("schema_version") != 1:
+        if metrics.get("schema_version") != METRICS_SCHEMA_VERSION:
             fail(f"metrics.json schema_version={metrics.get('schema_version')} "
-                 f"unexpected (expects 1)", ValueError)
+                 f"unexpected (expects {METRICS_SCHEMA_VERSION}; run Stage 8 "
+                 f"v0.2.0+)", ValueError)
 
     ball_source = rating.get("ball_source") or "real"
     ball_is_synth = (ball_source == "synthetic")
