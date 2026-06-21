@@ -30,8 +30,8 @@ import cv2
 import numpy as np
 import pandas as pd
 
-SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+SCHEMA_VERSION = 1               # timeline.json schema (additive confidence fields)
+STAGE_VERSION = "0.2.0"          # Foundation #3 — unwrap v2 heatmaps + surface confidence
 
 # --- Config (matches contract) ----------------------------------------------
 TRAIL_FRAMES = 10
@@ -320,7 +320,23 @@ def composite_minimap(frame, mm):
 
 # --- Timeline ----------------------------------------------------------------
 
-def build_timeline(rallies, classified, bounces, rating, plan, role_of,
+def _v(x):
+    """Unwrap a Stage 8 schema_version-2 metric wrapper {value, confidence, n,
+    limited_by} to its raw value; pass through if already raw."""
+    return x["value"] if isinstance(x, dict) and "value" in x and "limited_by" in x \
+        else x
+
+
+def _conf_of(x) -> Optional[dict]:
+    """Compact reliability view of a wrapped metric, for the timeline so a report
+    can gate each headline number. None if x is not a wrapper."""
+    if isinstance(x, dict) and "limited_by" in x and "confidence" in x:
+        return {"confidence": x.get("confidence"), "n": x.get("n"),
+                "limited_by": x.get("limited_by")}
+    return None
+
+
+def build_timeline(rallies, classified, bounces, rating, plan, metrics, role_of,
                    video_path, fps, frame_count, rendered_range, ball_source,
                    layers, warnings) -> dict:
     events = []
@@ -353,12 +369,31 @@ def build_timeline(rallies, classified, bounces, rating, plan, role_of,
     summary = {"rated_role": "user", "synthetic_ball": ball_source == "synthetic"}
     if rating:
         summary["rating"] = rating.get("rating")
+        # per-dimension reliability so a report can gate each number (Foundation #3)
+        summary["rating_dimensions"] = [
+            {"name": d.get("name"), "subscore_level": d.get("subscore_level"),
+             "confidence": d.get("confidence"), "data_source": d.get("data_source"),
+             "limited_by": d.get("limited_by")}
+            for d in rating.get("dimensions", [])]
     if plan:
         summary["target_band"] = plan.get("target", {}).get("band")
+        # PLAYER coaching (prominent)
         summary["focus_areas"] = [
             {"priority": f["priority"], "dimension": f["dimension"],
              "confidence": f["confidence"]}
             for f in plan.get("focus_areas", [])]
+        # OPERATOR considerations — kept separate + lower-prominence; carried
+        # through verbatim (empty list = section hidden in the report).
+        summary["operator_considerations"] = \
+            (plan.get("operator_considerations", {}) or {}).get("items", [])
+    if metrics:
+        # headline match-metric reliability (gate each number in the report)
+        m = metrics.get("match", {}) or {}
+        sm = m.get("shot_mix", {}) or {}
+        mc = {k: _conf_of(m.get(k)) for k in
+              ("rally_length_shots", "serve", "bounce_in_out", "third_shot")}
+        mc["shot_mix.by_shot_type"] = _conf_of(sm.get("by_shot_type"))
+        summary["metrics_confidence"] = {k: v for k, v in mc.items() if v}
     return {
         "schema_version": SCHEMA_VERSION,
         "source_video": str(video_path),
@@ -556,7 +591,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     cap.release()
 
     # --- timeline ---
-    timeline = build_timeline(rallies, classified, bounces, rating, plan,
+    timeline = build_timeline(rallies, classified, bounces, rating, plan, metrics,
                               role_of, video_path, fps, frame_count,
                               [start, end], ball_source, layers, warnings)
     out_timeline.write_text(json.dumps(timeline, indent=2) + "\n",
@@ -567,13 +602,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     heatmaps_written = []
     if metrics and metrics.get("heatmaps"):
         hm = metrics["heatmaps"]
+        # Stage 8 v2 wraps grids as {value, confidence, n, limited_by}; unwrap.
         for role, grid in (hm.get("player_position", {}) or {}).items():
             p = folder / f"heatmap_position_{role}.png"
-            render_heatmap_png(grid, p, f"position: {role}")
+            render_heatmap_png(_v(grid), p, f"position: {role}")
             heatmaps_written.append(p.name)
         if hm.get("ball_landing"):
             p = folder / "heatmap_ball_landing.png"
-            render_heatmap_png(hm["ball_landing"], p, "ball landing")
+            render_heatmap_png(_v(hm["ball_landing"]), p, "ball landing")
             heatmaps_written.append(p.name)
         log.info(f"wrote {len(heatmaps_written)} heatmap PNG(s)")
     else:

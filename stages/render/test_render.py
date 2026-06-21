@@ -207,6 +207,45 @@ def cond_hud_summary(tl) -> bool:
     return ok
 
 
+def cond_confidence_surfacing(tl) -> bool:
+    """Foundation #3: the timeline gates each number — per-dimension confidence +
+    limited_by, headline metric reliability, and the OPERATOR section kept separate
+    (empty/suppressed on the synthetic ball)."""
+    s = tl["summary"]
+    rating = load("rating.json")
+    failures = []
+    rds = s.get("rating_dimensions", [])
+    if len(rds) != len(rating.get("dimensions", [])):
+        failures.append("rating_dimensions count mismatch")
+    for d in rds:
+        if d.get("limited_by") not in {"sample_size", "measurement", "known_limit",
+                                       "detection_floor"}:
+            failures.append(f"{d.get('name')} bad/absent limited_by")
+            break
+        if not (0.0 <= (d.get("confidence") or -1) <= 1.0):
+            failures.append(f"{d.get('name')} confidence out of [0,1]")
+            break
+    mc = s.get("metrics_confidence", {})
+    if not mc:
+        failures.append("metrics_confidence missing")
+    for k, v in mc.items():
+        if not (isinstance(v, dict) and "confidence" in v and "limited_by" in v):
+            failures.append(f"metrics_confidence[{k}] malformed")
+            break
+    # operator section present + suppressed on the synthetic ball
+    if "operator_considerations" not in s:
+        failures.append("operator_considerations absent from summary")
+    elif s["operator_considerations"] != []:
+        failures.append("operator section should be empty on synthetic ball")
+    if failures:
+        _fail(f"confidence surfacing: {failures[:3]}")
+        return False
+    _pass(f"confidence surfacing: {len(rds)} rating dims + {len(mc)} headline "
+          f"metrics carry confidence/limited_by; operator section separate + "
+          f"suppressed on synthetic")
+    return True
+
+
 def cond_pure_consumer(before) -> bool:
     after = stat_snapshot()
     changed = [f for f in INPUT_FILES if before.get(f) != after.get(f)]
@@ -282,6 +321,7 @@ def run_smoke_test() -> int:
     results.append(cond_synthetic(tl))
     results.append(cond_heatmaps())
     results.append(cond_hud_summary(tl))
+    results.append(cond_confidence_surfacing(tl))
     results.append(cond_pure_consumer(before))
     results.append(cond_degradation())
 

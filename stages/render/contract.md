@@ -81,9 +81,9 @@ failing, since it may run on an incomplete pipeline).
 | `classified.json` | S6 | shot markers + type/stroke/volley (labels, timeline) |
 | `bounces.json` | S5.5 | bounce markers (pixel + court) in/out/zone |
 | `rallies.json` | S7 | rally banner (current rally + end_reason), timeline rally events |
-| `metrics.json` | S8 | heatmap grids → PNGs |
-| `rating.json` | S9 | HUD card + timeline summary |
-| `improvement_plan.json` | S10 | HUD card top focus area + timeline summary |
+| `metrics.json` | S8 | heatmap grids (v2-wrapped → unwrapped) → PNGs; headline metric confidence → timeline `metrics_confidence` |
+| `rating.json` | S9 | HUD card + timeline summary (incl. per-dimension confidence/`limited_by`) |
+| `improvement_plan.json` | S10 | HUD card top focus area + timeline summary (incl. `operator_considerations`, kept separate) |
 
 CLI flags: `--force`, `--log-level`, `--start-frame`, `--end-frame`,
 `--max-seconds` (cap render length; default full), `--fps-out` (default source
@@ -140,8 +140,11 @@ contract.
   "summary": {
     "rated_role": "user",
     "rating": {"estimate": 3.69, "band": "3.5", "range": [3.0, 4.5], "confidence": 0.545},
+    "rating_dimensions": [{"name": "net_play", "subscore_level": 2.78, "confidence": 0.99, "data_source": "real", "limited_by": "measurement"}],
     "target_band": "4.0",
     "focus_areas": [{"priority": 1, "dimension": "net_play", "confidence": "high"}],
+    "operator_considerations": [],
+    "metrics_confidence": {"rally_length_shots": {"confidence": 0.84, "n": 42, "limited_by": "sample_size"}, "shot_mix.by_shot_type": {"confidence": 0.62, "n": 218, "limited_by": "measurement"}},
     "synthetic_ball": true
   },
   "events": [
@@ -161,7 +164,12 @@ contract.
   `rally_start`, `rally_end`, `shot`, `bounce`. Fields copied verbatim from the
   source JSON (pure consumer — no recomputation).
 - `summary` carries the rating + plan top focus areas (the dashboard renders
-  these; the video also burns the HUD card).
+  these; the video also burns the HUD card). **Foundation #3:** it also surfaces
+  `rating_dimensions` (per-dimension `confidence`/`limited_by`/`data_source`) and
+  `metrics_confidence` (headline match-metric `{confidence, n, limited_by}`) so a
+  report can gate each number, and `operator_considerations` — the plan's
+  operator items, carried verbatim and kept SEPARATE from player coaching (empty
+  list ⇒ the report hides that section; empty on the synthetic ball).
 - Events are emitted for the full clip by default (not just the rendered video
   range), so the timeline is complete even when the video is range-limited;
   `rendered_range` records what the video covers.
@@ -169,7 +177,9 @@ contract.
 ### `heatmap_*.png`
 Standalone PNGs over a court diagram: `heatmap_position_<role>.png` per role
 (from `metrics.json.heatmaps.player_position`) and `heatmap_ball_landing.png`
-(from `heatmaps.ball_landing`). Normalized intensity colormap; court outline +
+(from `heatmaps.ball_landing`). **Stage 8 `schema_version 2` wraps each grid as
+`{value, confidence, n, limited_by}`; Stage 11 unwraps to `.value` before
+rendering.** Normalized intensity colormap; court outline +
 kitchen/net drawn for reference. These ARE the top-down/schematic view.
 
 ## Method
@@ -260,6 +270,10 @@ short range.
    dims (> court-diagram minimum).
 7. **HUD/summary.** `summary.rating` + `summary.focus_areas` match
    `rating.json`/`improvement_plan.json` (copied, not recomputed).
+7b. **Confidence surfacing (Foundation #3).** `summary.rating_dimensions` carry a
+   valid `limited_by` + `confidence ∈ [0,1]`; `summary.metrics_confidence` has the
+   headline match metrics as `{confidence, n, limited_by}`; `operator_considerations`
+   is present and empty (suppressed) on the synthetic ball.
 8. **Pure-consumer invariant.** Stage 11 does not modify any input file (assert
    the input JSON/parquet mtimes/sizes are unchanged across the run).
 9. **Degradation.** Hiding an optional input (e.g. `rating.json`) → still
@@ -268,7 +282,11 @@ short range.
 
 ## Stage version
 
-`0.1.0`.
+`0.2.0` (Foundation #3): unwraps Stage 8 `schema_version 2` heatmap grids before
+rendering, and surfaces per-dimension confidence/`limited_by`, headline
+`metrics_confidence`, and the separate `operator_considerations` into
+`timeline.json`'s `summary`. `timeline.json` output `schema_version` stays `1`
+(additive summary fields). `0.1.0` was the initial version.
 
 ## Out of scope (deferred)
 
