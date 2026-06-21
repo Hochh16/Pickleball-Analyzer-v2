@@ -1,6 +1,9 @@
 # Stage 8 — Compute Metrics
 
-**Status:** DRAFT for review. Aggregates every upstream per-shot / per-rally /
+**Status:** v0.2.0 — **Foundation #3 (confidence propagation, schema_version 2)**
+added to the implemented v0.1.0 stage. See § "Confidence propagation" for the
+inline `{value, confidence, n, limited_by}` design. Aggregates every upstream
+per-shot / per-rally /
 per-bounce / per-frame stream into one `metrics.json`: match-level summary,
 per-player (per-role) breakdowns, error attribution, position/coverage stats,
 and numeric heatmap grids. Pure aggregation + arithmetic — no new detection,
@@ -429,6 +432,115 @@ over instantaneous left/right position:
   re-classification). Surfaced via the opponents' `role_confidence` /
   `role_contaminated` flags and noted in Known follow-ups + KNOWN_ISSUES.md.
 
+## Confidence propagation (Foundation #3 — schema_version 2)
+
+> **Decision (David, 2026-06-19/21).** This is SYSTEM_DESIGN.md §6 #3 / C9: the
+> audit's #1 architectural finding was that **no stage propagates per-event
+> confidence** — every number rendered as certain even when it rests on noise.
+> Stage 8 is the place that ends. Chosen design = **Option 2: inline
+> `{value, confidence, n, limited_by}` wrappers on every reported metric**
+> (confidence inseparable from the value; rejected a parallel confidence block
+> because it drifts from the values it describes). Done in one pass with Stage 9
+> (reads `.value` + sets per-dimension confidence from real `.confidence`) and
+> Stage 11 (gates each number + shows the `limited_by` remedy).
+
+### The wrapper
+
+Every *reported* metric (a rate, distribution, average, stats-block, or count)
+is emitted as:
+
+```json
+{ "value": <the metric, any shape>, "confidence": 0.0-1.0, "n": <sample size>,
+  "limited_by": "sample_size" | "measurement" | "known_limit" | "detection_floor" }
+```
+
+`n` is **always** emitted raw alongside the blended confidence — a transparency
+safety net: even if the penalty is mis-tuned, the consumer sees the true sample
+size. `n` is **detected**-n, not true-n (see Recall blind spot below).
+
+### How confidence is computed — `conf_n()`
+
+Confidence decomposes into two independent factors:
+
+```
+confidence = base × penalty(n)
+             │        │
+  per-event reliability   sample-size stability
+penalty(n) = n / (n + K_SMALL_SAMPLE)        # smooth shrink; at n=K, penalty=0.5
+```
+
+`base` = mean of the per-event confidence field (sourced metrics) or a documented
+constant (no-source metrics). `mv(value, conf, n, limited_by)` builds the wrapper.
+
+### Metric "kinds" — how each metric gets its confidence
+
+| Kind | `base` | penalty? | `limited_by` | Metrics |
+|---|---|---|---|---|
+| **sourced** | mean per-event conf | yes | `sample_size` if `penalty(n) ≤ base` else `measurement` | shot_mix, third_shot, bounce_in_out, by_end_reason, serve, ball_landing |
+| **sample_size** | 1.0 | yes | `sample_size` | rally_length_shots, rally_duration_sec |
+| **structural** | `STRUCTURAL_CONF` (1.0) | no | `detection_floor` | match_span_sec, n_rallies/n_shots/n_bounces |
+| **known_limit** | `SPEED_CONF` (0.2) | no | `known_limit` | mean_post_speed_ftps |
+| **position** (real) | frac `court_pos_reliable` | yes (n_frames) | `measurement` if frac < penalty else `sample_size` | position.*, movement, team.*, player_position heatmap |
+
+`limited_by` = the binding (lower) factor, so Stage 11 can give the **right**
+remedy (see § "Per-metric confidence-source map" → user remedies). For sourced /
+position metrics it's `argmin(base, penalty)`; the other kinds are fixed.
+
+### Per-metric confidence-source map (verified upstream fields)
+
+| Stage 8 metric | Source field (stage) | Kind |
+|---|---|---|
+| `shot_mix.by_shot_type` | `shot_type_confidence` (6) | sourced |
+| `shot_mix.by_stroke_side` | `stroke_side_confidence` (6) | sourced |
+| `shot_mix.n_volley` / `volley_rate` | `is_volley_confidence` (6) | sourced |
+| `third_shot.*` | `shot_type_confidence` of 3rd shots (6) | sourced |
+| `bounce_in_out.*`, `heatmaps.ball_landing` | bounce `confidence` (5.5) | sourced |
+| `by_end_reason`, `serve.*` | `end_reason_confidence` (7) | sourced |
+| `error_attribution.*` | `end_reason_confidence` × role_confidence | sourced (compound) |
+| `players.<role>.*` (shot_mix/serve/errors) | metric source × role_confidence | sourced (compound) |
+| `position.*`, `movement`, `team.*`, `player_position` | frac `court_pos_reliable` (2) | position |
+| `mean_post_speed_ftps` | — none (known-corrupt: depth/no-height, C2) | known_limit |
+| `rally_length_shots`, `rally_duration_sec` | — none | sample_size |
+| `match_span_sec`, `n_*` counts | — none (census) | structural |
+
+**Compound (per-role / error attribution):** multiply the metric's own
+confidence by `role_confidence` — "we're not even sure these are the user's
+shots" honestly drags the number down. Role *contamination* keeps its existing
+separate `role_contaminated` flag; `limited_by` reflects the metric-intrinsic
+limiter only (no double-channeling).
+
+**User remedies (consumed by Stage 11):**
+- `sample_size` → *actionable*: "Based on only N rallies — record a longer
+  session, or combine clips, for a more reliable number." (More footage / more
+  rallies raises this. See KNOWN_ISSUES "Cumulative multi-clip stats".)
+- `measurement` / `known_limit` → *not fixable by more footage*: "Estimate limited
+  by single-camera video, not by how much you record." (Capture-side ceiling —
+  higher mount / 2nd camera; KNOWN_ISSUES "Confidence propagation … two
+  capture-side levers".)
+- `detection_floor` → "This count is a minimum; some events may be missed."
+
+### Synthetic-ball interaction (important)
+
+On `ball_source == "synthetic"` the per-event confidence fields are
+**artificially clean** (the synthetic ball lacks real noise), so inline
+confidence on ball-derived metrics would read **misleadingly high**. Therefore:
+- The coarse `reliability` map (synthetic_gated / real_data / pending) is
+  **retained** — it remains the governing signal that ball-derived families are
+  PLACEHOLDER when synthetic, independent of the (clean) computed confidence.
+- Inline `confidence` is only *meaningful* on the **real ball**. The smoke test
+  (synthetic) validates wrapper **shape + arithmetic**; real-ball validation
+  (`data/pb_2min`) validates the confidence **values**.
+- Position/movement/team confidence (from `court_pos_reliable`) IS meaningful
+  regardless of `ball_source` (real tracking data).
+
+### Recall blind spot (documented limit, NOT folded into a number)
+
+A missed (motion-blurred) fast shot leaves **no record** to attach low confidence
+to, so confidence is **blind to recall** — `n` is detected-n. This is surfaced as
+a standing `warnings[]` banner ("shot counts / rally length are a lower bound;
+the hardest fast shots may be missed"), never silently absorbed into a confidence
+value. Confidence captures **classification-noise + sample-size, NOT recall-bias.**
+
 ## Method
 
 1. **Load + validate.** Read all inputs; check `schema_version` on each JSON
@@ -521,6 +633,10 @@ COURT_LEN_FT         = 44.0
 COURT_WID_FT         = 20.0
 RALLY_LEN_BUCKETS    = ["1", "2-4", "5-8", "9+"]
 MOVE_MIN_STEP_FT     = 0.25   # per-frame foot delta below this = jitter, not movement
+# Confidence propagation (Foundation #3):
+K_SMALL_SAMPLE       = 8      # penalty(n) = n/(n+K); at n=8 -> 0.5, n=28 -> 0.78
+SPEED_CONF           = 0.2    # flat confidence for known-corrupt mean_post_speed_ftps (C2)
+STRUCTURAL_CONF      = 1.0    # exact-arithmetic / census metrics (counts, match_span)
 # Tier B (pending real ball; documented, not used in v1):
 # FORCED_MIN_INCOMING_FTPS = 25.0  # incoming speed above which an error is 'forced'
 ```
@@ -584,11 +700,25 @@ Assertions:
     from Stage 7; `match.bounce_in_out.n_in + n_out == len(bounces.json
     bounces with court projection)`. (We don't grade per-player accuracy —
     no per-player ground truth on real tracks; reconciliation is the gate.)
+13. **Confidence wrapper (schema_version 2).** Every wrapped metric is an object
+    with keys `value`, `confidence` (float in [0,1]), `n` (int ≥ 0), `limited_by`
+    (one of `sample_size`/`measurement`/`known_limit`/`detection_floor`).
+    Reconciliation reads `.value` (counts still sum). Spot-checks:
+    `mean_post_speed_ftps.confidence == SPEED_CONF` and `.limited_by ==
+    "known_limit"`; `match_span_sec.limited_by == "detection_floor"`;
+    `penalty(n)` monotonic in `n` (a metric with larger `n` has ≥ penalty
+    contribution); `limited_by` equals the argmin factor for a sourced metric.
+    Recall-blind-spot banner present in `warnings[]`. On the synthetic smoke
+    clip, only **shape + arithmetic** are asserted (confidence *values* are
+    validated separately on real `data/pb_2min`, per § Synthetic-ball interaction).
 
 ## Stage version
 
-`0.1.0` (initial). Increment minor for behavior changes preserving the
-`metrics.json` schema; bump `schema_version` for breaking schema changes.
+`0.2.0` (Foundation #3 — confidence propagation). **`schema_version` bumped 1 → 2**:
+every reported metric is now an inline `{value, confidence, n, limited_by}` wrapper
+(breaking — Stage 9/11 read `.value`). `0.1.0` was the initial unwrapped schema.
+Increment minor for behavior changes preserving the schema; bump `schema_version`
+for breaking schema changes.
 
 ## Out of scope (deferred)
 

@@ -576,3 +576,74 @@ is retained for debugging only. (Ground-truth **bounce** positions remain valid 
 bounces are on the ground, so their court projection is sound.) A true ball court
 position (for shot speed → Stage 6 types, Stage 8 metrics) still needs ball
 height / 3D — see the Stage 6 depth-speed entry.
+
+## Confidence propagation (Foundation #3) — the two capture-side levers it exposes
+
+**Observed:** 2026-06-21, while designing Stage 8 confidence propagation
+(SYSTEM_DESIGN.md §6 #3, C9). The confidence model decomposes every metric's
+reliability into `base × penalty(n)` — per-event measurement quality × a
+sample-size term — and tags each metric with a `limited_by` reason
+(`sample_size` / `measurement` / `known_limit`) so the report tells the user the
+*right* remedy. Two of those remedies are **future capture/throughput enhancements,
+not in scope now**, recorded here so they aren't lost:
+
+1. **Processing-speed enhancement is a prerequisite for the `sample_size` lever.**
+   When a metric is `limited_by: sample_size`, the honest user-facing remedy is
+   "capture more rallies" — either a longer video or **multiple cumulative clips**
+   (see next entry). But the real product workload is already **many videos, each
+   ≥5 min**, and Stage 4 inference is **CPU-decode-bound at ~2.9 fps** (the
+   throughput issue above, C8). So the confidence model's headline advice
+   ("record more") is only *usable at scale once throughput is fixed*. Longer /
+   more clips → more rallies → higher sample-size confidence is the lever; app
+   processing speed is the gate on actually pulling it. Future enhancement; ties to
+   F5 (GPU/NVDEC decode) + the throughput entry above.
+
+2. **A higher-mounted or second camera is the only real fix for the `measurement`
+   / `known_limit` lever.** When a metric is `limited_by: measurement` (depth-
+   corrupted shot speed, ambiguous shot type) or `known_limit` (`mean_post_speed_ftps`,
+   stamped low via `SPEED_CONF`), **more footage does NOT help** — you just get a
+   more stable estimate of a fuzzy/biased number. The reliability ceiling there is
+   set by single-camera 2D having **no ball height** (C2 / §5). The future capture-
+   side enhancement that raises that ceiling is a **higher camera mount and/or a
+   second camera** (enabling depth / parabola-z / true 3D ball speed). Until then
+   the report must say "limited by single-camera video, not by how much you record"
+   — never imply more clips will sharpen speed. Future enhancement; ties to
+   SYSTEM_DESIGN §5 (Ball height/3D, option (b) add-capture) + F8.
+
+**Honesty banner (orthogonal to both):** the confidence model is **blind to
+recall** — a missed (motion-blurred) fast shot leaves no record to attach low
+confidence to, so `n` is *detected*-n, not *true*-n. Neither lever above is
+visible in any per-metric confidence; the recall undercount is surfaced as a
+standing caveat (shot counts / rally length are a **lower bound**), not folded
+into a number. The fast-ball recall fix is itself partly capture-side (faster
+shutter / higher frame rate — F2).
+
+## Cumulative multi-clip stats — can pooling raise confidence?
+
+**Observed:** 2026-06-21, operator question during Foundation #3 design.
+
+**Question:** can multiple video clips be combined so that stats which depend on
+the *number of rallies* become more reliable?
+
+**Answer — yes, for the sample-size half only, with conditions.** Pooling rallies
+across clips grows `n`, which raises `penalty(n)` and therefore the confidence of
+**count/rate/average metrics** (rally length, rally duration, shot-mix rates). It
+is the *same lever* as recording one longer video — more events, more statistical
+stability. **Caveats that bound it:**
+- **Only sample-size-limited metrics improve.** Measurement-limited stats (shot
+  speed/type — `limited_by: measurement`/`known_limit`) do **not** get more
+  accurate from pooling; you get a more stable estimate of the same fuzzy number.
+- **Per-player pooling needs cross-video identity.** Stage 2.5 roles are
+  per-clip; pooling `user`/`opp_a`/… stats across clips requires matching the
+  same logical players across videos (**F28 cross-video identity/trend tracking** —
+  feasible, not built). Match-level pooling (rally lengths) is easier than
+  per-player pooling.
+- **Conditions must be comparable.** Position/heatmap pooling needs the same court
+  + camera calibration; rate metrics tolerate venue differences better.
+- **Recall bias persists.** Pooling clips that all share the same fast-ball miss
+  rate gives a more stable estimate of a biased number — confidence rises, the
+  undercount does not shrink (see honesty banner above).
+- **Semantic shift.** Pooling answers "this player *across sessions*" (typical
+  behavior / trend), not "this single match." That's a feature for trend tracking
+  (F28) but a caveat if a single-session readout was intended.
+- **Throughput-gated** at scale, like lever #1 above.

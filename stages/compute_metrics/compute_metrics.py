@@ -30,8 +30,8 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
-SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
+STAGE_VERSION = "0.2.0"       # Foundation #3 — confidence propagation
 
 # --- Config (matches contract) ----------------------------------------------
 HEATMAP_BIN_FT = 2.0          # court grid bin -> 10 cols (x) x 22 rows (y)
@@ -43,6 +43,11 @@ COURT_LEN_FT = 44.0
 COURT_WID_FT = 20.0
 MOVE_MIN_STEP_FT = 0.25       # per-frame foot delta below this = jitter
 RALLY_LEN_BUCKETS = ["1", "2-4", "5-8", "9+"]
+
+# Confidence propagation (Foundation #3 — see contract § "Confidence propagation")
+K_SMALL_SAMPLE = 8            # penalty(n) = n/(n+K); n=8 -> 0.5, n=28 -> 0.78
+SPEED_CONF = 0.2             # flat conf for known-corrupt mean_post_speed_ftps (C2)
+STRUCTURAL_CONF = 1.0        # exact-arithmetic / census metrics (counts, span)
 
 # NOTE: opponents are identity-based (opp_a/opp_b), NOT position L/R (Stage 2.5).
 # Any left/right-by-court_x semantics in this stage is stale and belongs to the
@@ -194,13 +199,23 @@ def rally_len_bucket(n: int) -> str:
     return "9+"
 
 
-def shot_mix(shots: List[dict]) -> dict:
+def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
+    """Wrapped shot-mix sub-metrics. Each carries its own per-shot confidence
+    source (shot_type / stroke_side / is_volley); role_factor compounds in
+    per-role calls."""
+    n = len(shots)
     n_volley = sum(1 for s in shots if s.get("is_volley"))
+    by_type = count_by(shots, lambda s: s.get("shot_type", "unknown"))
+    by_side = count_by(shots, lambda s: s.get("stroke_side", "unknown"))
+    volley = {"n_volley": n_volley,
+              "volley_rate": round(n_volley / n, 3) if n else 0.0}
     return {
-        "by_shot_type": count_by(shots, lambda s: s.get("shot_type", "unknown")),
-        "by_stroke_side": count_by(shots, lambda s: s.get("stroke_side", "unknown")),
-        "n_volley": n_volley,
-        "volley_rate": round(n_volley / len(shots), 3) if shots else 0.0,
+        "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),
+                                   n, role_factor),
+        "by_stroke_side": mv_sourced(by_side, _confs(shots, "stroke_side_confidence"),
+                                     n, role_factor),
+        "volley": mv_sourced(volley, _confs(shots, "is_volley_confidence"),
+                             n, role_factor),
     }
 
 
@@ -210,6 +225,73 @@ def safe_stats(vals: List[float]) -> dict:
     return {"mean": round(statistics.mean(vals), 3),
             "median": round(statistics.median(vals), 3),
             "max": round(max(vals), 3)}
+
+
+# --- Confidence propagation (Foundation #3) ---------------------------------
+# Every reported metric is wrapped {value, confidence, n, limited_by}. See the
+# contract § "Confidence propagation" for the full design; the kind of each
+# metric (sourced / sample_size / structural / known_limit / position) selects
+# which constructor below builds its wrapper.
+
+def penalty(n: int) -> float:
+    """Small-sample shrink n/(n+K): 0 at n=0, 0.5 at n=K, ->1 as n grows."""
+    return n / (n + K_SMALL_SAMPLE) if n and n > 0 else 0.0
+
+
+def mv(value, confidence: float, n: int, limited_by: str) -> dict:
+    """The one wrapper shape every downstream (Stage 9/11) binds to."""
+    return {"value": value, "confidence": round(float(confidence), 3),
+            "n": int(n), "limited_by": limited_by}
+
+
+def _limiter(base: float, pen: float) -> str:
+    """The binding (lower) factor names the user-facing remedy: too-few-events
+    (sample_size, actionable) vs per-event camera limit (measurement)."""
+    return "sample_size" if pen <= base else "measurement"
+
+
+def _confs(items: List[dict], field: str) -> List[float]:
+    return [float(it.get(field, 0.0)) for it in items]
+
+
+def mv_sourced(value, per_event_confs: List[float], n: Optional[int] = None,
+               role_factor: float = 1.0) -> dict:
+    """Metric backed by a real per-event confidence field (shot_type / bounce /
+    end_reason). confidence = mean(per-event) * penalty(n) * role_factor.
+    limited_by is the metric-intrinsic limiter argmin(base, penalty); role
+    contamination stays on its own role_contaminated flag (no double-channel)."""
+    if n is None:
+        n = len(per_event_confs)
+    base = (sum(per_event_confs) / len(per_event_confs)) if per_event_confs else 0.0
+    pen = penalty(n)
+    return mv(value, base * pen * role_factor, n, _limiter(base, pen))
+
+
+def mv_sample_size(value, n: int) -> dict:
+    """No per-event source; aggregate of n events. base=1.0 (arithmetic is sound);
+    the only quantified uncertainty is sample size. Recall undercount is a
+    documented banner, NOT folded in here."""
+    return mv(value, penalty(n), n, "sample_size")
+
+
+def mv_structural(value, n: int) -> dict:
+    """Exact arithmetic / census of detected events (counts, span). High
+    confidence; honesty caveat is the detection floor (true >= detected)."""
+    return mv(value, STRUCTURAL_CONF, n, "detection_floor")
+
+
+def mv_known_limit(value, n: int) -> dict:
+    """Known-corrupt metric (depth/no-height ball speed, C2). Flat low confidence;
+    more footage does not help."""
+    return mv(value, SPEED_CONF, n, "known_limit")
+
+
+def mv_position(value, frac_reliable: float, n_frames: int) -> dict:
+    """Real position data; base = fraction of court_pos_reliable rows (near-side
+    high, far-side zone-only). Independent of ball_source."""
+    pen = penalty(n_frames)
+    lim = "measurement" if frac_reliable <= pen else "sample_size"
+    return mv(value, frac_reliable * pen, n_frames, lim)
 
 
 # --- Position / movement (real data) ----------------------------------------
@@ -504,6 +586,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     n_serves = len(rallies)
     n_serve_faults = by_end_reason.get("serve-fault", 0)
+    # per-rally end_reason confidence (source for by_end_reason + serve)
+    end_reason_confs = _confs(rallies, "end_reason_confidence")
 
     # third shot
     third_shots = []
@@ -518,6 +602,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     n_in = sum(1 for b in bounces if b.get("is_in_court") is True)
     n_out = sum(1 for b in bounces if b.get("is_in_court") is False)
+    # bounce confidence for the projected (in/out-classified) bounces
+    bio_confs = [float(b.get("confidence", 0.0)) for b in bounces
+                 if b.get("is_in_court") is not None]
 
     # match frame span
     all_frames = [int(s["frame"]) for s in shots] + [int(b["frame"]) for b in bounces]
@@ -525,35 +612,41 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                       if all_frames else 0.0)
 
     match = {
-        "n_rallies": len(rallies),
-        "n_shots": len(shots),
-        "n_bounces": len(bounces),
-        "match_span_sec": match_span_sec,
-        "rally_length_shots": {**safe_stats([float(n) for n in rally_lengths]),
-                               "distribution": rl_dist},
-        "rally_duration_sec": safe_stats(rally_durs),
-        "by_end_reason": by_end_reason,
-        "serve": {
+        "n_rallies": mv_structural(len(rallies), len(rallies)),
+        "n_shots": mv_structural(len(shots), len(shots)),
+        "n_bounces": mv_structural(len(bounces), len(bounces)),
+        "match_span_sec": mv_structural(match_span_sec, len(all_frames)),
+        "rally_length_shots": mv_sample_size(
+            {**safe_stats([float(n) for n in rally_lengths]), "distribution": rl_dist},
+            len(rallies)),
+        "rally_duration_sec": mv_sample_size(safe_stats(rally_durs), len(rallies)),
+        "by_end_reason": mv_sourced(by_end_reason, end_reason_confs, len(rallies)),
+        "serve": mv_sourced({
             "n_serves": n_serves,
             "n_serve_faults": n_serve_faults,
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
-        },
+        }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
-        "third_shot": {
+        "third_shot": mv_sourced({
             "n_rallies_ge_3_shots": len(third_shots),
             "by_shot_type": third_by_type,
             "drop_rate": third_drop_rate,
-        },
-        "bounce_in_out": {
+        }, _confs(third_shots, "shot_type_confidence"), len(third_shots)),
+        "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
             "in_rate": round(n_in / (n_in + n_out), 4) if (n_in + n_out) else 0.0,
-        },
+        }, bio_confs, n_in + n_out),
     }
 
     # --- Error attribution ---
     by_owner: Dict[str, int] = {}
     by_er_owner: Dict[Tuple[str, str, str], int] = {}
     errors_committed: Dict[str, int] = {r: 0 for r in PLAYING_ROLES}
+    # confidence sources: by_owner is compound (end_reason × owner role_confidence);
+    # per-role serve + errors need their own per-rally end_reason confidences.
+    error_owner_confs: List[float] = []                       # folded eff per rally
+    role_error_raw_erc: Dict[str, List[float]] = {r: [] for r in PLAYING_ROLES}
+    role_served_erc: Dict[str, List[float]] = {r: [] for r in PLAYING_ROLES}
 
     def add_owner(owner: str, end_reason: str, kind: str):
         by_owner[owner] = by_owner.get(owner, 0) + 1
@@ -562,12 +655,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     for r in rallies:
         er = r["end_reason"]
+        erc = float(r.get("end_reason_confidence", 0.0))
         sig = r.get("end_signals", {}) or {}
+        server_role = role_of(r.get("server_track_id"))
+        if server_role in role_served_erc:
+            role_served_erc[server_role].append(erc)
         if er == "serve-fault":
-            owner = role_of(r.get("server_track_id")) or "unattributed"
+            owner = server_role or "unattributed"
             add_owner(owner, er, "server")
             if owner in errors_committed:
                 errors_committed[owner] += 1
+                role_error_raw_erc[owner].append(erc)
         elif er in HITTER_ERRORS:
             last_sid = int(r["shot_ids"][-1]) if r["shot_ids"] else None
             last_shot = shot_by_id.get(last_sid) if last_sid is not None else None
@@ -575,6 +673,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             add_owner(owner, er, "hitter")
             if owner in errors_committed:
                 errors_committed[owner] += 1
+                role_error_raw_erc[owner].append(erc)
         elif er in RECEIVER_ERRORS:
             hs = sig.get("hitter_side")
             if hs == "near":
@@ -585,10 +684,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 owner = "unknown"
             add_owner(owner, er, "receiver")
         else:  # unknown
+            owner = "unknown"
             add_owner("unknown", er, "unknown")
+        # compound: confidence in the attribution = end_reason conf × role conf
+        # of the owner (team/unknown/unattributed carry no role factor).
+        rf = role_confidence.get(owner, 1.0) if owner in PLAYING_ROLES else 1.0
+        error_owner_confs.append(erc * rf)
 
     error_attribution = {
-        "by_owner": by_owner,
+        "by_owner": mv_sourced(by_owner, error_owner_confs, len(rallies)),
         "by_end_reason_and_owner": [
             {"end_reason": k[0], "owner": k[1], "owner_kind": k[2], "count": v}
             for k, v in sorted(by_er_owner.items())
@@ -612,10 +716,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     role_fpos: Dict[str, Dict[int, Tuple[float, float]]] = {}
     player_pos_heatmaps: Dict[str, List[List[int]]] = {}
     pos_heatmap_in_extent: Dict[str, int] = {}
+    role_frac_reliable: Dict[str, float] = {}   # court_pos_reliable fraction (Stage 2)
 
     for r in PLAYING_ROLES:
         sub = role_valid_rows(df, role_to_tids[r])
         role_positions[r] = compute_position(sub, r, fps, rally_windows, n_rallies)
+        # confidence base for position metrics: near-side reliable / far-side
+        # zone-only (Foundation #1). Absent column (pre-#1 fixtures) -> assume 1.0.
+        if "court_pos_reliable" in sub.columns and len(sub):
+            role_frac_reliable[r] = float(sub["court_pos_reliable"].mean())
+        else:
+            role_frac_reliable[r] = 1.0
         fpos = role_frame_pos(sub)
         role_fpos[r] = fpos
         grid, n_ext = bin_positions(list(fpos.values()))
@@ -636,26 +747,30 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                   and ra["end_reason"] == "serve-fault")
         speeds = [s["features"]["post_speed_ftps"] for s in rshots
                   if not s.get("is_serve") and s.get("features", {}).get("post_speed_ftps") is not None]
+        rconf = role_confidence.get(r, 0.0)
+        pos_n = role_positions[r]["n_frames"]
         players_out[r] = {
-            "role_confidence": role_confidence.get(r, 0.0),
+            "role_confidence": rconf,
             "role_contaminated": bool(role_contaminated.get(r, False)),
             "handedness": handedness.get(r, "unknown"),
             "track_ids": role_to_tids[r],
-            "n_shots": len(rshots),
-            "shot_mix": shot_mix(rshots),
-            "serve": {
+            "n_shots": mv_structural(len(rshots), len(rshots)),
+            "shot_mix": shot_mix(rshots, role_factor=rconf),
+            "serve": mv_sourced({
                 "n_serves": len(rserves),
                 "n_serve_faults": rsf,
                 "serve_fault_rate": round(rsf / len(rserves), 4) if rserves else 0.0,
-            },
-            "errors_committed": errors_committed[r],
-            "mean_post_speed_ftps": round(statistics.mean(speeds), 2) if speeds else None,
-            "position": role_positions[r],
+            }, role_served_erc[r], len(rserves), role_factor=rconf),
+            "errors_committed": mv_sourced(errors_committed[r], role_error_raw_erc[r],
+                                           errors_committed[r], role_factor=rconf),
+            "mean_post_speed_ftps": mv_known_limit(
+                round(statistics.mean(speeds), 2) if speeds else None, len(speeds)),
+            "position": mv_position(role_positions[r], role_frac_reliable[r], pos_n),
         }
 
     unattributed_shots = [s for s in shots if int(s["track_id"]) not in assigned_tids]
     players_out["unattributed"] = {
-        "n_shots": len(unattributed_shots),
+        "n_shots": mv_structural(len(unattributed_shots), len(unattributed_shots)),
         "note": "shots whose track_id is noise or maps to no role",
     }
 
@@ -667,16 +782,23 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         fail(f"error-owner reconciliation failed: sum(by_owner)="
              f"{sum(by_owner.values())} != n_rallies {len(rallies)}")
 
-    # --- team ---
+    # --- team --- (position-kind; frac_reliable = mean of the two members')
+    near_raw = compute_team("near", NEAR_ROLES, role_fpos, role_positions, role_contaminated)
+    far_raw = compute_team("far", FAR_ROLES, role_fpos, role_positions, role_contaminated)
+    near_frac = statistics.mean([role_frac_reliable[x] for x in NEAR_ROLES])
+    far_frac = statistics.mean([role_frac_reliable[x] for x in FAR_ROLES])
     team = {
-        "near": compute_team("near", NEAR_ROLES, role_fpos, role_positions, role_contaminated),
-        "far": compute_team("far", FAR_ROLES, role_fpos, role_positions, role_contaminated),
+        "near": mv_position(near_raw, near_frac, near_raw["n_frames_both_present"]),
+        "far": mv_position(far_raw, far_frac, far_raw["n_frames_both_present"]),
     }
 
     # --- heatmaps ---
-    ball_positions = [tuple(b["court_xy_ft"]) for b in bounces
-                      if b.get("court_xy_ft") and b["court_xy_ft"][0] is not None]
-    ball_grid, _ = bin_positions([(float(x), float(y)) for x, y in ball_positions])
+    ball_items = [(float(b["court_xy_ft"][0]), float(b["court_xy_ft"][1]),
+                   float(b.get("confidence", 0.0)))
+                  for b in bounces
+                  if b.get("court_xy_ft") and b["court_xy_ft"][0] is not None]
+    ball_grid, ball_n_ext = bin_positions([(x, y) for x, y, _ in ball_items])
+    bl_confs = [c for x, y, c in ball_items if in_extent(x, y)]
     heatmaps = {
         "grid": {
             "bin_ft": HEATMAP_BIN_FT,
@@ -686,8 +808,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "note": ("cell [r][c] covers x in [c*bin,(c+1)*bin), y in "
                      "[r*bin,(r+1)*bin). Counts only; Stage 11 normalizes + renders."),
         },
-        "player_position": {r: player_pos_heatmaps[r] for r in PLAYING_ROLES},
-        "ball_landing": ball_grid,
+        "player_position": {
+            r: mv_position(player_pos_heatmaps[r], role_frac_reliable[r],
+                           pos_heatmap_in_extent[r]) for r in PLAYING_ROLES},
+        "ball_landing": mv_sourced(ball_grid, bl_confs, ball_n_ext),
     }
 
     # --- reliability + warnings ---
@@ -708,9 +832,16 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                     "pending_real_ball.opponent_backhand_targeting"],
     }
 
+    # Standing recall caveat — confidence cannot see missed events (detected-n).
+    warnings.append("Confidence is BLIND TO RECALL: a missed (motion-blurred) "
+                    "fast shot leaves no record, so shot counts and rally length "
+                    "are a LOWER BOUND; recall is not folded into any confidence "
+                    "value (captures classification-noise + sample-size only).")
     if is_synth:
         warnings.append("ball_source is 'synthetic': all ball-derived metrics "
-                        "are PLACEHOLDER. See reliability.synthetic_gated.")
+                        "are PLACEHOLDER. See reliability.synthetic_gated. On "
+                        "synthetic ball, inline confidence is artificially clean "
+                        "and meaningful only on the real ball.")
     for r in PLAYING_ROLES:
         if role_contaminated.get(r) and role_to_tids[r]:
             warnings.append(
@@ -742,6 +873,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "heatmap_bin_ft": HEATMAP_BIN_FT,
             "role_conf_floor": args.role_conf_floor,
             "net_y_ft": NET_Y_FT,
+            "k_small_sample": K_SMALL_SAMPLE,
+            "speed_conf": SPEED_CONF,
+            "structural_conf": STRUCTURAL_CONF,
             "kitchen_max_dist_ft": KITCHEN_MAX_DIST_FT,
             "baseline_min_dist_ft": BASELINE_MIN_DIST_FT,
         },

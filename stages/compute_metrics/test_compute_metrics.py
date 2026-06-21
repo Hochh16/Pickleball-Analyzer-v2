@@ -60,6 +60,19 @@ VALID_OWNERS = set(PLAYING_ROLES) | {"team_near", "team_far", "unattributed", "u
 def _fail(m): print(f"  FAIL: {m}")
 def _pass(m): print(f"  PASS: {m}")
 
+# --- v2 confidence-wrapper helpers ------------------------------------------
+WRAP_KEYS = {"value", "confidence", "n", "limited_by"}
+LIMITERS = {"sample_size", "measurement", "known_limit", "detection_floor"}
+
+
+def _is_wrapped(x) -> bool:
+    return isinstance(x, dict) and WRAP_KEYS <= set(x.keys())
+
+
+def _v(metric):
+    """Unwrap a {value, confidence, n, limited_by} metric to its raw value."""
+    return metric["value"] if _is_wrapped(metric) else metric
+
 
 def check_fixtures() -> bool:
     needed = ["video.mp4", "court.json", "court_zones.json", "players.parquet",
@@ -99,28 +112,28 @@ def load(name): return json.load((TEST_FOLDER / name).open(encoding="utf-8"))
 # --- Conditions --------------------------------------------------------------
 
 def cond_schema(m) -> bool:
-    if m.get("schema_version") != 1:
+    if m.get("schema_version") != 2:
         _fail(f"bad schema_version {m.get('schema_version')}")
         return False
     if not REQUIRED_TOP_KEYS <= set(m.keys()):
         _fail(f"missing top keys {REQUIRED_TOP_KEYS - set(m.keys())}")
         return False
-    # every by_* count is a non-negative int
-    for d in (m["match"]["shot_mix"]["by_shot_type"],
-              m["match"]["shot_mix"]["by_stroke_side"],
-              m["match"]["by_end_reason"], m["error_attribution"]["by_owner"]):
+    # every by_* count is a non-negative int (unwrap the v2 metric wrappers)
+    for d in (_v(m["match"]["shot_mix"]["by_shot_type"]),
+              _v(m["match"]["shot_mix"]["by_stroke_side"]),
+              _v(m["match"]["by_end_reason"]), _v(m["error_attribution"]["by_owner"])):
         for k, v in d.items():
             if not isinstance(v, int) or v < 0:
                 _fail(f"bad count {k}={v}")
                 return False
-    _pass("metrics.json valid: schema_version=1, all top keys present, counts >= 0")
+    _pass("metrics.json valid: schema_version=2, all top keys present, counts >= 0")
     return True
 
 
 def cond_shot_reconciliation(m) -> bool:
-    role_sum = sum(m["players"][r]["n_shots"] for r in PLAYING_ROLES)
-    unattr = m["players"]["unattributed"]["n_shots"]
-    total = m["match"]["n_shots"]
+    role_sum = sum(_v(m["players"][r]["n_shots"]) for r in PLAYING_ROLES)
+    unattr = _v(m["players"]["unattributed"]["n_shots"])
+    total = _v(m["match"]["n_shots"])
     ok = role_sum + unattr == total
     (_pass if ok else _fail)(
         f"shot reconciliation: {role_sum} role + {unattr} unattributed == "
@@ -130,10 +143,10 @@ def cond_shot_reconciliation(m) -> bool:
 
 
 def cond_error_reconciliation(m) -> bool:
-    by_owner = m["error_attribution"]["by_owner"]
+    by_owner = _v(m["error_attribution"]["by_owner"])
     bad = [o for o in by_owner if o not in VALID_OWNERS]
     s = sum(by_owner.values())
-    n = m["match"]["n_rallies"]
+    n = _v(m["match"]["n_rallies"])
     ok = (s == n) and not bad
     (_pass if ok else _fail)(
         f"error reconciliation: sum(by_owner)={s} == n_rallies={n}, owners valid"
@@ -144,7 +157,7 @@ def cond_error_reconciliation(m) -> bool:
 
 def cond_end_reason_passthrough(m, rallies_doc) -> bool:
     expect = rallies_doc.get("stats", {}).get("by_end_reason", {})
-    got = m["match"]["by_end_reason"]
+    got = _v(m["match"]["by_end_reason"])
     ok = got == expect
     (_pass if ok else _fail)(
         f"by_end_reason passthrough matches Stage 7 exactly: {got}" if ok else
@@ -153,9 +166,9 @@ def cond_end_reason_passthrough(m, rallies_doc) -> bool:
 
 
 def cond_serve(m) -> bool:
-    s = m["match"]["serve"]
-    faults = m["match"]["by_end_reason"].get("serve-fault", 0)
-    ok = (s["n_serves"] == m["match"]["n_rallies"]
+    s = _v(m["match"]["serve"])
+    faults = _v(m["match"]["by_end_reason"]).get("serve-fault", 0)
+    ok = (s["n_serves"] == _v(m["match"]["n_rallies"])
           and s["n_serve_faults"] == faults
           and 0.0 <= s["serve_fault_rate"] <= 1.0)
     (_pass if ok else _fail)(
@@ -167,7 +180,7 @@ def cond_serve(m) -> bool:
 
 def cond_rally_length(m, rallies_doc) -> bool:
     lengths = [int(r["n_shots"]) for r in rallies_doc.get("rallies", [])]
-    rl = m["match"]["rally_length_shots"]
+    rl = _v(m["match"]["rally_length_shots"])
     if not lengths:
         ok = rl["distribution"] == {} or sum(rl["distribution"].values()) == 0
         (_pass if ok else _fail)("rally length: empty handled")
@@ -189,7 +202,7 @@ def cond_rally_length(m, rallies_doc) -> bool:
 def cond_position(m) -> bool:
     failures = []
     for r in PLAYING_ROLES:
-        pos = m["players"][r]["position"]
+        pos = _v(m["players"][r]["position"])
         if pos["n_frames"] == 0:
             continue
         for key in ("zone_time_frac", "lateral_time_frac", "area_time_frac"):
@@ -207,11 +220,11 @@ def cond_position(m) -> bool:
                                 f"{pos['zone_time_frac'][depth]}")
         if not (0.0 <= pos["court_coverage_frac"] <= 1.0):
             failures.append(f"{r} coverage out of [0,1]")
-        mv = pos["movement"]
-        if mv["distance_ft_total"] < 0 or mv["distance_ft_per_min"] < 0 \
-                or mv["distance_ft_per_rally"] < 0:
+        mvt = pos["movement"]
+        if mvt["distance_ft_total"] < 0 or mvt["distance_ft_per_min"] < 0 \
+                or mvt["distance_ft_per_rally"] < 0:
             failures.append(f"{r} negative movement")
-    if m["players"]["user"]["position"]["n_frames"] <= 0:
+    if _v(m["players"]["user"]["position"])["n_frames"] <= 0:
         failures.append("user position n_frames == 0 (clicks guarantee frames)")
     if failures:
         _fail(f"position stats: {len(failures)} issue(s); first 3: {failures[:3]}")
@@ -224,14 +237,14 @@ def cond_position(m) -> bool:
 def cond_team(m) -> bool:
     failures = []
     for side in ("near", "far"):
-        t = m["team"][side]
+        t = _v(m["team"][side])
         if not (0.0 <= t["both_at_kitchen_frac"] <= 1.0):
             failures.append(f"{side} both_at_kitchen_frac out of [0,1]")
         sp = t["spacing_ft"]
         if t["n_frames_both_present"] > 0:
             if not (sp["min"] <= sp["median"] <= sp["max"] and sp["mean"] >= 0):
                 failures.append(f"{side} spacing ordering bad: {sp}")
-    if m["team"]["near"]["n_frames_both_present"] <= 0:
+    if _v(m["team"]["near"])["n_frames_both_present"] <= 0:
         failures.append("near team n_frames_both_present == 0")
     if failures:
         _fail(f"team positioning: {failures[:3]}")
@@ -252,7 +265,7 @@ def cond_heatmaps(m) -> bool:
         sub = role_valid_rows(df, tids)
         fpos = role_frame_pos(sub)
         _, n_ext = bin_positions(list(fpos.values()))
-        grid = m["heatmaps"]["player_position"][r]
+        grid = _v(m["heatmaps"]["player_position"][r])
         gsum = sum(sum(row) for row in grid)
         if gsum != n_ext:
             failures.append(f"{r}: grid sum {gsum} != in-extent {n_ext}")
@@ -265,7 +278,7 @@ def cond_heatmaps(m) -> bool:
         xy = b.get("court_xy_ft")
         return xy and xy[0] is not None and 0 <= xy[0] < 20 and 0 <= xy[1] < 44
     exp_ball = sum(1 for b in bounces if in_ext(b))
-    ball_sum = sum(sum(row) for row in m["heatmaps"]["ball_landing"])
+    ball_sum = sum(sum(row) for row in _v(m["heatmaps"]["ball_landing"]))
     if ball_sum != exp_ball:
         failures.append(f"ball_landing sum {ball_sum} != in-extent bounces {exp_ball}")
     if failures:
@@ -331,16 +344,59 @@ def cond_contamination_flag(m) -> bool:
 
 
 def cond_truth_tie(m, rallies_doc) -> bool:
-    ok = m["match"]["n_rallies"] == len(rallies_doc.get("rallies", []))
-    bio = m["match"]["bounce_in_out"]
+    ok = _v(m["match"]["n_rallies"]) == len(rallies_doc.get("rallies", []))
+    bio = _v(m["match"]["bounce_in_out"])
     bounces = load("bounces.json").get("bounces", [])
     proj = sum(1 for b in bounces if b.get("is_in_court") in (True, False))
     ok = ok and (bio["n_in"] + bio["n_out"] == proj)
     (_pass if ok else _fail)(
-        f"truth tie: n_rallies matches Stage 7 ({m['match']['n_rallies']}); "
+        f"truth tie: n_rallies matches Stage 7 ({_v(m['match']['n_rallies'])}); "
         f"bounce in+out ({bio['n_in']}+{bio['n_out']}) == projected bounces ({proj})"
         if ok else "truth tie failed")
     return ok
+
+
+def cond_confidence(m) -> bool:
+    """v2 wrapper integrity (assertion #13). On the synthetic clip we assert
+    SHAPE + limited_by + the fixed constants — confidence VALUES are validated
+    separately on real data."""
+    failures = []
+    reps = [m["match"]["n_shots"], m["match"]["rally_length_shots"],
+            m["match"]["by_end_reason"], m["match"]["bounce_in_out"],
+            m["match"]["shot_mix"]["by_shot_type"],
+            m["error_attribution"]["by_owner"],
+            m["players"]["user"]["position"],
+            m["players"]["user"]["mean_post_speed_ftps"],
+            m["heatmaps"]["ball_landing"]]
+    for w in reps:
+        if not _is_wrapped(w):
+            failures.append(f"not wrapped: {str(w)[:48]}")
+            continue
+        if not (0.0 <= w["confidence"] <= 1.0):
+            failures.append(f"confidence out of [0,1]: {w['confidence']}")
+        if not isinstance(w["n"], int) or w["n"] < 0:
+            failures.append(f"bad n: {w['n']}")
+        if w["limited_by"] not in LIMITERS:
+            failures.append(f"bad limited_by: {w['limited_by']}")
+    # known-limit speed metric pinned to SPEED_CONF
+    sp = m["players"]["user"]["mean_post_speed_ftps"]
+    if _is_wrapped(sp):
+        if sp["limited_by"] != "known_limit":
+            failures.append(f"speed limited_by {sp['limited_by']} != known_limit")
+        if abs(sp["confidence"] - m["params"]["speed_conf"]) > 1e-9:
+            failures.append(f"speed confidence {sp['confidence']} != SPEED_CONF")
+    # structural census metric
+    if m["match"]["match_span_sec"]["limited_by"] != "detection_floor":
+        failures.append("match_span_sec limited_by != detection_floor")
+    # recall-blind-spot banner present
+    if not any("recall" in w.lower() for w in m["warnings"]):
+        failures.append("recall-blind-spot banner missing from warnings")
+    if failures:
+        _fail(f"confidence wrappers: {len(failures)} issue(s); first 3: {failures[:3]}")
+        return False
+    _pass("confidence wrappers (v2): shape + limited_by + SPEED_CONF + "
+          "detection_floor + recall banner all valid")
+    return True
 
 
 def cond_degradation() -> bool:
@@ -357,9 +413,9 @@ def cond_degradation() -> bool:
             _fail("degradation: stage crashed without track_roles.json")
             return False
         m = load("metrics.json")
-        ok = (m["players"]["user"]["n_shots"] >= 0
-              and m["players"]["partner"]["n_shots"] == 0
-              and m["players"]["opp_a"]["n_shots"] == 0
+        ok = (_v(m["players"]["user"]["n_shots"]) >= 0
+              and _v(m["players"]["partner"]["n_shots"]) == 0
+              and _v(m["players"]["opp_a"]["n_shots"]) == 0
               and m["sources"]["track_roles"] is None
               and any("track_roles" in w for w in m["warnings"]))
         (_pass if ok else _fail)(
@@ -424,6 +480,7 @@ def run_smoke_test() -> int:
     results.append(cond_pending(m))
     results.append(cond_contamination_flag(m))
     results.append(cond_truth_tie(m, rallies_doc))
+    results.append(cond_confidence(m))
     results.append(cond_degradation())
 
     print()
