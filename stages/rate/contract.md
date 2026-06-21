@@ -219,16 +219,35 @@ multi-role rating (defaults to `user`).
   - `data_source` — `"real"` (positioning/movement, ball-independent) or
     `"synthetic"` (derived from the synthetic ball). **Evidence only — does NOT
     down-weight the subscore in the estimate** (per the full-rating decision);
-    it sets `dim_confidence` and is shown to the user.
-  - `confidence` (`dim_confidence`) = `data_conf · sample_conf`, where
-    `data_conf` = 1.0 for real, `synth_confidence_factor` (default 0.35) for
-    synthetic; `sample_conf = min(1, n / n_floor)` from the relevant sample
-    size (n_frames for positioning, n_shots for shot/error, n_rallies for
-    rally).
+    it gates `dim_confidence` while the ball is synthetic, and is shown to the user.
+  - `confidence` (`dim_confidence`) — **CHANGED in v0.2.0 (consumes Stage 8
+    schema_version 2 inline confidence).** Per dimension, take the **minimum of
+    the inline `.confidence` of its driving Stage 8 metrics** (the dimension is
+    only as reliable as its weakest evidence), then apply the synthetic gate:
+    `dim_confidence = min(driver .confidence) × (synth_confidence_factor if the
+    dimension is ball-derived AND ball_source == "synthetic" else 1.0)`. The old
+    `data_conf · sample_conf` formula is **RETIRED** — sample-size is now carried
+    by Stage 8's `penalty(n)` inside each metric's `.confidence` (single source
+    of truth), not recomputed here against `SAMPLE_FLOORS`. The synthetic **gate**
+    is retained because Stage 8 inline confidence is artificially clean on the
+    synthetic ball (see Stage 8 contract § "Synthetic-ball interaction"); on the
+    real ball the gate is inactive and inline confidence fully drives the rating.
+    Driver→metric map: `net_play`←{user.position, team.near}; `movement`←{user.position};
+    `error_control`←{user.errors_committed}; `shot_skill`←{user.shot_mix.by_shot_type,
+    match.third_shot}; `serve`←{user.serve}; `rally_consistency`←{match.rally_length_shots,
+    user.shot_mix.volley}.
+  - `limited_by` — **NEW.** The `limited_by` tag of the binding (min-confidence)
+    driver, threaded through so Stage 11 can show the per-dimension remedy
+    (`sample_size` → "record more"; `measurement`/`known_limit` → camera limit).
   - `driver_metrics` — the exact metric values used (so Stage 10/11 and the
     user see the basis); `null` for any not-yet-available input (e.g.
     `unforced_rate`, which is `pending_real_ball`).
   - `rationale` — short USAPA-anchored sentence (optional per dimension).
+
+  > **`error_control` confidence caveat (v0.2.0):** it draws from
+  > `user.errors_committed.confidence`, whose sample size is the error-event
+  > *count*, so a clean (few-error) player gets conservatively low confidence.
+  > Acceptable for v1; refine to a rally-opportunity sample later.
 - **`reliability`** — `real_weight` / `synthetic_weight` make the synthetic
   dependence explicit and machine-readable for Stage 10/11.
 
@@ -318,12 +337,17 @@ Stage 10 (improvement plan) and the UI honest about blind spots.
 
 ## Method
 
-1. **Load + validate.** Read `metrics.json`; check `schema_version == 1` (fail
-   loudly otherwise). Pull `ball_source` and `reliability`. Select the rated
-   role block (`players.user`); if it's absent or empty → degrade (see below).
+1. **Load + validate.** Read `metrics.json`; check `schema_version == 2` (fail
+   loudly otherwise — Stage 8 now emits inline `{value, confidence, n,
+   limited_by}` wrappers). Pull `ball_source` and `reliability`. **Unwrap** each
+   consumed metric to its `.value` for the scorers (which operate on raw values),
+   and read each metric's `.confidence` / `.limited_by` for the dimension
+   confidence. Select the rated role block (`players.user`); if absent/empty →
+   degrade (see below).
 2. **Per-dimension subscore.** For each dimension, read its driver metric(s),
-   map to a `subscore_level` via the threshold table, compute `dim_confidence`
-   from data source + sample size, and record `driver_metrics` + `data_source`.
+   map to a `subscore_level` via the threshold table, set `dim_confidence` from
+   the **minimum of its drivers' inline `.confidence`** (× synthetic gate), record
+   the binding driver's `limited_by`, and record `driver_metrics` + `data_source`.
 3. **Combine.** `estimate = Σ weight·subscore`; `confidence = Σ
    weight·dim_confidence`; `band` = nearest half-step; `range` from confidence.
 4. **Reliability + warnings.** Emit `real_weight`/`synthetic_weight`; loud
@@ -387,7 +411,9 @@ run Stage 9, plus pure-function unit checks that don't need the pipeline.
    [1.0, 5.5]; `band` ∈ `USAPA_BANDS`; `range` is `[lo, hi]` with `lo ≤
    estimate ≤ hi`; `confidence` ∈ [0,1]; six dimensions present; weights sum to
    1.0 (±1e-6); every `subscore_level` ∈ [1.0, 5.5]; every `dim_confidence` ∈
-   [0,1].
+   [0,1]; every dimension carries a `limited_by` ∈ {`sample_size`, `measurement`,
+   `known_limit`, `detection_floor`}. (Input `metrics.json` must be
+   `schema_version == 2`.)
 2. **Banding.** `band` is the nearest half-step to `estimate` (clamped).
 3. **Range vs confidence.** Range half-width decreases monotonically as
    confidence increases (check the helper directly at a few confidence values).
@@ -413,8 +439,14 @@ run Stage 9, plus pure-function unit checks that don't need the pipeline.
 
 ## Stage version
 
-`0.1.0` (initial). Increment minor for behavior changes preserving the
-`rating.json` schema; bump `schema_version` for breaking schema changes.
+`0.2.0` (Foundation #3 — confidence propagation): consumes Stage 8
+`schema_version 2` (inline metric wrappers); per-dimension `dim_confidence` now
+derives from the **minimum inline `.confidence`** of each dimension's driving
+metrics (synthetic gate retained) instead of `data_conf · sample_conf`; each
+dimension gains a `limited_by` tag. `rating.json` output `schema_version` stays
+`1` (additive — only the new `limited_by` field). `0.1.0` was the initial
+version. Increment minor for behavior changes preserving the `rating.json`
+schema; bump `schema_version` for breaking schema changes.
 
 ## Out of scope (deferred)
 

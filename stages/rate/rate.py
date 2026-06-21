@@ -28,8 +28,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+SCHEMA_VERSION = 1               # rating.json output schema (additive: + limited_by)
+METRICS_SCHEMA_VERSION = 2       # required input metrics.json schema (Stage 8 v2)
+STAGE_VERSION = "0.2.0"          # Foundation #3 — consume inline metric confidence
 USAPA_ANCHOR_VERSION = "2024-self-rating"
 
 # --- Config (matches contract) ----------------------------------------------
@@ -40,7 +41,6 @@ NEUTRAL_PRIOR_LEVEL = 3.0        # subscore when a driver is missing
 RANGE_MIN_HALF = 0.25            # min half-width of the confidence range
 RANGE_SPAN = 1.25                # extra half-width at confidence 0
 USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-SAMPLE_FLOORS = {"position_frames": 1500, "shots": 40, "rallies": 15}
 
 LEVEL_MIN, LEVEL_MAX = 1.0, 5.5
 # Inherent data source per dimension (before ball_source is considered).
@@ -71,6 +71,59 @@ def load_json(path: Path) -> dict:
         fail(f"required input not found: {path}", FileNotFoundError)
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+# --- Inline metric-wrapper helpers (Stage 8 schema_version 2) ----------------
+# Stage 8 emits every metric as {value, confidence, n, limited_by}. The scorers
+# operate on raw values (so the monotonicity unit tests can call them directly),
+# so compute_rating unwraps to .value for scoring and reads .confidence /
+# .limited_by separately for the per-dimension confidence.
+
+def _is_wrapped(x) -> bool:
+    return isinstance(x, dict) and "value" in x and "limited_by" in x
+
+
+def _v(x):
+    """Unwrap to .value (pass through if already raw — keeps scorers/tests simple)."""
+    return x["value"] if _is_wrapped(x) else x
+
+
+def _c(x, default: float = 1.0) -> float:
+    """Inline .confidence (default 1.0 for an unwrapped/raw input)."""
+    return float(x["confidence"]) if _is_wrapped(x) else default
+
+
+def _lim(x, default: str = "measurement") -> str:
+    return x["limited_by"] if _is_wrapped(x) else default
+
+
+def _unwrap_user(uw: dict) -> dict:
+    """Raw-value view of a wrapped user block for the scorers (restores the
+    pre-v2 flat shot_mix shape: by_shot_type + by_stroke_side + n_volley +
+    volley_rate)."""
+    sm = uw.get("shot_mix", {}) or {}
+    volley = _v(sm.get("volley")) or {}
+    return {
+        "n_shots": _v(uw.get("n_shots")) or 0,
+        "errors_committed": _v(uw.get("errors_committed")),
+        "shot_mix": {
+            "by_shot_type": _v(sm.get("by_shot_type")) or {},
+            "by_stroke_side": _v(sm.get("by_stroke_side")) or {},
+            "n_volley": volley.get("n_volley", 0),
+            "volley_rate": volley.get("volley_rate"),
+        },
+        "serve": _v(uw.get("serve")) or {},
+        "position": _v(uw.get("position")) or {},
+        "mean_post_speed_ftps": _v(uw.get("mean_post_speed_ftps")),
+    }
+
+
+def _unwrap_match(mw: dict) -> dict:
+    return {
+        "n_rallies": _v(mw.get("n_rallies")) or 0,
+        "rally_length_shots": _v(mw.get("rally_length_shots")) or {},
+        "third_shot": _v(mw.get("third_shot")) or {},
+    }
 
 
 # --- Scoring primitives ------------------------------------------------------
@@ -200,20 +253,6 @@ def score_rally_consistency(user: dict, match: dict) -> Tuple[float, dict]:
     return clamp_level(base + volley_bonus), drivers
 
 
-# --- Confidence --------------------------------------------------------------
-
-def sample_conf(n: Optional[float], floor: float) -> float:
-    if not n or n <= 0:
-        return 0.0
-    return min(1.0, n / floor)
-
-
-def dim_confidence(is_real_source: bool, n: Optional[float], floor: float,
-                   synth_factor: float) -> float:
-    data_conf = 1.0 if is_real_source else synth_factor
-    return round(data_conf * sample_conf(n, floor), 4)
-
-
 # --- Skill coverage map (static; surfaced so nothing implies full coverage) --
 
 def skill_coverage_block() -> dict:
@@ -241,43 +280,71 @@ def compute_rating(metrics: dict, ball_source: str,
     """Returns (rating_dict, dimensions_list). Pure — no I/O — so the smoke test
     can call it on synthesized metrics for monotonicity checks."""
     players = metrics.get("players", {}) or {}
-    user = players.get("user", {}) or {}
-    match = metrics.get("match", {}) or {}
-    team_near = (metrics.get("team", {}) or {}).get("near", {}) or {}
-    n_rallies = match.get("n_rallies", 0) or 0
+    user_w = players.get("user", {}) or {}
+    match_w = metrics.get("match", {}) or {}
+    team_near_w = (metrics.get("team", {}) or {}).get("near", {}) or {}
 
-    pos_frames = (user.get("position", {}) or {}).get("n_frames", 0) or 0
-    n_shots = user.get("n_shots", 0) or 0
-    n_serves = (user.get("serve", {}) or {}).get("n_serves", 0) or 0
+    # Raw-value views for the scorers (which operate on unwrapped values).
+    user = _unwrap_user(user_w)
+    match = _unwrap_match(match_w)
+    team_near = _v(team_near_w) or {}
+    n_rallies = match["n_rallies"]
 
     ball_is_synth = (ball_source == "synthetic")
 
-    # (name, subscore, drivers, sample_n, sample_floor)
+    # Inline (confidence, limited_by) of each driving Stage 8 metric. A
+    # dimension's confidence = the MIN over its drivers (weakest evidence caps
+    # it); the binding driver's limited_by names the remedy.
+    sm_w = user_w.get("shot_mix", {}) or {}
+    drv = {
+        "position":   (_c(user_w.get("position")),   _lim(user_w.get("position"))),
+        "team_near":  (_c(team_near_w),               _lim(team_near_w)),
+        "errors":     (_c(user_w.get("errors_committed")),
+                       _lim(user_w.get("errors_committed"))),
+        "shot_type":  (_c(sm_w.get("by_shot_type")),  _lim(sm_w.get("by_shot_type"))),
+        "third_shot": (_c(match_w.get("third_shot")), _lim(match_w.get("third_shot"))),
+        "serve":      (_c(user_w.get("serve")),       _lim(user_w.get("serve"))),
+        "rally_len":  (_c(match_w.get("rally_length_shots")),
+                       _lim(match_w.get("rally_length_shots"))),
+        "volley":     (_c(sm_w.get("volley")),        _lim(sm_w.get("volley"))),
+    }
+    DIM_DRIVERS = {
+        "net_play": ["position", "team_near"],
+        "movement": ["position"],
+        "error_control": ["errors"],
+        "shot_skill": ["shot_type", "third_shot"],
+        "serve": ["serve"],
+        "rally_consistency": ["rally_len", "volley"],
+    }
+
+    # (name, subscore, drivers)
     raw = [
-        ("net_play", *score_net_play(user, team_near), pos_frames,
-         SAMPLE_FLOORS["position_frames"]),
-        ("movement", *score_movement(user), pos_frames,
-         SAMPLE_FLOORS["position_frames"]),
-        ("error_control", *score_error_control(user, n_rallies), n_shots,
-         SAMPLE_FLOORS["shots"]),
-        ("shot_skill", *score_shot_skill(user, match), n_shots,
-         SAMPLE_FLOORS["shots"]),
-        ("serve", *score_serve(user), n_serves, SAMPLE_FLOORS["rallies"]),
-        ("rally_consistency", *score_rally_consistency(user, match), n_rallies,
-         SAMPLE_FLOORS["rallies"]),
+        ("net_play", *score_net_play(user, team_near)),
+        ("movement", *score_movement(user)),
+        ("error_control", *score_error_control(user, n_rallies)),
+        ("shot_skill", *score_shot_skill(user, match)),
+        ("serve", *score_serve(user)),
+        ("rally_consistency", *score_rally_consistency(user, match)),
     ]
 
     dimensions: List[dict] = []
-    for name, subscore, drivers, n, floor in raw:
+    for name, subscore, drivers in raw:
+        base_conf, binding_lim = min((drv[k] for k in DIM_DRIVERS[name]),
+                                     key=lambda t: t[0])
         inherent_real = name in REAL_DIMS
         # ball-derived dims become 'real' once the ball is real.
         is_real_source = inherent_real or (not ball_is_synth)
-        conf = dim_confidence(is_real_source, n, floor, synth_factor)
+        # Synthetic gate: inline confidence is artificially clean on the synthetic
+        # ball, so ball-derived dims are still down-weighted until the ball is real
+        # (Stage 8 contract § Synthetic-ball interaction). Inactive on real ball.
+        gate = 1.0 if is_real_source else synth_factor
+        conf = round(base_conf * gate, 4)
         dimensions.append({
             "name": name,
             "subscore_level": round(subscore, 3),
             "weight": WEIGHTS[name],
             "confidence": conf,
+            "limited_by": binding_lim,
             "data_source": "real" if is_real_source else "synthetic",
             "driver_metrics": drivers,
         })
@@ -306,9 +373,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              FileExistsError)
 
     metrics = load_json(metrics_path)
-    if metrics.get("schema_version") != 1:
+    if metrics.get("schema_version") != METRICS_SCHEMA_VERSION:
         fail(f"metrics.json schema_version={metrics.get('schema_version')} "
-             f"unexpected (expects 1)", ValueError)
+             f"unexpected (expects {METRICS_SCHEMA_VERSION}; run Stage 8 v0.2.0+)",
+             ValueError)
 
     ball_source = metrics.get("ball_source") or "real"
     ball_is_synth = (ball_source == "synthetic")
@@ -323,7 +391,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     synthetic_weight = round(1.0 - real_weight, 4)
 
     user = (metrics.get("players", {}) or {}).get("user", {}) or {}
-    n_shots = user.get("n_shots", 0) or 0
+    n_shots = _v(user.get("n_shots")) or 0
 
     warnings: List[str] = []
     if ball_is_synth:

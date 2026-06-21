@@ -83,42 +83,67 @@ def load(name): return json.load((TEST_FOLDER / name).open(encoding="utf-8"))
 
 
 # --- synthetic metrics builders (for pure-function checks) -------------------
+# Stage 8 schema_version 2: every metric is a {value, confidence, n, limited_by}
+# wrapper. compute_rating unwraps for the scorers and reads .confidence for the
+# per-dimension confidence, so the fixtures wrap each consumed metric.
+
+VALID_LIMITERS = {"sample_size", "measurement", "known_limit", "detection_floor"}
+
+
+def W(value, confidence=0.7, n=100, limited_by="measurement") -> dict:
+    return {"value": value, "confidence": confidence, "n": n,
+            "limited_by": limited_by}
+
 
 def make_metrics(strong: bool) -> dict:
     if strong:
-        return {
-            "schema_version": 1, "ball_source": "synthetic",
-            "players": {"user": {
-                "n_shots": 120, "errors_committed": 4,
-                "shot_mix": {"by_shot_type": {"dink": 40, "drop": 30, "reset": 10,
-                                              "drive": 20, "lob": 10, "overhead": 5,
-                                              "unknown": 5}, "volley_rate": 0.25},
-                "serve": {"n_serves": 40, "serve_fault_rate": 0.0},
-                "position": {"n_frames": 8000,
-                             "zone_time_frac": {"kitchen": 0.5, "transition": 0.1,
-                                                "baseline": 0.4},
-                             "court_coverage_frac": 0.65,
-                             "movement": {"distance_ft_per_min": 150.0}}}},
-            "match": {"n_rallies": 40, "rally_length_shots": {"mean": 9.0},
-                      "third_shot": {"drop_rate": 0.6}},
-            "team": {"near": {"both_at_kitchen_frac": 0.6}},
+        user = {
+            "n_shots": W(120, 1.0, 120, "detection_floor"),
+            "errors_committed": W(4, 0.7, 4, "sample_size"),
+            "shot_mix": {
+                "by_shot_type": W({"dink": 40, "drop": 30, "reset": 10,
+                                   "drive": 20, "lob": 10, "overhead": 5,
+                                   "unknown": 5}, 0.7, 120, "measurement"),
+                "by_stroke_side": W({"forehand": 70, "backhand": 50}, 0.7, 120),
+                "volley": W({"n_volley": 30, "volley_rate": 0.25}, 0.7, 120),
+            },
+            "serve": W({"n_serves": 40, "serve_fault_rate": 0.0}, 0.7, 40,
+                       "sample_size"),
+            "position": W({"n_frames": 8000,
+                           "zone_time_frac": {"kitchen": 0.5, "transition": 0.1,
+                                              "baseline": 0.4},
+                           "court_coverage_frac": 0.65,
+                           "movement": {"distance_ft_per_min": 150.0}},
+                          0.95, 8000, "measurement"),
         }
-    return {
-        "schema_version": 1, "ball_source": "synthetic",
-        "players": {"user": {
-            "n_shots": 60, "errors_committed": 30,
-            "shot_mix": {"by_shot_type": {"drive": 10, "unknown": 50},
-                         "volley_rate": 0.0},
-            "serve": {"n_serves": 40, "serve_fault_rate": 0.3},
-            "position": {"n_frames": 8000,
-                         "zone_time_frac": {"kitchen": 0.05, "transition": 0.5,
-                                            "baseline": 0.45},
-                         "court_coverage_frac": 0.25,
-                         "movement": {"distance_ft_per_min": 40.0}}}},
-        "match": {"n_rallies": 40, "rally_length_shots": {"mean": 2.5},
-                  "third_shot": {"drop_rate": 0.05}},
-        "team": {"near": {"both_at_kitchen_frac": 0.0}},
+        match = {"n_rallies": W(40, 1.0, 40, "detection_floor"),
+                 "rally_length_shots": W({"mean": 9.0}, 0.84, 40, "sample_size"),
+                 "third_shot": W({"drop_rate": 0.6}, 0.7, 30)}
+        team = {"near": W({"both_at_kitchen_frac": 0.6}, 0.95, 8000)}
+        return {"schema_version": 2, "ball_source": "synthetic",
+                "players": {"user": user}, "match": match, "team": team}
+    user = {
+        "n_shots": W(60, 1.0, 60, "detection_floor"),
+        "errors_committed": W(30, 0.7, 30, "sample_size"),
+        "shot_mix": {
+            "by_shot_type": W({"drive": 10, "unknown": 50}, 0.7, 60, "measurement"),
+            "by_stroke_side": W({"forehand": 30, "backhand": 30}, 0.7, 60),
+            "volley": W({"n_volley": 0, "volley_rate": 0.0}, 0.7, 60),
+        },
+        "serve": W({"n_serves": 40, "serve_fault_rate": 0.3}, 0.7, 40, "sample_size"),
+        "position": W({"n_frames": 8000,
+                       "zone_time_frac": {"kitchen": 0.05, "transition": 0.5,
+                                          "baseline": 0.45},
+                       "court_coverage_frac": 0.25,
+                       "movement": {"distance_ft_per_min": 40.0}},
+                      0.95, 8000, "measurement"),
     }
+    match = {"n_rallies": W(40, 1.0, 40, "detection_floor"),
+             "rally_length_shots": W({"mean": 2.5}, 0.84, 40, "sample_size"),
+             "third_shot": W({"drop_rate": 0.05}, 0.7, 30)}
+    team = {"near": W({"both_at_kitchen_frac": 0.0}, 0.95, 8000)}
+    return {"schema_version": 2, "ball_source": "synthetic",
+            "players": {"user": user}, "match": match, "team": team}
 
 
 # --- Conditions --------------------------------------------------------------
@@ -156,8 +181,12 @@ def cond_schema(r) -> bool:
         if not (0.0 <= d["confidence"] <= 1.0):
             _fail(f"{d['name']} confidence out of [0,1]")
             return False
+        if d.get("limited_by") not in VALID_LIMITERS:
+            _fail(f"{d['name']} limited_by invalid: {d.get('limited_by')}")
+            return False
     _pass(f"rating.json valid: estimate={rt['estimate']} band={rt['band']} "
-          f"range={rt['range']} conf={rt['confidence']}, 6 dims, weights=1.0")
+          f"range={rt['range']} conf={rt['confidence']}, 6 dims, weights=1.0, "
+          f"limited_by present")
     return True
 
 
@@ -272,12 +301,20 @@ def cond_confidence_drops_with_synth() -> bool:
 
 def cond_degradation() -> bool:
     """Empty user block -> valid rating, confidence ~0, max range, no crash."""
-    degraded = {"schema_version": 1, "ball_source": "synthetic",
-                "players": {"user": {"n_shots": 0, "errors_committed": 0,
-                                     "shot_mix": {"by_shot_type": {}},
-                                     "serve": {"n_serves": 0},
-                                     "position": {"n_frames": 0}}},
-                "match": {"n_rallies": 0}, "team": {"near": {}}}
+    degraded = {"schema_version": 2, "ball_source": "synthetic",
+                "players": {"user": {
+                    "n_shots": W(0, 0.0, 0, "detection_floor"),
+                    "errors_committed": W(0, 0.0, 0, "sample_size"),
+                    "shot_mix": {"by_shot_type": W({}, 0.0, 0),
+                                 "by_stroke_side": W({}, 0.0, 0),
+                                 "volley": W({"n_volley": 0, "volley_rate": None},
+                                             0.0, 0)},
+                    "serve": W({"n_serves": 0}, 0.0, 0, "sample_size"),
+                    "position": W({"n_frames": 0}, 0.0, 0)}},
+                "match": {"n_rallies": W(0, 0.0, 0, "detection_floor"),
+                          "rally_length_shots": W({}, 0.0, 0, "sample_size"),
+                          "third_shot": W({}, 0.0, 0)},
+                "team": {"near": W({}, 0.0, 0)}}
     rt, dims = compute_rating(degraded, "synthetic")
     lo, hi = rt["range"]
     ok = (rt["confidence"] < 0.05 and 1.0 <= rt["estimate"] <= 5.5
