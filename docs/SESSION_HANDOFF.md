@@ -22,9 +22,12 @@ real data** — rebuilding the v1–v3 compounding-error failure. **Operator sto
   reframed as **built-but-UNVALIDATED**, deferred to after the real-ball upstream is locked.
 
 **NEXT (agreed work order):**
-1. **Stage 4 cross-venue retrain — NEEDS COMPUTE (operator funding Colab).** Add the
-   different-court outdoor + indoor clips (~200-label warm-start/venue); acceptance =
-   per-venue recall on all 6 clips. *Gates real validation of Stages 5–11 on 2 of 6 clips.*
+1. **Stage 4 cross-venue retrain — NEEDS COMPUTE (operator funding Colab).** All 6
+   clips already LABELED; **Run 2 (3-venue) is CONFIGURED in `finetune_v4.ipynb`**,
+   blocked on compute. So: re-run Run 2, achieve per-venue recall on all 6 clips
+   **WITHOUT regressing same-court** (Run 1 regressed pb_2min 0.90→0.858 — the open
+   challenge; may need venue-balancing / 1080p / per-venue heads). Production detector
+   today = original same-court v4. *Gates real validation of Stages 5–11 on 2 of 6 clips.*
 2. Lock real-ball upstream **5→5.5→6→7**, one stage at a time, operator-validated,
    each with a downstream-sufficiency review.
 3. Stats layer **8→9→10→11 + confidence**, re-validated on real (reuse this session's code).

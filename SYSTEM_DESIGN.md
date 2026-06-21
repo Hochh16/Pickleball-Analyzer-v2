@@ -314,12 +314,21 @@ and what it unblocks. (Tractability from the audit; none requires abandoning 2D.
 > venues when F1 lands.
 
 3. **Stage 4 ball detector across ALL venues (C7) — THE GATING FOUNDATION. NEEDS COMPUTE.**
-   v4 was trained on **4 outdoor same-court clips only**; the **different-court
-   outdoor (0.54) and indoor (0.13) clips were never trained** (contract_v4.md
-   confirms; indoor was explicitly deferred). Retrain v4 to include the
-   different-court + indoor clips (~200-label warm-start fine-tune per venue).
-   **Acceptance: per-venue recall threshold on all 6 clips.** Until this lands, those
-   2 clips can't be trusted through Stage 4, so **Stages 5–11 are unvalidatable on
+   **State (verified 2026-06-21 vs the notebook + local model):** the **production
+   detector is the original v4** (`data/models/ball_model_v4.pt`, Jun 11, same-court
+   only → court2 **0.54**, indoor **0.13**). **All 6 clips are LABELED** (operator
+   confirmed; court2 901 + pb_3min_indoor 1002 labels). A **Run 1 (06-17) already
+   added court2 to training** — but its model **regressed pb_2min (0.90→0.858, FP up)
+   so it was kept in Drive, NOT adopted**; that regression is the real lesson: naive
+   multi-venue training trades away same-court precision. **Run 2 (add indoor → full
+   3-venue) is CONFIGURED in `finetune_v4.ipynb`** and was **blocked on exhausted
+   Pro+ compute units.** So F1 is not "label + train from scratch" — it is: **re-run
+   the configured Run 2, and achieve the per-venue recall bar on ALL 6 clips WITHOUT
+   regressing same-court** (may need venue-balancing / 1080p / per-venue heads).
+   **Blocked on Colab compute (operator funding).** **Acceptance: per-venue recall
+   threshold on all 6 clips, same-court not regressed.** Until this lands, the
+   different-court + indoor clips can't be trusted through Stage 4, so **Stages 5–11
+   are unvalidatable on
    2 of the 6 clips.** Blocked on **Colab compute (David funding)**. Pairs with
    throughput/GPU-decode (C8).
 4. **Lock the real-ball upstream, one stage at a time, on the real clips:**
@@ -365,10 +374,12 @@ on real. Parallel: z-recovery feasibility spike; input-UI + reporting skeleton.
 > confidence propagation be built and "validated" on the synthetic ball ahead of the
 > real-ball foundations; the real foundation gap is the ball detector across venues.
 
-**New operator decision (2026-06-21):** Stage 4 v4 trained on outdoor same-court
-only → **retrain to add the different-court + indoor clips; operator purchasing Colab
-compute.** Until then, real-data validation is limited to the same-court outdoor clips
-and is provisional per §0 rule 6.
+**New operator decision (2026-06-21):** all 6 clips are LABELED; Run 2 (3-venue) is
+CONFIGURED in `finetune_v4.ipynb` but blocked on compute → **operator purchasing Colab
+compute, then re-run Run 2 and achieve per-venue recall on all 6 WITHOUT regressing
+same-court** (Run 1 regressed pb_2min — that's the open challenge). Until then,
+real-data validation is limited to the same-court outdoor clips and is provisional
+per §0 rule 6.
 
 ---
 
