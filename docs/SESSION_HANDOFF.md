@@ -1,4 +1,43 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-06-21)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-07)
+
+## 2026-07-07 — Stage 4 Run 2 relaunched (warm-start + per-venue eval) — READ FIRST
+
+**Work order item #3 (Stage 4 cross-venue detector) is IN PROGRESS.** David bought
+Colab Pro+; Run 2 is training on Colab now (RTX PRO 6000). This session:
+
+- **Reconciled the notebook.** The live Colab `finetune_v4.ipynb` had DIVERGED from the
+  repo copy (stronger photometric aug + a from-scratch training loop + no resume block;
+  the repo copy was stale and even had a `resume_best` NameError bug). Downloaded the
+  live copy, made it the repo source of truth, and rebuilt it for Run 2.
+- **Two findings from the live notebook's cached Run-1 output:** (a) the documented
+  **"0.90→0.858 same-court regression" is largely a model-SELECTION artifact** —
+  recall actually hit **0.96**, but the `score = recall − fp` selector kept a
+  low-recall/low-fp epoch. There is *also* a real precision cost (fp 0.10–0.24 for ≥0.90
+  recall vs baseline 0.018). (b) **held-out indoor recall maxed at 0.126** → augmentation
+  alone doesn't generalize indoor; indoor must be trained on.
+- **Run 2 design (commit `ed3d02d`):** warm-start from the clean 0.90 baseline
+  (`MyDrive/ball_model_v4_base.pt`) at LR 1e-4; **all 3 venues in training with per-venue
+  held-out slices** (pb_2min home guardrail; court2 + indoor 88/12 leakage-free split);
+  **fp-capped selection** (max mean per-venue recall s.t. home fp ≤ 0.05) → saves
+  `ball_model_v4_run2.pt` + `validation_report_run2.json` (0.90 baseline never overwritten).
+  Data-split logic validated locally; warm-start confirmed loading the 0.90 base on the
+  live run (recall 0.9024).
+
+**NEXT (resume here):** read `validation_report_run2.json` when the run finishes.
+- **home_rec** must hold **≥ 0.90 at fp ≤ 0.05** (warm-start preserved precision).
+- **court2_rec / indoor_rec** (held-out slices) are the cross-venue numbers that matter.
+- If home_rec collapsed or indoor stayed low, **LR (1e-4) is the first knob to revisit**;
+  next options are more epochs, or per-venue LR.
+- If Run 2 beats the baseline across venues, download `ball_model_v4_run2.pt` →
+  `data/models/`, then proceed to work-order **#4** (lock real-ball upstream 5→5.5→6→7,
+  one stage at a time). SYSTEM_DESIGN §6 item 3 + §7 updated with this state.
+
+**Deployment note:** Colab needs, in `MyDrive/` root: `pb_v4_upload.zip` (bundle, current)
++ `ball_model_v4_base.pt` (= local `data/models/ball_model_v4.pt`, the 0.90 model). The
+G4/RTX-PRO-6000 GPU auto-sizes BATCH to 12. Pro+ background execution runs it 24h even if
+the tab closes.
+
+---
 
 ## 2026-06-21 — COURSE CORRECTION + plan reset (read this first)
 

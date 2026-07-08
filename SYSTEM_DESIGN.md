@@ -331,6 +331,27 @@ and what it unblocks. (Tractability from the audit; none requires abandoning 2D.
    are unvalidatable on
    2 of the 6 clips.** Blocked on **Colab compute (David funding)**. Pairs with
    throughput/GPU-decode (C8).
+
+   > **UPDATE 2026-07-07 — Run 2 LAUNCHED (compute secured: David bought Colab Pro+).**
+   > Reconciling the live Colab notebook (which had DIVERGED from the repo — stronger
+   > photometric aug, a from-scratch loop, no resume/warm-start) exposed two findings in
+   > its **cached Run-1 output**: **(a) the "0.90→0.858 regression" is largely a model-
+   > SELECTION artifact** — same-court (pb_2min) recall actually reached **0.96**, but
+   > `score = recall − fp` saved a low-recall/low-fp epoch (0.858/0.097). There is ALSO a
+   > real precision cost: multi-venue-from-scratch needed fp **0.10–0.24** for ≥0.90
+   > recall vs the baseline's **0.018**. **(b) held-out indoor recall maxed at 0.126** →
+   > augmentation alone does NOT generalize indoor; indoor MUST be trained on.
+   > **Run 2 (commit `ed3d02d`)** targets both: **warm-start from the clean 0.90 baseline**
+   > (`MyDrive/ball_model_v4_base.pt`) at **LR 1e-4** to preserve same-court precision;
+   > **all 3 venues in training with PER-VENUE HELD-OUT SLICES** (pb_2min = home guardrail
+   > held out entirely; court2 + indoor split 88% train / 12% leakage-free val); **fp-CAPPED
+   > selection** = max MEAN per-venue recall among epochs with home fp ≤ 0.05, saved to
+   > `ball_model_v4_run2.pt` (baseline never overwritten). Launched on Colab (RTX PRO 6000,
+   > BATCH 12); warm-start confirmed loading the 0.90 base (recall 0.9024, fp 0.0177); split
+   > sizes train 9081 / val home 1158 court2 239 indoor 224. **Results PENDING** (§0 rule 5:
+   > not validated until per-venue recall is confirmed + operator-reviewed). If home_rec
+   > collapses or indoor stays low, the LR (1e-4) is the first knob to revisit.
+
 4. **Lock the real-ball upstream, one stage at a time, on the real clips:**
    Stage 5 (shots + **serve detection**, C3) → 5.5 (bounces + **recall fix**, C4) →
    6 (classify) → 7 (rallies / end_reason). For EACH stage: validate the REAL output
@@ -380,6 +401,14 @@ compute, then re-run Run 2 and achieve per-venue recall on all 6 WITHOUT regress
 same-court** (Run 1 regressed pb_2min — that's the open challenge). Until then,
 real-data validation is limited to the same-court outdoor clips and is provisional
 per §0 rule 6.
+
+**Update 2026-07-07 (David):** compute secured (bought Colab Pro+). The "open
+challenge" was re-diagnosed (see §6 item 3 update): the regression is largely a
+model-selection artifact + a real same-court precision cost, and indoor needs to be
+trained on (held-out 0.126). **Run 2 relaunched** with warm-start from the 0.90
+baseline + per-venue held-out slices + fp-capped selection (commit `ed3d02d`),
+running on Colab. **Results pending** — Stage 4 stays the gating foundation until
+per-venue recall is confirmed and operator-reviewed.
 
 ---
 
