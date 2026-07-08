@@ -213,8 +213,11 @@ video.mp4
     ▼
 [3] Pose (uses players bbox crops) ──► poses.parquet
     │
-    ▼
-[4] Track ball (uses court.json) ──► ball.parquet
+    │   ┌──────────── OFFLINE: runs once per model, not per video ──────────┐
+    │   │  [4.5] Finetune ball model (labeled frames) ──► ball_model_v4.pt   │
+    │   └───────────────────────────────────────────────────────┬──────────┘
+    ▼                                                            │ (weights)
+[4] Track ball (uses court.json + the 4.5 model) ◄──────────────┘ ──► ball.parquet
     │
     ▼
 [5] Detect shots (players + pose + ball) ──► shots.json
