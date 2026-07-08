@@ -181,9 +181,11 @@ is a cross-cutting foundational task (§6).**
 ### Stage 5 — detect_shots  ·  REAL ~ in-rally / ✗ serves
 - Produces `shots.json` (frame, is_serve, hitter_court_xy_ft, hitter_side, speeds).
 - Achievable: operator-validated in-rally; shot recall is **ball-detection-limited** (fast-ball misses). `hitter_side` from player ground position is the sound fix for garbage `impact_court_xy_ft`.
-- **⚠ DATA HYGIENE:** the on-disk `data/pb_2min/shots.json` is **STALE** — it contains
-  11 `impulse_recovered` shots from the reverted experiment (39 shots / 4 serves);
-  **current code reproduces ~28 shots.** Re-run before trusting any count.
+- **DATA HYGIENE (corrected 2026-07-07):** the earlier "shots.json STALE / current code
+  ~28" note was WRONG — re-running current code reproduces the on-disk **39 shots / 4
+  serves exactly** (no `impulse_recovered` rows; that experiment was reverted cleanly).
+  The real-ball chain 5→5.5→6→7 was re-run and reproduces the validated state (15
+  bounces, 0 unknown types, 8 rallies).
 - **Top limitation → blast radius:** **serve detection** (the recurring blocker).
   Under-detects (serve missed when ball is blurred at launch) and can over-flag
   (mid-rally occlusion looks like dead-time). → Stage 6 mislabels serves as drives,
