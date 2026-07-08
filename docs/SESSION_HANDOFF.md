@@ -1,9 +1,10 @@
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-07)
 
-## 2026-07-07 — Stage 4 Run 2 relaunched (warm-start + per-venue eval) — READ FIRST
+## 2026-07-07 — Stage 4 cross-venue = data-limited; started stats layer on pb_2min — READ FIRST
 
-**Work order item #3 (Stage 4 cross-venue detector) is IN PROGRESS.** David bought
-Colab Pro+; Run 2 is training on Colab now (RTX PRO 6000). This session:
+**Item #3 (cross-venue detector) pushed to its current-data ceiling; now advancing
+item #5 (stats layer) on pb_2min provisionally while operator captures more footage.**
+David bought Colab Pro+ and ran two warm-start training runs this session. This session:
 
 - **Reconciled the notebook.** The live Colab `finetune_v4.ipynb` had DIVERGED from the
   repo copy (stronger photometric aug + a from-scratch training loop + no resume block;
@@ -23,14 +24,33 @@ Colab Pro+; Run 2 is training on Colab now (RTX PRO 6000). This session:
   Data-split logic validated locally; warm-start confirmed loading the 0.90 base on the
   live run (recall 0.9024).
 
-**NEXT (resume here):** read `validation_report_run2.json` when the run finishes.
-- **home_rec** must hold **≥ 0.90 at fp ≤ 0.05** (warm-start preserved precision).
-- **court2_rec / indoor_rec** (held-out slices) are the cross-venue numbers that matter.
-- If home_rec collapsed or indoor stayed low, **LR (1e-4) is the first knob to revisit**;
-  next options are more epochs, or per-venue LR.
-- If Run 2 beats the baseline across venues, download `ball_model_v4_run2.pt` →
-  `data/models/`, then proceed to work-order **#4** (lock real-ball upstream 5→5.5→6→7,
-  one stage at a time). SYSTEM_DESIGN §6 item 3 + §7 updated with this state.
+- **RESULTS (Run 2a 15-epoch, Run 2b 30-epoch + fp cap 0.06):** warm-start held precision
+  (fp stayed low). Best saved model `ball_model_v4_run2.pt` (Run 2b ep9): **home 0.892 /
+  court2 0.625 / indoor 0.448** raw recall. More epochs did NOT help (best ~ep9; the 30-ep
+  back half went unstable). **Reality check** (`reality_check_v4.ipynb`) measured EFFECTIVE
+  coverage after Stage-4 trajectory post-proc: **home 0.935 · court2 0.691 · indoor 0.608**.
+- **VERDICT: court2 + indoor still below the ~0.80 bar → detector is DATA-LIMITED** (home
+  has 4 clips and works; the others have 1 each). court2's misses cluster into long
+  (>8-frame) gaps = **hard-hit motion blur, a capture-side limit**; indoor's misses are
+  short/isolated and respond to more data. **Lever = more footage per venue, NOT more
+  training** — see `docs/DATA_COLLECTION_PLAN.md` (faster shutter + 2-3 varied clips/venue).
+  Operator is capturing that footage; retrain loop is in the plan doc.
+
+**NEXT (resume here) — work-order #5 stats layer on pb_2min (provisional, one venue):**
+- Real-ball chain **5→5.5→6→7 confirmed reproducible** this session (39 shots/4 serves,
+  15 bounces, 0 unknown types, 8 rallies — the "stale shots.json" note was WRONG, corrected).
+- **Stage 8 DONE:** compute_metrics + **confidence propagation (C9) validated on REAL ball
+  for the first time** (was synthetic-only since 06-21). 54 metrics carry
+  `{value,confidence,n,limited_by}`; durable ones (rally length/duration, position) honest-
+  moderate, noisy ball families correctly distrusted (serve 0.15, end_reason 0.15, shot_mix
+  0.50, stroke_side 0.09). *Flag for downstream-sufficiency review:* `match.serve.n_serves=8`
+  vs Stage-5 `is_serve`=4 (metric counts one serve/rally) — reconcile when serve detection (C3) lands.
+- **DO NEXT: Stage 9 (rate) → 10 (plan) → 11 (render)** on pb_2min's fresh real metrics,
+  one stage at a time. Stage 9 is the real C9 test: the rating must **down-weight** the
+  low-confidence dimensions, not fold them in as certain. All flagged **provisional (pb_2min
+  only)** per §0 rule 6 until the cross-venue detector clears the bar.
+- When new court2/indoor footage is labeled: run the retrain loop in `DATA_COLLECTION_PLAN.md`
+  (prepare_v4 → build bundle → warm-start finetune → reality_check_v4).
 
 **Deployment note:** Colab needs, in `MyDrive/` root: `pb_v4_upload.zip` (bundle, current)
 + `ball_model_v4_base.pt` (= local `data/models/ball_model_v4.pt`, the 0.90 model). The
