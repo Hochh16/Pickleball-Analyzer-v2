@@ -647,3 +647,49 @@ stability. **Caveats that bound it:**
   behavior / trend), not "this single match." That's a feature for trend tracking
   (F28) but a caveat if a single-session readout was intended.
 - **Throughput-gated** at scale, like lever #1 above.
+
+## Stage 8 — net-play / court-zone metric is systematically WRONG (2026-07-07)
+
+**Observed:** 2026-07-07, operator viewing the first rendered consumer report of
+pb_2min. The net-play dimension's drivers read **`user_kitchen_time_frac` 0.054
+(~5%)** and **`both_at_kitchen_frac` 0.0033 (~0.3%)** — while the operator watched
+both partners live at the kitchen line for much of the match. The position→zone
+mapping (which court positions count as kitchen / transition / baseline) is
+systematically off.
+
+**Why it matters (the big one):** net_play is stamped **confidence 0.998 ("high")**
+because it rests on real position data with a large sample — but it is **wrong**.
+Confidence measures noise + sample size, **not correctness**, so a systematic bug
+renders as *confidently wrong*. Worse, the Stage 9 v0.3.0 confidence-weighting
+**leans the rating toward** high-confidence dims → it leans on this wrong number.
+This is the core lesson: **confidence ≠ correctness; only operator-eyes-on-rendered-
+output catches it** (smoke tests didn't). See `feedback_consumer_output_validation`.
+
+**Where to fix:** inspect `court_zones.json` kitchen/transition/baseline polygons +
+how Stage 8 maps player foot positions to zones (and whether far-side drift or a
+polygon/threshold error is the cause). FIRST item in the fix program (it drags the
+rating). Re-validate against the rendered report.
+
+## Stage 7 — rally over-segmentation (micro-rallies) (2026-07-07)
+
+**Observed:** 2026-07-07, same consumer-report review. Stage 7 segmented **8 rallies**
+on pb_2min; the operator counts **6**. Rallies 0–5 are real (5.5–19.3s); rallies **6
+and 7 are 0.8s and 1.1s** (2 shots each, 1.9s apart) — spurious micro-splits from the
+ball-out-of-play splitter.
+
+**Where to fix:** a minimum-rally filter in Stage 7 (min duration and/or min shots —
+a real rally isn't 0.8s). Easy. Re-validate count against the operator's eye.
+
+## Rating — dimensions do not match the official USAPA standard (2026-07-07)
+
+**Observed:** 2026-07-07. Stage 9 rates 6 homegrown dimensions (net_play, movement,
+error_control, shot_skill, serve, rally_consistency). The **official USA Pickleball
+framework uses 7 categories** — forehand, backhand, serve/return, dink, third shot,
+volley, strategy — with published per-level criteria. The homegrown dims are not the
+standard, so the rating lacks legitimacy.
+
+**Where to fix:** rewrite Stage 9 to USAPA's 7 categories, scoring each from the
+metrics available and confidence-gating the not-yet-measured ones. The full
+criteria→metric alignment (most metrics still planned = the legitimacy gap) and the
+build program are in `docs/PRODUCT_VISION.md`. Body mechanics is NOT a USAPA category
+(footwork lives inside Strategy) — kept as a planned supporting pose layer.

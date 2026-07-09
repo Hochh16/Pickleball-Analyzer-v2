@@ -10,10 +10,29 @@
 > (landing-aware type), Foundation #1 (role-based pose scope), Foundation #2
 > (opponents are now identity-based `opp_a`/`opp_b`, not position L/R).
 
-## Implementation status (2026-06-14)
+## Implementation status (2026-06-14; see 2026-07-07 update below)
 
 This is a design doc; per-stage status lives here as a quick pointer (full
 detail in `docs/SESSION_HANDOFF.md` and `KNOWN_ISSUES.md`).
+
+> **UPDATE 2026-07-07 (read the live docs for current state — SYSTEM_DESIGN.md is
+> authoritative; `docs/SESSION_HANDOFF.md` is the log; `docs/PRODUCT_VISION.md` is the
+> USAPA-aligned target spec).** Since the 06-14 snapshot below:
+> - **Stage 4 cross-venue detector**: retrained (warm-start, all-venue) but **data-limited**
+>   — court2 0.69 / indoor 0.61 effective (below the 0.80 bar); needs more labeled footage
+>   per venue (`docs/DATA_COLLECTION_PLAN.md`), not more training. Production detector is
+>   still the same-court `ball_model_v4.pt`.
+> - **Stages 8–11 re-run on pb_2min's REAL ball with confidence propagation** (C9),
+>   validated on real data end-to-end (provisional, one venue). **Stage 9/10/11 → v0.3.0**:
+>   rating confidence-weights its estimate; plan gates focus/strengths by per-dim confidence;
+>   render carries per-event confidence on timeline events.
+> - **Consumer output rendered for the first time → caught bugs confidence can't**
+>   (confidence ≠ correctness): **net-play zone % is wrong** (position→zone bug) and
+>   **Stage 7 over-segments rallies** (8 vs 6). Both in `KNOWN_ISSUES.md`.
+> - **Rating realignment**: the 6 homegrown dims don't match the official **USAPA 7
+>   categories** — realignment is a planned Stage 9 rewrite (`docs/PRODUCT_VISION.md`).
+> - **UI**: a consumer report is the next build (`tools/build_report.py` skeleton → full
+>   report per PRODUCT_VISION); the input/setup UI is the other half.
 
 - **Stages 1–3** (calibrate, track players, pose): implemented, smoke-tested.
 - **Stage 2.5** (classify tracks): NEW stage (added 2026-05-22; pipeline is now

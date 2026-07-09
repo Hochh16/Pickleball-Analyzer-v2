@@ -89,8 +89,13 @@ the role-awareness gap starve all per-opponent analysis.
 This is the section the reporting UI and every stat consumer must honor.
 
 ### Trustworthy on real data (durable value today)
-- **Player position / movement / court-coverage** (Stage 2, **near side**): zone-time,
-  lateral spread, area heatmap, distance/min. The single most durable real signal.
+- **Player position / movement / court-coverage** (Stage 2, **near side**): lateral
+  spread, area heatmap, distance/min. The single most durable real signal. **⚠ CAVEAT
+  (2026-07-07): ZONE-derived metrics (kitchen/transition/baseline time) are NOT
+  trustworthy** — the net-play kitchen% read ~5% while players lived at the line
+  (position→zone bug, KNOWN_ISSUES). Raw position is sound; the zone MAPPING is buggy.
+  This also proved **confidence ≠ correctness**: net_play is stamped 99% confident and
+  is wrong — smoke tests missed it; only the rendered consumer report caught it.
 - **User identification** (Stage 2.5): ~85% frame coverage from the no-click seed.
 - **User pose** (Stage 3): 99% detection; torso + right-side limbs reliable.
 - **Rally boundaries** (Stage 7): ball-out-of-play segmentation, operator-validated.
@@ -422,6 +427,21 @@ trained on (held-out 0.126). **Run 2 relaunched** with warm-start from the 0.90
 baseline + per-venue held-out slices + fp-capped selection (commit `ed3d02d`),
 running on Colab. **Results pending** — Stage 4 stays the gating foundation until
 per-venue recall is confirmed and operator-reviewed.
+
+**Consumer output + USAPA realignment (2026-07-07, David).** Stages 8–11 were re-run
+on pb_2min's real ball with confidence propagation (C9) and validated end-to-end
+(provisional, one venue); Stage 9/10/11 → v0.3.0 (confidence-weighted estimate;
+per-dim-confidence-gated plan; per-event confidence on timeline). Rendering that
+output for the first time caught bugs the confidence numbers can't (**confidence ≠
+correctness**): net-play zone% wrong, Stage 7 rally over-segmentation (KNOWN_ISSUES),
+and that the rating's 6 dims **don't match the official USAPA 7 categories.** New
+target spec + build program captured in **`docs/PRODUCT_VISION.md`**. **Operator work
+order for the consumer thread:** vision (done) → **FIX** (net-play zones [drags the
+rating], rally filter, finding language) → **REALIGN** Stage 9 to USAPA's 7 categories
+→ **ADD** the not-yet-measured metrics (map to C4 bounce recall, F7 court-plane speed,
+F16 FH/BH, F12 opponents, F17 pose) → **COMPLETE UI** (`tools/build_report.py` →
+report). Discipline reinforced: validate stages by RENDERING output for the operator,
+not just smoke tests (`feedback_consumer_output_validation`).
 
 ---
 
