@@ -149,8 +149,8 @@ contract.
   },
   "events": [
     {"frame": 1052, "t_sec": 35.07, "type": "rally_start", "rally_id": 0, "server_role": "user"},
-    {"frame": 1060, "t_sec": 35.33, "type": "shot", "shot_id": 0, "role": "user", "shot_type": "serve", "is_serve": true, "is_volley": false},
-    {"frame": 1080, "t_sec": 36.0, "type": "bounce", "bounce_id": 0, "is_in_court": true, "court_zone": "kitchen"},
+    {"frame": 1060, "t_sec": 35.33, "type": "shot", "shot_id": 0, "role": "user", "shot_type": "serve", "shot_type_confidence": 0.8, "stroke_side": "forehand", "stroke_side_confidence": 0.0, "is_volley": false, "is_volley_confidence": 0.9, "is_serve": true, "confidence": 0.72},
+    {"frame": 1080, "t_sec": 36.0, "type": "bounce", "bounce_id": 0, "is_in_court": true, "court_zone": "kitchen", "confidence": 0.7},
     {"frame": 1183, "t_sec": 39.43, "type": "rally_end", "rally_id": 0, "end_reason": "ball-out", "end_reason_confidence": 0.85}
   ],
   "layers_rendered": ["court", "players", "ball", "trail", "shots", "bounces", "rally_banner", "hud", "minimap", "watermark"],
@@ -163,6 +163,12 @@ contract.
 - `events` sorted by `frame` then a stable type order. Event types:
   `rally_start`, `rally_end`, `shot`, `bounce`. Fields copied verbatim from the
   source JSON (pure consumer — no recomputation).
+- **Foundation #3 (v0.3.0): PER-EVENT confidence.** Each `shot` event carries
+  `shot_type_confidence`, `stroke_side_confidence`, `is_volley_confidence`, and
+  overall `confidence` (from Stage 6); each `bounce` carries its `confidence`
+  (Stage 5.5); `rally_end` carries `end_reason_confidence` (Stage 7). So a
+  scrubbable UI can gate/dim EACH individual event by its reliability, not just
+  the aggregate summary — every rendered event carries its confidence.
 - `summary` carries the rating + plan top focus areas (the dashboard renders
   these; the video also burns the HUD card). **Foundation #3:** it also surfaces
   `rating_dimensions` (per-dimension `confidence`/`limited_by`/`data_source`) and

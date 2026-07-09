@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1               # timeline.json schema (additive confidence fields)
-STAGE_VERSION = "0.2.0"          # Foundation #3 — unwrap v2 heatmaps + surface confidence
+STAGE_VERSION = "0.3.0"          # Foundation #3 — per-EVENT confidence on timeline shot/bounce events
 
 # --- Config (matches contract) ----------------------------------------------
 TRAIL_FRAMES = 10
@@ -352,18 +352,27 @@ def build_timeline(rallies, classified, bounces, rating, plan, metrics, role_of,
                        "end_reason": r["end_reason"],
                        "end_reason_confidence": r.get("end_reason_confidence")})
     for s in (classified or {}).get("shots", []):
+        # Per-event confidence (Foundation #3): each labeled shot carries the
+        # reliability of each label so a scrubbable UI can gate/dim it rather than
+        # rendering every call as certain.
         events.append({"frame": int(s["frame"]),
                        "t_sec": round(s["frame"] / fps, 3), "type": "shot",
                        "shot_id": s["shot_id"], "role": role_of.get(int(s["track_id"])),
                        "shot_type": s.get("shot_type"),
+                       "shot_type_confidence": s.get("shot_type_confidence"),
                        "stroke_side": s.get("stroke_side"),
-                       "is_volley": s.get("is_volley"), "is_serve": s.get("is_serve")})
+                       "stroke_side_confidence": s.get("stroke_side_confidence"),
+                       "is_volley": s.get("is_volley"),
+                       "is_volley_confidence": s.get("is_volley_confidence"),
+                       "is_serve": s.get("is_serve"),
+                       "confidence": s.get("confidence")})
     for b in (bounces or {}).get("bounces", []):
         events.append({"frame": int(b["frame"]),
                        "t_sec": round(b["frame"] / fps, 3), "type": "bounce",
                        "bounce_id": b["bounce_id"],
                        "is_in_court": b.get("is_in_court"),
-                       "court_zone": b.get("court_zone")})
+                       "court_zone": b.get("court_zone"),
+                       "confidence": b.get("confidence")})
     events.sort(key=lambda e: (e["frame"], EVENT_TYPE_RANK.get(e["type"], 9)))
 
     summary = {"rated_role": "user", "synthetic_ball": ball_source == "synthetic"}
