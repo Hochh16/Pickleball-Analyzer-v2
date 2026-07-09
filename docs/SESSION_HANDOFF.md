@@ -1,9 +1,10 @@
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-07)
 
-## 2026-07-07 — Stage 4 cross-venue = data-limited; started stats layer on pb_2min — READ FIRST
+## 2026-07-07 — Cross-venue = data-limited; stats layer 8→11 DONE on pb_2min (real+confidence) — READ FIRST
 
-**Item #3 (cross-venue detector) pushed to its current-data ceiling; now advancing
-item #5 (stats layer) on pb_2min provisionally while operator captures more footage.**
+**Item #3 (cross-venue detector) pushed to its current-data ceiling; item #5 (stats layer
+8→9→10→11 + confidence propagation) COMPLETED on pb_2min (provisional, one venue) — the
+06-21 "confidence validated on synthetic only" gap is now closed on real data.**
 David bought Colab Pro+ and ran two warm-start training runs this session. This session:
 
 - **Reconciled the notebook.** The live Colab `finetune_v4.ipynb` had DIVERGED from the
@@ -45,12 +46,31 @@ David bought Colab Pro+ and ran two warm-start training runs this session. This 
   moderate, noisy ball families correctly distrusted (serve 0.15, end_reason 0.15, shot_mix
   0.50, stroke_side 0.09). *Flag for downstream-sufficiency review:* `match.serve.n_serves=8`
   vs Stage-5 `is_serve`=4 (metric counts one serve/rally) — reconcile when serve detection (C3) lands.
-- **DO NEXT: Stage 9 (rate) → 10 (plan) → 11 (render)** on pb_2min's fresh real metrics,
-  one stage at a time. Stage 9 is the real C9 test: the rating must **down-weight** the
-  low-confidence dimensions, not fold them in as certain. All flagged **provisional (pb_2min
-  only)** per §0 rule 6 until the cross-venue detector clears the bar.
-- When new court2/indoor footage is labeled: run the retrain loop in `DATA_COLLECTION_PLAN.md`
-  (prepare_v4 → build bundle → warm-start finetune → reality_check_v4).
+- **Stages 9→10→11 DONE (v0.3.0 each) — the same C9 gap fixed at every layer:** Stage 8
+  computed honest per-event/dimension confidence, but 9/10/11 each ignored it identically.
+  - **Stage 9 (`9c85079`):** the estimate was confidence-BLIND — `error_control` scored 4.5
+    at confidence 0 (errors undetectable → "no data" read as flawless), inflating pb_2min to
+    3.61. Now **confidence-weighted** (`weight × confidence`, renormalized) → recenters to
+    **2.79**, leaning on the measured dims (position/movement).
+  - **Stage 10 (`e78475a`):** gated "provisional" on coarse `ball_source`, so on real ball it
+    coached off data gaps (serve = weakness, error_control = strength). Now **gates on per-dim
+    confidence**: near-zero-confidence dims route to `developing_capability.not_assessable_now`;
+    focus areas = net_play + movement only.
+  - **Stage 11 (`f103568`):** timeline events dropped per-shot confidence (each rendered as
+    certain). Now shot/bounce events carry `shot_type_confidence`/`is_volley_confidence`/etc.
+    (62/70 events). Watermark correctly drops (ball_source real).
+- **NET: the C9 confidence machinery is now BUILT + VALIDATED ON REAL DATA end-to-end on
+  pb_2min** (the 06-21 "synthetic-only" gap is closed) — flagged **provisional (pb_2min only)**
+  per §0 rule 6. Each stage smoke-passed + operator-reviewed.
+
+**NEXT (resume here):** the pb_2min real-ball pipeline (5→11) is complete + confidence-honest.
+The gating item is again **cross-venue data** (work-order #3, data-limited). When new
+court2/indoor footage is labeled → run the retrain loop in `DATA_COLLECTION_PLAN.md`
+(prepare_v4 → build bundle → warm-start finetune → reality_check_v4) → re-run 5→11 across
+venues to lift the provisional flag. Other open parallel tracks: serve detection (C3, would
+reconcile the n_serves=8-vs-4 flag + unlock the serve dimension), bounce recall (C4, unlocks
+end_reason + error_control), z-recovery spike, input-UI + reporting skeleton (the timeline.json
+per-event confidence is now ready for it).
 
 **Deployment note:** Colab needs, in `MyDrive/` root: `pb_v4_upload.zip` (bundle, current)
 + `ball_model_v4_base.pt` (= local `data/models/ball_model_v4.pt`, the 0.90 model). The

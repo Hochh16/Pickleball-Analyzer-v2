@@ -107,7 +107,7 @@ This is the section the reporting UI and every stat consumer must honor.
 - **End_reason** (100% `unknown` on real pb_2min — bounce-recall-gated).
 - **Error attribution** (depends on end_reason → mostly `unknown` owner).
 - **Third-shot-drop rate** (drive/drop type confusion flips it directly).
-- **The rating band & the improvement priorities** (≈70% of rating weight is the noisy synthetic dimensions, folded in without down-weighting).
+- **The rating band & the improvement priorities** — the noisy ball dimensions are still noisy, BUT as of 2026-07-07 the rating/plan **confidence-weight** them (Stage 9 estimate = weight×confidence; Stage 10 routes conf-0 data gaps to `not_assessable_now`), so the headline no longer folds in noise as certain. On pb_2min this recentered the estimate 3.61→2.79 and dropped serve/error_control from the coaching. The numbers under them are still limited by ball recall.
 - **Any per-opponent stat** (far-side drift + role-awareness gap).
 
 ### The single most important architectural finding
@@ -366,6 +366,17 @@ and what it unblocks. (Tractability from the audit; none requires abandoning 2D.
    (commits `0d116b2` Stage 8, `8350724` Stage 9, `39b2c41` Stage 10; Stage 11
    uncommitted) but validated only on the SYNTHETIC ball — per §0 rule 5 it is NOT
    done. It is re-validated here on real, confidence-carrying inputs.**
+
+   > **DONE 2026-07-07 (provisional, pb_2min only) — the C9 machinery is now
+   > validated on REAL data end-to-end.** Re-ran 8→9→10→11 on pb_2min's real ball.
+   > Stage 8 confidence propagation runs correctly on real inputs. Fixing 9/10/11
+   > exposed the SAME gap at each: confidence was computed but not USED. Fixes
+   > (all v0.3.0, smoke-passed): **Stage 9** confidence-weights the estimate
+   > (3.61→2.79; untrusted dims no longer inflate it, commit `9c85079`); **Stage 10**
+   > gates focus/strengths by per-dim confidence (data gaps → `not_assessable_now`,
+   > `e78475a`); **Stage 11** carries per-event confidence onto timeline shot/bounce
+   > events (`f103568`). Flagged **provisional (pb_2min only)** per §0 rule 6 until
+   > the cross-venue detector (#3) clears the bar and 5→11 re-run across venues.
 
 Ball **height/3D (C2)** sits across all of this as the §5 decision; the roadmap is
 designed to extract maximum value *without* it (landing/zone/arc for type,
