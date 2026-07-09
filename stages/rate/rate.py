@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1               # rating.json output schema (additive: + limited_by)
 METRICS_SCHEMA_VERSION = 2       # required input metrics.json schema (Stage 8 v2)
-STAGE_VERSION = "0.2.0"          # Foundation #3 — consume inline metric confidence
+STAGE_VERSION = "0.3.0"          # confidence-WEIGHTED estimate (untrusted dims no longer inflate it)
 USAPA_ANCHOR_VERSION = "2024-self-rating"
 
 # --- Config (matches contract) ----------------------------------------------
@@ -349,7 +349,22 @@ def compute_rating(metrics: dict, ball_source: str,
             "driver_metrics": drivers,
         })
 
-    estimate = clamp_level(sum(d["subscore_level"] * d["weight"] for d in dimensions))
+    # Confidence-weight the estimate: each dimension's influence is its static
+    # weight x its confidence, renormalized. A dimension we can't trust (e.g.
+    # error_control at confidence 0 because errors are undetectable, or serve with
+    # 0 detected serves) no longer inflates the headline number — the estimate
+    # leans on the dimensions we can actually measure. Falls back to the plain
+    # static-weight sum only if NO dimension carries any confidence (avoids /0).
+    eff = [(d, d["weight"] * d["confidence"]) for d in dimensions]
+    eff_sum = sum(w for _, w in eff)
+    if eff_sum > 0:
+        estimate = clamp_level(sum(d["subscore_level"] * w for d, w in eff) / eff_sum)
+    else:
+        estimate = clamp_level(sum(d["subscore_level"] * d["weight"] for d in dimensions))
+    # Reported confidence stays the static-weight-average of dim confidences: it
+    # measures how much of the INTENDED skill picture is trustworthy (still low
+    # when half the weight rests on zero-confidence dims), which keeps the range
+    # honestly wide — the estimate is a confident read of INCOMPLETE coverage.
     confidence = round(sum(d["confidence"] * d["weight"] for d in dimensions), 4)
     rating = {
         "estimate": round(estimate, 2),

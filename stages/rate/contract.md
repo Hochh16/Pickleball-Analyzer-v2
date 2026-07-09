@@ -21,19 +21,24 @@ thresholds, honest confidence, loud failures).
 > synthetic-ball + calibration uncertainty; the band matches the published
 > self-rating sheet for readability.
 
-> **DECISION (full rating now, loudly flagged — operator's explicit choice).**
-> The point estimate is computed from ALL skill dimensions, including the ones
-> derived from the synthetic ball, **without down-weighting** the synthetic
-> dimensions in the score. Rationale: the operator wants the complete rating
-> engine built and exercised end-to-end now, so that when real ball detection
-> (v4) lands the same engine simply gets more accurate — not a weak
-> positioning-only stand-in replaced later. **The honesty is carried by (a) a
-> loud top-level placeholder warning, (b) a lowered `confidence` and widened
-> `range` driven by data reliability, and (c) per-dimension `data_source`
-> evidence.** This is a deliberate departure from the stricter
-> "reliability-gated sub-scores" option; it is documented here and in
-> KNOWN_ISSUES.md so the trade-off is explicit. **The point estimate leans on
-> placeholder data until v4 — do not treat the number as a measured rating.**
+> **DECISION (v0.3.0, 2026-07-07 — CONFIDENCE-WEIGHTED estimate; supersedes the
+> 06-19 "all dims, no down-weighting" choice).** The point estimate weights each
+> dimension by `static_weight × confidence` (renormalized), so a dimension we
+> can't trust no longer inflates the headline number. This was forced by the
+> first REAL-ball run: on pb_2min `error_control` scored 4.5 at **confidence 0**
+> purely because errors are undetectable (end_reasons 100% `unknown`) — "no data"
+> was reading as "flawless," pushing the estimate to 3.61; confidence-weighting
+> recenters it to **2.79**, leaning on the dimensions actually measured (position/
+> movement). If NO dimension carries any confidence, it falls back to the plain
+> static-weight sum. The reported `confidence` stays the static-weight-average of
+> dim confidences (it measures how much of the INTENDED skill picture is
+> trustworthy) so the `range` stays honestly wide — the estimate is a confident
+> read of INCOMPLETE coverage. Honesty is still carried by (a) the loud
+> uncalibrated-threshold warning, (b) the lowered `confidence` + wide `range`,
+> (c) per-dimension `data_source` + `confidence` + `limited_by`, and (d)
+> `skill_coverage`. **All dimensions are still emitted for evidence; they just no
+> longer drive the estimate in proportion to noise.** Rating thresholds remain
+> uncalibrated heuristics — do not treat the number as a measured rating.
 
 ## Purpose
 
