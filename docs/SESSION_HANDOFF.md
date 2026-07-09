@@ -72,6 +72,24 @@ reconcile the n_serves=8-vs-4 flag + unlock the serve dimension), bounce recall 
 end_reason + error_control), z-recovery spike, input-UI + reporting skeleton (the timeline.json
 per-event confidence is now ready for it).
 
+**CONSUMER OUTPUT + USAPA VISION (2026-07-07, second half — READ):** Operator rendered the
+real Stage 8–11 output for the first time and it exposed what confidence numbers CANNOT
+catch — **confidence ≠ correctness.** Confirmed bugs: (a) **net-play is wrong** — kitchen
+time reads ~5% / both-at-line 0.3% while players clearly live at the line; the position→zone
+logic is systematically off, AND it's a "99% confidence" dim the rating LEANS on (undercuts
+the Stage 9 fix). (b) **rally over-segmentation** — Stage 7 makes 8 rallies (two are 0.8s/1.1s
+micro-splits); real count is 6. (c) finding language unclear. Lesson: Stage 8–11 were validated
+on schema/smoke, NOT on operator-viewing-numbers — that's the validation gap; the consumer
+view is the missing instrument. ALSO: the rating's 6 homegrown dims **do not match the official
+USAPA standard** (7 categories: forehand/backhand/serve-return/dink/third-shot/volley/strategy).
+Captured the full USAPA-aligned target spec in **`docs/PRODUCT_VISION.md`** (skill ladder +
+criteria→metric alignment [most planned = the legitimacy gap] + body-mechanics-as-supporting-
+pose-layer + build program). **Operator-chosen order: vision (DONE, captured) → FIX bugs
+(net-play zones, rally filter, finding language) → REALIGN Stage 9 to USAPA's 7 categories →
+ADD the ◐/○ metrics (map to C4 bounce recall, F7 court-plane speed, F16 FH/BH, F12 opponents,
+F17 pose) → COMPLETE UI (`tools/build_report.py` skeleton → full report).** Resume the build
+program at the FIX step (net-play zone bug first — it drags the rating).
+
 **Deployment note:** Colab needs, in `MyDrive/` root: `pb_v4_upload.zip` (bundle, current)
 + `ball_model_v4_base.pt` (= local `data/models/ball_model_v4.pt`, the 0.90 model). The
 G4/RTX-PRO-6000 GPU auto-sizes BATCH to 12. Pro+ background execution runs it 24h even if
