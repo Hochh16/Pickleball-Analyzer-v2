@@ -25,6 +25,21 @@ confidence, loud failures).
 > confidence weighting in the priority score. Full plan now, honest about which
 > parts are placeholder.
 
+> **DECISION (v0.3.0, 2026-07-07 — gate focus/strengths by PER-DIMENSION
+> confidence).** The 06-19 rule gated "provisional" on the coarse `ball_source`
+> (synthetic vs real). The first real-ball run exposed the failure mode: with a
+> real ball, a dimension at **confidence 0** (a data gap, not a signal — `serve`
+> with 0 detected serves, `error_control` with errors undetectable because
+> end_reasons are all `unknown`) was rendered as a confident coaching signal —
+> "work on your serve," "great error control." Now a REAL dimension whose
+> confidence is below `ASSESS_CONF_FLOOR` (0.1) is treated as **not assessable**:
+> it is routed OUT of `focus_areas`/`strengths` into
+> `developing_capability.not_assessable_now` (with its `limited_by` reason), never
+> coached as a weakness or celebrated as a strength. Dimensions above the floor
+> carry an honest per-dim confidence label (`high`/`moderate`/`low`, or
+> `provisional` on synthetic) instead of a blanket `high`. Priority still scales
+> with confidence, so low-but-nonzero dims rank below high-confidence ones.
+
 > **DECISION (forward-looking developing-capability section — operator's
 > explicit ask).** The plan accounts for BOTH the currently-measured skills
 > (synthetic-flagged) AND the skills to be developed downstream. The skills in

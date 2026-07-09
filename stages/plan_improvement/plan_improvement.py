@@ -29,7 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1               # improvement_plan.json schema (additive: +limited_by/remedy)
 METRICS_SCHEMA_VERSION = 2       # Stage 8 metrics.json schema (read-but-not-consumed)
-STAGE_VERSION = "0.2.0"          # Foundation #3 — surface limited_by remedy
+STAGE_VERSION = "0.3.0"          # gate focus/strengths by per-dim confidence (data gaps -> developing)
 
 # --- Config (matches contract) ----------------------------------------------
 MAX_FOCUS_AREAS = 4
@@ -43,6 +43,14 @@ USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 # limiter materially bites (confidence < OPERATOR_CONF_FLOOR). The operator (who
 # records/configures the capture) may be a different person than the player.
 OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter bites
+ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
+                                 # coaching signal -> routed to developing_capability
+UNMEASURED_REASON = {
+    "serve": "Serves aren't reliably detected yet (needs serve detection, C3) — "
+             "can't assess serve skill.",
+    "error_control": "Errors aren't attributable yet (rally end_reasons are "
+                     "bounce-recall-gated, mostly unknown) — can't assess error control.",
+}
 LIMITER_CATEGORY = {"sample_size": "more_data",
                     "measurement": "capture_quality",
                     "known_limit": "capture_quality",
@@ -305,6 +313,11 @@ def next_half_step(current_band: str) -> float:
 
 # --- Core plan (pure function) ----------------------------------------------
 
+def conf_label(c: float) -> str:
+    """Map a real per-dimension confidence to an honest coaching label."""
+    return "high" if c >= 0.6 else ("moderate" if c >= 0.3 else "low")
+
+
 def compute_plan(rating: dict, metrics: Optional[dict],
                  max_focus: int = MAX_FOCUS_AREAS,
                  conf_floor: float = CONFIDENCE_WEIGHT_FLOOR,
@@ -320,7 +333,7 @@ def compute_plan(rating: dict, metrics: Optional[dict],
     dims = rating.get("dimensions", []) or []
     ball_source = rating.get("ball_source", "real")
 
-    focus, strengths = [], []
+    focus, strengths, unmeasured = [], [], []
     op_hits: Dict[str, dict] = {}   # operator category -> {limiters, affects}
     for d in dims:
         name = d.get("name")
@@ -341,11 +354,27 @@ def compute_plan(rating: dict, metrics: Optional[dict],
             hit = op_hits.setdefault(cat, {"limiters": set(), "affects": []})
             hit["limiters"].add(limited_by)
             hit["affects"].append(name)
+        # A REAL dimension at near-zero confidence is a DATA GAP, not a signal —
+        # e.g. serve (0 serves detected) or error_control (errors undetectable:
+        # end_reasons all unknown). Presenting it as a weakness to fix OR a
+        # strength to celebrate would coach off missing data, so route it to
+        # developing_capability with the reason and skip focus/strength.
+        if data_source == "real" and dconf < ASSESS_CONF_FLOOR:
+            unmeasured.append({
+                "dimension": name,
+                "confidence": round(dconf, 3),
+                "limited_by": limited_by,
+                "reason": UNMEASURED_REASON.get(
+                    name, f"{name} not reliably measured yet (limited_by {limited_by})."),
+            })
+            continue
         if sub >= target_level:
             strengths.append({
                 "dimension": name,
                 "current_subscore": sub,
                 "data_source": data_source,
+                "confidence": ("provisional" if data_source == "synthetic"
+                               else conf_label(dconf)),
                 "note": ("At/above the target"
                          + (" (provisional — synthetic)."
                             if data_source == "synthetic" else ".")),
@@ -359,7 +388,7 @@ def compute_plan(rating: dict, metrics: Optional[dict],
         focus.append({
             "dimension": name,
             "data_source": data_source,
-            "confidence": "provisional" if provisional else "high",
+            "confidence": "provisional" if provisional else conf_label(dconf),
             "current_subscore": sub,
             "gap_to_target": round(gap, 3),
             "priority_score": priority_score,
@@ -399,6 +428,7 @@ def compute_plan(rating: dict, metrics: Optional[dict],
                      "listed new stages."),
         "proxy_or_pending": descriptor_list("proxy_or_pending"),
         "not_captured_yet": descriptor_list("not_captured_yet"),
+        "not_assessable_now": unmeasured,   # real dims at ~0 confidence (data gaps)
         "out_of_scope": list(sc.get("out_of_scope", []) or []),
     }
 
