@@ -27,9 +27,9 @@ from stages.segment_rallies.segment_rallies import main as rallies_main
 from stages.classify_tracks.classify_tracks import main as roles_main
 from stages.compute_metrics.compute_metrics import main as metrics_main
 from stages.rate.rate import (
-    main as rate_main, compute_rating, range_of, band_of,
-    score_net_play, score_error_control, score_serve, score_shot_skill,
-    score_rally_consistency, WEIGHTS, USAPA_BANDS,
+    main as rate_main, compute_rating, range_of, band_of, coverage_status,
+    score_strategy, score_third_shot, score_dink, score_volley,
+    score_serve_return, score_forehand, score_backhand, WEIGHTS, USAPA_BANDS,
 )
 import subprocess
 
@@ -170,9 +170,12 @@ def cond_schema(r) -> bool:
         _fail(f"confidence {rt['confidence']} out of [0,1]")
         return False
     dims = r["dimensions"]
-    if len(dims) != 6 or abs(sum(d["weight"] for d in dims) - 1.0) > 1e-6:
+    if len(dims) != 7 or abs(sum(d["weight"] for d in dims) - 1.0) > 1e-6:
         _fail(f"dimensions: {len(dims)} dims, weights sum "
               f"{sum(d['weight'] for d in dims)}")
+        return False
+    if [d["name"] for d in dims] != list(WEIGHTS.keys()):
+        _fail(f"dimension names {[d['name'] for d in dims]} != 7 USAPA categories")
         return False
     for d in dims:
         if not (1.0 <= d["subscore_level"] <= 5.5):
@@ -184,9 +187,12 @@ def cond_schema(r) -> bool:
         if d.get("limited_by") not in VALID_LIMITERS:
             _fail(f"{d['name']} limited_by invalid: {d.get('limited_by')}")
             return False
+        if d.get("coverage_status") not in {"measured", "partial", "not_assessable"}:
+            _fail(f"{d['name']} coverage_status invalid: {d.get('coverage_status')}")
+            return False
     _pass(f"rating.json valid: estimate={rt['estimate']} band={rt['band']} "
-          f"range={rt['range']} conf={rt['confidence']}, 6 dims, weights=1.0, "
-          f"limited_by present")
+          f"range={rt['range']} conf={rt['confidence']}, 7 USAPA categories, "
+          f"weights=1.0, limited_by + coverage_status present")
     return True
 
 
@@ -234,42 +240,46 @@ def cond_reliability(r) -> bool:
 
 
 def cond_dimension_monotonic() -> bool:
-    """Each scorer must move the right way for a clearly-stronger driver."""
+    """Each scorer with a live driver must move the right way; count-only strokes
+    return a valid neutral level."""
     failures = []
-    # net_play: more kitchen -> higher
-    hi_k, _ = score_net_play(
+    # strategy: more kitchen -> higher
+    hi_k, _ = score_strategy(
         {"position": {"zone_time_frac": {"kitchen": 0.5, "transition": 0.1}}},
-        {"both_at_kitchen_frac": 0.5})
-    lo_k, _ = score_net_play(
+        {"both_at_kitchen_frac": 0.5}, 40)
+    lo_k, _ = score_strategy(
         {"position": {"zone_time_frac": {"kitchen": 0.05, "transition": 0.1}}},
-        {"both_at_kitchen_frac": 0.5})
+        {"both_at_kitchen_frac": 0.5}, 40)
     if not hi_k > lo_k:
-        failures.append(f"net_play not increasing in kitchen ({lo_k}->{hi_k})")
-    # error_control: fewer errors -> higher
-    hi_e, _ = score_error_control({"errors_committed": 4}, 40)
-    lo_e, _ = score_error_control({"errors_committed": 30}, 40)
-    if not hi_e > lo_e:
-        failures.append(f"error_control not decreasing in errors ({lo_e}<-{hi_e})")
-    # serve: lower fault -> higher
-    hi_s, _ = score_serve({"serve": {"n_serves": 40, "serve_fault_rate": 0.0}})
-    lo_s, _ = score_serve({"serve": {"n_serves": 40, "serve_fault_rate": 0.3}})
+        failures.append(f"strategy not increasing in kitchen ({lo_k}->{hi_k})")
+    # third_shot: higher drop_rate -> higher
+    hi_t, _ = score_third_shot({"third_shot": {"drop_rate": 0.6}})
+    lo_t, _ = score_third_shot({"third_shot": {"drop_rate": 0.05}})
+    if not hi_t > lo_t:
+        failures.append(f"third_shot not increasing in drop_rate ({lo_t}->{hi_t})")
+    # dink: higher dink fraction -> higher
+    hi_d, _ = score_dink({"n_shots": 100, "shot_mix": {"by_shot_type": {"dink": 60}}},
+                         {"rally_length_shots": {"mean": 6.0}})
+    lo_d, _ = score_dink({"n_shots": 100, "shot_mix": {"by_shot_type": {"dink": 5}}},
+                         {"rally_length_shots": {"mean": 6.0}})
+    if not hi_d > lo_d:
+        failures.append(f"dink not increasing in dink_frac ({lo_d}->{hi_d})")
+    # volley: higher volley_rate -> higher
+    hi_v, _ = score_volley({"shot_mix": {"volley": {"volley_rate": 0.5, "n_volley": 50}}})
+    lo_v, _ = score_volley({"shot_mix": {"volley": {"volley_rate": 0.05, "n_volley": 5}}})
+    if not hi_v > lo_v:
+        failures.append(f"volley not increasing in volley_rate ({lo_v}->{hi_v})")
+    # serve_return: lower fault -> higher
+    hi_s, _ = score_serve_return({"serve": {"n_serves": 40, "serve_fault_rate": 0.0}})
+    lo_s, _ = score_serve_return({"serve": {"n_serves": 40, "serve_fault_rate": 0.3}})
     if not hi_s > lo_s:
-        failures.append(f"serve not decreasing in fault rate ({lo_s}<-{hi_s})")
-    # shot_skill: higher drop_rate -> higher
-    user_sk = {"n_shots": 100, "shot_mix": {"by_shot_type": {"dink": 30, "drop": 30,
-               "drive": 20, "unknown": 20}}}
-    hi_sk, _ = score_shot_skill(user_sk, {"third_shot": {"drop_rate": 0.6}})
-    lo_sk, _ = score_shot_skill(user_sk, {"third_shot": {"drop_rate": 0.05}})
-    if not hi_sk > lo_sk:
-        failures.append(f"shot_skill not increasing in drop_rate ({lo_sk}->{hi_sk})")
-    # rally_consistency: longer rallies -> higher
-    hi_r, _ = score_rally_consistency({"shot_mix": {"volley_rate": 0.1}},
-                                      {"rally_length_shots": {"mean": 9.0}})
-    lo_r, _ = score_rally_consistency({"shot_mix": {"volley_rate": 0.1}},
-                                      {"rally_length_shots": {"mean": 2.5}})
-    if not hi_r > lo_r:
-        failures.append(f"rally not increasing in length ({lo_r}->{hi_r})")
-    # end-to-end: strong metrics >= weak metrics
+        failures.append(f"serve_return not decreasing in fault rate ({lo_s}<-{hi_s})")
+    # forehand/backhand: count-only -> valid neutral level, count surfaced
+    fh, fhd = score_forehand({"n_shots": 100,
+                              "shot_mix": {"by_stroke_side": {"forehand": 60}}})
+    if not (1.0 <= fh <= 5.5 and fhd["forehand_count"] == 60):
+        failures.append(f"forehand count-only scorer wrong ({fh}, {fhd})")
+    # end-to-end: strong metrics > weak metrics
     strong, _ = compute_rating(make_metrics(True), "synthetic")
     weak, _ = compute_rating(make_metrics(False), "synthetic")
     if not strong["estimate"] > weak["estimate"]:
@@ -278,23 +288,28 @@ def cond_dimension_monotonic() -> bool:
     if failures:
         _fail(f"monotonicity: {failures}")
         return False
-    _pass(f"directional monotonicity: all 5 scorers + end-to-end move correctly "
-          f"(strong {strong['estimate']} > weak {weak['estimate']})")
+    _pass(f"directional monotonicity: 5 live scorers + count-only strokes + "
+          f"end-to-end move correctly (strong {strong['estimate']} > weak "
+          f"{weak['estimate']})")
     return True
 
 
 def cond_confidence_drops_with_synth() -> bool:
-    """Same metrics rated as real -> higher confidence + narrower range than
-    rated as synthetic. Proves the honesty machinery engages."""
+    """Same metrics rated as real -> higher confidence than rated as synthetic
+    (the 6 ball-derived categories are down-weighted; strategy stays real). The
+    range WIDENS as confidence drops, but that property is proven directly by
+    cond_range_monotonic on range_of; here the half-step rounding + 5.0 cap can
+    make the rounded widths equal when the estimate is high, so we only require the
+    range not to NARROW."""
     m = make_metrics(True)
     r_real, _ = compute_rating(m, "real")
     r_synth, _ = compute_rating(m, "synthetic")
     real_w = r_real["range"][1] - r_real["range"][0]
     synth_w = r_synth["range"][1] - r_synth["range"][0]
-    ok = (r_real["confidence"] > r_synth["confidence"]) and (real_w < synth_w)
+    ok = (r_real["confidence"] > r_synth["confidence"]) and (real_w <= synth_w)
     (_pass if ok else _fail)(
         f"confidence drops with synthetic ball: real conf={r_real['confidence']} "
-        f"(width {real_w}) > synth conf={r_synth['confidence']} (width {synth_w})"
+        f"> synth conf={r_synth['confidence']} (range {real_w} <= {synth_w})"
         if ok else "synthetic penalty did not engage")
     return ok
 

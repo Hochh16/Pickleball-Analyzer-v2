@@ -28,23 +28,35 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-SCHEMA_VERSION = 1               # rating.json output schema (additive: + limited_by)
+SCHEMA_VERSION = 1               # rating.json output schema (additive: + limited_by, + coverage_status)
 METRICS_SCHEMA_VERSION = 2       # required input metrics.json schema (Stage 8 v2)
-STAGE_VERSION = "0.3.0"          # confidence-WEIGHTED estimate (untrusted dims no longer inflate it)
+STAGE_VERSION = "0.4.0"          # USAPA REALIGN: 6 homegrown dims -> 7 official categories
 USAPA_ANCHOR_VERSION = "2024-self-rating"
 
 # --- Config (matches contract) ----------------------------------------------
-WEIGHTS = {"net_play": 0.20, "movement": 0.10, "error_control": 0.25,
-           "shot_skill": 0.25, "serve": 0.10, "rally_consistency": 0.10}
-SYNTH_CONFIDENCE_FACTOR = 0.35   # data_conf for synthetic-ball-derived dimensions
-NEUTRAL_PRIOR_LEVEL = 3.0        # subscore when a driver is missing
+# The 7 OFFICIAL USA Pickleball rating categories (replaces the 6 homegrown dims).
+# Weights are UNCALIBRATED heuristics for rough skill importance; the confidence-
+# weighted estimate already prevents low-confidence categories from inflating the
+# number, so weights mainly shape reported coverage. See docs/USAPA_REALIGN_DESIGN.md.
+WEIGHTS = {"strategy": 0.20, "third_shot": 0.18, "dink": 0.15, "volley": 0.13,
+           "serve_return": 0.12, "forehand": 0.12, "backhand": 0.10}
+SYNTH_CONFIDENCE_FACTOR = 0.35   # data_conf for synthetic-ball-derived categories
+NEUTRAL_PRIOR_LEVEL = 3.0        # subscore when a driver is missing / quality unmeasured
+ASSESS_CONF_FLOOR = 0.10         # below this a category is 'not_assessable'
+MEASURED_CONF_FLOOR = 0.50       # at/above this a category is 'measured' (else 'partial')
+QUALITY_UNMEASURED_CONF = 0.05   # count-only categories (forehand/backhand): the stroke is
+                                 # counted but its QUALITY (pace/depth/consistency) can't be
+                                 # judged yet -> capped below the floor -> not_assessable
 RANGE_MIN_HALF = 0.25            # min half-width of the confidence range
 RANGE_SPAN = 1.25                # extra half-width at confidence 0
 USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 LEVEL_MIN, LEVEL_MAX = 1.0, 5.5
-# Inherent data source per dimension (before ball_source is considered).
-REAL_DIMS = {"net_play", "movement"}
+# Strategy is court-position-derived -> real regardless of ball_source. The other
+# six are shot/ball-derived -> become 'real' once the ball is real.
+REAL_DIMS = {"strategy"}
+# Categories we can currently only COUNT (no quality metric) -> confidence capped.
+COUNT_ONLY_DIMS = {"forehand", "backhand"}
 SOFT_SHOT_TYPES = {"dink", "drop", "reset"}
 VARIETY_SHOT_TYPES = {"dink", "drop", "reset", "drive", "lob", "overhead"}
 
@@ -162,95 +174,123 @@ def range_of(estimate: float, confidence: float) -> List[float]:
     return [lo, hi]
 
 
-# --- Per-dimension scorers (documented thresholds; monotonic in each driver) -
-# Each returns (subscore_level, driver_metrics). subscore is on the 1.0-5.5
-# scale, USAPA-anchored. Missing drivers -> NEUTRAL_PRIOR_LEVEL (sample_conf
-# will independently drive dim confidence toward 0).
+# --- Per-category scorers (7 USAPA categories; monotonic in the primary driver) -
+# Each returns (subscore_level, driver_metrics) on the 1.0-5.5 USAPA scale.
+# Missing/absent drivers -> NEUTRAL_PRIOR_LEVEL (the category's confidence
+# independently falls toward 0, routing it to 'not_assessable' downstream).
 
-def score_net_play(user: dict, team_near: dict) -> Tuple[float, dict]:
+def coverage_status(conf: float) -> str:
+    """Map a category confidence to how well we can actually assess it."""
+    if conf >= MEASURED_CONF_FLOOR:
+        return "measured"
+    return "partial" if conf >= ASSESS_CONF_FLOOR else "not_assessable"
+
+
+def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, dict]:
+    """Court positioning / NVZ approach / move-as-a-team + effort. The anchor
+    category — the only one on high-confidence real position data today. Unforced
+    errors are exposed as a driver but NOT scored/confidence-gated here (they're
+    undetectable until ball recall improves; folding them in would either zero the
+    confidence or read 'no errors = perfect')."""
     pos = user.get("position", {}) or {}
     zone = pos.get("zone_time_frac", {}) or {}
     kitchen = zone.get("kitchen")
     transition = zone.get("transition")
     both = team_near.get("both_at_kitchen_frac")
+    per_min = (pos.get("movement", {}) or {}).get("distance_ft_per_min")
+    errs = user.get("errors_committed")
+    epr = (errs / n_rallies) if (errs is not None and n_rallies > 0) else None
     drivers = {"user_kitchen_time_frac": kitchen,
                "both_at_kitchen_frac": both,
-               "user_transition_time_frac": transition}
+               "user_transition_time_frac": transition,
+               "distance_ft_per_min": per_min,
+               "unforced_error_rate": round(epr, 4) if epr is not None else None}
     if kitchen is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     base = lin(kitchen, 0.0, 2.5, 0.6, 4.5)
     bonus = lin(both, 0.0, 0.0, 0.5, 0.4) or 0.0
     penalty = lin(transition, 0.2, 0.0, 0.6, 0.6) or 0.0
-    return clamp_level(base + bonus - penalty), drivers
+    mv = lin(per_min, 40.0, 0.0, 200.0, 0.2) or 0.0   # small footwork/effort bonus
+    return clamp_level(base + bonus - penalty + mv), drivers
 
 
-def score_movement(user: dict) -> Tuple[float, dict]:
-    pos = user.get("position", {}) or {}
-    coverage = pos.get("court_coverage_frac")
-    per_min = (pos.get("movement", {}) or {}).get("distance_ft_per_min")
-    drivers = {"court_coverage_frac": coverage, "distance_ft_per_min": per_min}
-    if coverage is None:
+def score_third_shot(match: dict) -> Tuple[float, dict]:
+    """Third-shot drop-to-net (soft/power mix). drop_rate is the live signal.
+    NOTE: match-level (all players' 3rd shots) until per-user attribution lands."""
+    ts = match.get("third_shot", {}) or {}
+    drop = ts.get("drop_rate")
+    drivers = {"third_shot_drop_rate": drop,
+               "third_shot_by_type": ts.get("by_shot_type") or None,
+               "per_user": False}
+    if drop is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
-    base = lin(coverage, 0.2, 2.5, 0.7, 4.5)
-    # per_min: non-decreasing capped contribution (frantic-overmovement penalty
-    # is a future refinement; kept monotonic for v1).
-    mv = lin(per_min, 40.0, 0.0, 200.0, 0.3) or 0.0
-    return clamp_level(base + mv), drivers
+    return clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)), drivers
 
 
-def score_error_control(user: dict, n_rallies: int) -> Tuple[float, dict]:
-    errs = user.get("errors_committed")
-    epr = (errs / n_rallies) if (errs is not None and n_rallies > 0) else None
-    drivers = {"errors_per_rally": round(epr, 4) if epr is not None else None,
-               "unforced_rate": None}   # pending_real_ball
-    if epr is None:
-        return NEUTRAL_PRIOR_LEVEL, drivers
-    # fewer errors per rally -> higher level (decreasing map)
-    return clamp_level(lin(epr, 0.1, 4.5, 0.7, 2.5)), drivers
-
-
-def score_shot_skill(user: dict, match: dict) -> Tuple[float, dict]:
+def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
+    """Soft game at the kitchen: how much of the shot mix is dinks + rally
+    sustain (proxy). Low confidence on a small detected-shot sample."""
     n_shots = user.get("n_shots", 0) or 0
     by_type = (user.get("shot_mix", {}) or {}).get("by_shot_type", {}) or {}
-    drop_rate = (match.get("third_shot", {}) or {}).get("drop_rate")
-    variety = sum(1 for t in VARIETY_SHOT_TYPES if by_type.get(t, 0) > 0)
-    soft = sum(by_type.get(t, 0) for t in SOFT_SHOT_TYPES)
-    soft_frac = (soft / n_shots) if n_shots > 0 else None
-    unknown_frac = (by_type.get("unknown", 0) / n_shots) if n_shots > 0 else None
-    drivers = {"third_shot_drop_rate": drop_rate, "shot_variety": variety,
-               "soft_game_frac": round(soft_frac, 4) if soft_frac is not None else None,
-               "unknown_type_frac": round(unknown_frac, 4) if unknown_frac is not None else None}
-    if n_shots == 0:
+    dink_n = by_type.get("dink", 0)
+    dink_frac = (dink_n / n_shots) if n_shots > 0 else None
+    mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
+    drivers = {"dink_count": dink_n,
+               "dink_frac": round(dink_frac, 4) if dink_frac is not None else None,
+               "mean_rally_length": mean_len}
+    if dink_frac is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
-    base = lin(drop_rate, 0.1, 2.8, 0.6, 4.3)
-    if base is None:
-        base = NEUTRAL_PRIOR_LEVEL
-    variety_bonus = lin(float(variety), 2.0, 0.0, 6.0, 0.4) or 0.0
-    soft_bonus = lin(soft_frac, 0.2, 0.0, 0.6, 0.3) or 0.0
-    unknown_penalty = lin(unknown_frac, 0.2, 0.0, 0.6, 0.5) or 0.0
-    return clamp_level(base + variety_bonus + soft_bonus - unknown_penalty), drivers
+    base = lin(dink_frac, 0.0, 2.8, 0.4, 4.3)          # more dinking -> softer game
+    sustain = lin(mean_len, 3.0, 0.0, 10.0, 0.3) or 0.0
+    return clamp_level(base + sustain), drivers
 
 
-def score_serve(user: dict) -> Tuple[float, dict]:
+def score_volley(user: dict) -> Tuple[float, dict]:
+    """Net volleys. volley_rate is the live signal (block/reset/put-away sub-skills
+    are not detected yet). Low confidence (heuristic volley flag, small sample)."""
+    v = (user.get("shot_mix", {}) or {}).get("volley", {}) or {}
+    rate = v.get("volley_rate")
+    drivers = {"volley_rate": rate, "n_volley": v.get("n_volley", 0)}
+    if rate is None:
+        return NEUTRAL_PRIOR_LEVEL, drivers
+    return clamp_level(lin(rate, 0.0, 2.8, 0.4, 4.2)), drivers
+
+
+def score_serve_return(user: dict) -> Tuple[float, dict]:
+    """Serve + return. serve_fault_rate is the only live signal, and only when
+    serves are detected (n_serves>0). Return quality is not separately detected."""
     serve = user.get("serve", {}) or {}
     n_serves = serve.get("n_serves", 0) or 0
     rate = serve.get("serve_fault_rate") if n_serves > 0 else None
-    drivers = {"serve_fault_rate": rate, "n_serves": n_serves}
+    drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
+               "return_metric": None}
     if rate is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
-    # lower fault rate -> higher level (decreasing map)
     return clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)), drivers
 
 
-def score_rally_consistency(user: dict, match: dict) -> Tuple[float, dict]:
-    mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
-    volley_rate = (user.get("shot_mix", {}) or {}).get("volley_rate")
-    drivers = {"mean_rally_length": mean_len, "volley_rate": volley_rate}
-    if mean_len is None:
-        return NEUTRAL_PRIOR_LEVEL, drivers
-    base = lin(mean_len, 2.0, 2.5, 10.0, 4.3)
-    volley_bonus = lin(volley_rate, 0.0, 0.0, 0.3, 0.4) or 0.0
-    return clamp_level(base + volley_bonus), drivers
+def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
+    """Forehand / backhand. We can COUNT the stroke (by_stroke_side) but cannot yet
+    judge its QUALITY (pace/depth/directional control/consistency) — those need
+    court-plane speed (F7), landing depth (C4), and reliable stroke-side (F16). So
+    the subscore is neutral and the category is confidence-capped to
+    not_assessable; the count is surfaced for context only."""
+    by_side = (user.get("shot_mix", {}) or {}).get("by_stroke_side", {}) or {}
+    n_shots = user.get("n_shots", 0) or 0
+    cnt = by_side.get(side, 0)
+    frac = (cnt / n_shots) if n_shots > 0 else None
+    drivers = {f"{side}_count": cnt,
+               f"{side}_frac": round(frac, 4) if frac is not None else None,
+               "pace_mph": None, "depth": None, "consistency": None}
+    return NEUTRAL_PRIOR_LEVEL, drivers
+
+
+def score_forehand(user: dict) -> Tuple[float, dict]:
+    return _score_stroke(user, "forehand")
+
+
+def score_backhand(user: dict) -> Tuple[float, dict]:
+    return _score_stroke(user, "backhand")
 
 
 # --- Skill coverage map (static; surfaced so nothing implies full coverage) --
@@ -299,32 +339,35 @@ def compute_rating(metrics: dict, ball_source: str,
     drv = {
         "position":   (_c(user_w.get("position")),   _lim(user_w.get("position"))),
         "team_near":  (_c(team_near_w),               _lim(team_near_w)),
-        "errors":     (_c(user_w.get("errors_committed")),
-                       _lim(user_w.get("errors_committed"))),
         "shot_type":  (_c(sm_w.get("by_shot_type")),  _lim(sm_w.get("by_shot_type"))),
+        "stroke_side": (_c(sm_w.get("by_stroke_side")), _lim(sm_w.get("by_stroke_side"))),
         "third_shot": (_c(match_w.get("third_shot")), _lim(match_w.get("third_shot"))),
         "serve":      (_c(user_w.get("serve")),       _lim(user_w.get("serve"))),
         "rally_len":  (_c(match_w.get("rally_length_shots")),
                        _lim(match_w.get("rally_length_shots"))),
         "volley":     (_c(sm_w.get("volley")),        _lim(sm_w.get("volley"))),
     }
+    # A category's confidence = the MIN over its driving Stage 8 metrics (weakest
+    # evidence caps it); the binding driver's limited_by names the remedy.
     DIM_DRIVERS = {
-        "net_play": ["position", "team_near"],
-        "movement": ["position"],
-        "error_control": ["errors"],
-        "shot_skill": ["shot_type", "third_shot"],
-        "serve": ["serve"],
-        "rally_consistency": ["rally_len", "volley"],
+        "strategy": ["position", "team_near"],
+        "third_shot": ["third_shot"],
+        "dink": ["shot_type", "rally_len"],
+        "volley": ["volley"],
+        "serve_return": ["serve"],
+        "forehand": ["stroke_side"],
+        "backhand": ["stroke_side"],
     }
 
     # (name, subscore, drivers)
     raw = [
-        ("net_play", *score_net_play(user, team_near)),
-        ("movement", *score_movement(user)),
-        ("error_control", *score_error_control(user, n_rallies)),
-        ("shot_skill", *score_shot_skill(user, match)),
-        ("serve", *score_serve(user)),
-        ("rally_consistency", *score_rally_consistency(user, match)),
+        ("strategy", *score_strategy(user, team_near, n_rallies)),
+        ("third_shot", *score_third_shot(match)),
+        ("dink", *score_dink(user, match)),
+        ("volley", *score_volley(user)),
+        ("serve_return", *score_serve_return(user)),
+        ("forehand", *score_forehand(user)),
+        ("backhand", *score_backhand(user)),
     ]
 
     dimensions: List[dict] = []
@@ -332,13 +375,18 @@ def compute_rating(metrics: dict, ball_source: str,
         base_conf, binding_lim = min((drv[k] for k in DIM_DRIVERS[name]),
                                      key=lambda t: t[0])
         inherent_real = name in REAL_DIMS
-        # ball-derived dims become 'real' once the ball is real.
+        # ball/shot-derived categories become 'real' once the ball is real.
         is_real_source = inherent_real or (not ball_is_synth)
         # Synthetic gate: inline confidence is artificially clean on the synthetic
-        # ball, so ball-derived dims are still down-weighted until the ball is real
+        # ball, so ball-derived categories are down-weighted until the ball is real
         # (Stage 8 contract § Synthetic-ball interaction). Inactive on real ball.
         gate = 1.0 if is_real_source else synth_factor
-        conf = round(base_conf * gate, 4)
+        conf = base_conf * gate
+        # Count-only categories (forehand/backhand): the stroke is counted but its
+        # quality is unmeasured, so cap confidence below the floor -> not_assessable.
+        if name in COUNT_ONLY_DIMS:
+            conf = min(conf, QUALITY_UNMEASURED_CONF)
+        conf = round(conf, 4)
         dimensions.append({
             "name": name,
             "subscore_level": round(subscore, 3),
@@ -346,6 +394,7 @@ def compute_rating(metrics: dict, ball_source: str,
             "confidence": conf,
             "limited_by": binding_lim,
             "data_source": "real" if is_real_source else "synthetic",
+            "coverage_status": coverage_status(conf),
             "driver_metrics": drivers,
         })
 
@@ -405,6 +454,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                             if d["data_source"] == "real"), 4)
     synthetic_weight = round(1.0 - real_weight, 4)
 
+    measured = [d["name"] for d in dimensions if d["coverage_status"] == "measured"]
+    assessable = [d["name"] for d in dimensions
+                  if d["coverage_status"] != "not_assessable"]
+    not_assessable = [d["name"] for d in dimensions
+                      if d["coverage_status"] == "not_assessable"]
+
     user = (metrics.get("players", {}) or {}).get("user", {}) or {}
     n_shots = _v(user.get("n_shots")) or 0
 
@@ -418,6 +473,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     warnings.append(
         "Rating thresholds are UNCALIBRATED heuristics anchored to USAPA "
         "descriptions — no corpus of rated footage exists yet (see KNOWN_ISSUES.md).")
+    if len(measured) <= 2 and len(dimensions) == 7:
+        lean = ", ".join(measured) if measured else "no category"
+        warnings.append(
+            f"USAPA COVERAGE: this estimate currently rests almost entirely on "
+            f"{lean} — {len(not_assessable)} of 7 categories are not yet reliably "
+            f"measured ({', '.join(not_assessable)}). The 6 shot-based categories "
+            f"need ball recall / serve detection / stroke-side / shot speed before "
+            f"they carry signal; they are confidence-gated, not guessed.")
     if n_shots == 0:
         warnings.append("user has zero shots in metrics.json: rating is "
                         "near-zero-confidence (degraded input).")
@@ -440,6 +503,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "synthetic_ball": ball_is_synth,
             "real_weight": real_weight,
             "synthetic_weight": synthetic_weight,
+            "measured_categories": measured,
+            "assessable_categories": assessable,
+            "not_assessable_categories": not_assessable,
             "note": (f"{synthetic_weight:.2f} of the rating weight comes from "
                      f"synthetic-ball-derived dimensions; estimate is "
                      f"PLACEHOLDER until ball v4. confidence + range reflect this."
