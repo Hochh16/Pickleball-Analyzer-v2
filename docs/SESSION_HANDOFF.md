@@ -1,4 +1,64 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-07)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-09)
+
+## 2026-07-09 — CONSUMER-OUTPUT FIX STEP COMPLETE (5 fixes) → next = USAPA REALIGN — READ FIRST
+
+The build program's **FIX step is done**: the live pb_2min consumer output is now
+TRUE and readable end-to-end, each fix operator-validated on rendered output and
+committed. This session, in order:
+
+1. **Net-play zone bug → front foot (Stage 8 v0.3.0, `88ff309`).** The prior
+   hypothesis ("position→zone mapping is off") was WRONG — `zone_from_court_y` is
+   correct. Root cause: court position came from the bbox bottom = the **back foot**;
+   a net-facing player with a staggered stance reads several feet behind where they
+   play, so a kitchen-line player mis-classified as transition. Fix: position = the
+   **net-most ankle** (front foot) from `poses.parquet`, bbox fallback. Operator's
+   rule ("front foot within 2 ft of the line = kitchen") is already the 2 ft buffer
+   in `KITCHEN_MAX_DIST_FT`. user kitchen 5.4%→26.2%; opponents unchanged (far side's
+   bbox bottom already = front foot). Validated on a frame-532 overlay.
+2. **Rally over-segmentation (Stage 7 v0.3.0, `13b629c`).** Minimum-rally filter:
+   drop a segment only when it's BOTH < `MIN_RALLY_SEC` (2.0s) AND < `MIN_RALLY_SHOTS`
+   (3). Note rally 7 was a **falsely detected serve**, so a serve-flag guard alone
+   can't catch it — size is the separator. Lone serve-faults (n_shots==1) guarded.
+   Dropped shots → `unassigned_shots` (reconciles). Real-ball only. **8→6 rallies**
+   (matches operator). mean rally length 5.19→5.67.
+3. **Rally-scope position metrics (Stage 8 v0.4.0, `bc4df48`).** Operator-confirmed:
+   between-point frames (~42% of clip = baseline standing) must not count. All
+   position views now scope to in-rally frames (`position.scope`); movement never
+   bridges a rally boundary. Needed step 2's clean boundaries first. user kitchen
+   26.2%→**33.6%**, both-at-kitchen 22.6%→**33.3%**.
+4. **Movement jitter-floor bug (Stage 8 v0.5.0, `4be7ccf`) — found while doing #3.**
+   `MOVE_MIN_STEP_FT=0.25` was per-frame, never fps-scaled → at 60fps a 15 ft/s floor
+   that rejected 84% of real movement and summed noise spikes. A speed floor can't
+   fix jitter (jitter has high instantaneous speed). Fix: integrate from a **0.2s
+   downsample** (window-mean positions), gated by a jitter floor + a 24 ft/s cap.
+   user `distance_ft_per_min` **492→192** (plausible ~3 ft/s). Same "confidently
+   wrong at conf 1.0" class as net-play.
+5. **Finding language (Stage 10 v0.4.0, `fa09f59`).** Findings stated raw numbers
+   with no verdict + jargon ("court coverage of your half", "transition zone",
+   "N shot types used"). Rewrote to plain second-person English pairing each number
+   with a good/bad verdict (`_verdict` bands). Where a metric isn't inherently
+   good/bad (court coverage/distance), it SAYS so and points at the lever instead of
+   faking a verdict. Numbers still straight from rating.json (can't drift).
+
+**pb_2min after the 5 fixes:** rating **3.8, band 4.0**; the two real-position dims
+are now TRUSTWORTHY at conf 1.0 (net_play 3.89, movement 3.48) — they were the two
+"confidently wrong" ones. Smoke: Stage 7 9/9, Stage 8 16/16, Stage 10 9/9.
+
+**Two follow-ups flagged, NOT done (in KNOWN_ISSUES):**
+- **Stage 2.5 near-side role gap** — at some frames both near tracks resolve to one
+  role (pb_2min f6420: both `partner`, user unidentified), slightly UNDER-counting the
+  user's kitchen time. Deferred to a Stage 2.5 continuity pass.
+- (movement bug above was found-and-fixed, not deferred.)
+
+**NEXT — USAPA REALIGN (build program step 2): rewrite Stage 9's 6 homegrown dims to
+USAPA's 7 categories.** Scoping started this session — see the mapping below / in
+`docs/PRODUCT_VISION.md`. Stage 9 today = `net_play, movement, error_control,
+shot_skill, serve, rally_consistency` (see `stages/rate/rate.py` `WEIGHTS` + the
+`score_*` fns). Target 7 = `Forehand, Backhand, Serve/Return, Dink, Third-Shot,
+Volley, Strategy`. The realign is design-heavy (most USAPA criteria map to ◐/○
+not-yet-measured metrics — the legitimacy gap); scope with the operator before coding.
+
+---
 
 ## 2026-07-07 — Cross-venue = data-limited; stats layer 8→11 DONE on pb_2min (real+confidence) — READ FIRST
 
