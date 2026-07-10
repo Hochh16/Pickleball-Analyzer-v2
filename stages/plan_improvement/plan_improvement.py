@@ -29,7 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1               # improvement_plan.json schema (additive: +limited_by/remedy)
 METRICS_SCHEMA_VERSION = 2       # Stage 8 metrics.json schema (read-but-not-consumed)
-STAGE_VERSION = "0.3.0"          # gate focus/strengths by per-dim confidence (data gaps -> developing)
+STAGE_VERSION = "0.4.0"          # plain-English findings with good/bad verdicts (0.3.0: conf gating)
 
 # --- Config (matches contract) ----------------------------------------------
 MAX_FOCUS_AREAS = 4
@@ -90,11 +90,11 @@ def load_json(path: Path) -> dict:
 # --- Static knowledge: why-it-matters, drills, developing descriptors -------
 
 WHY = {
-    "net_play": ("USAPA 3.5-4.0 players win the net: they get to the kitchen "
-                 "line, hold it together, and avoid being caught in the "
-                 "transition zone."),
-    "movement": ("Efficient court coverage and recovery keep you in position "
-                 "to play the next ball instead of reaching or scrambling."),
+    "net_play": ("USAPA 3.5-4.0 players win the net: they get up to the kitchen "
+                 "line, hold it together as a team, and avoid getting stuck back "
+                 "in the middle of the court."),
+    "movement": ("Good footwork and quick recovery keep you in position to play "
+                 "the next ball instead of reaching or scrambling."),
     "error_control": ("Cutting unforced errors is the fastest way up the rating "
                       "ladder — higher levels simply miss less."),
     "shot_skill": ("Reliable third-shot drops and a varied, controlled shot mix "
@@ -217,6 +217,15 @@ def _pct(v: Optional[float]) -> Optional[str]:
     return f"{v * 100:.0f}%" if isinstance(v, (int, float)) else None
 
 
+def _verdict(v: Optional[float], lo: float, hi: float,
+             low: str, mid: str, high: str) -> Optional[str]:
+    """Plain good/bad phrase for a value's qualitative band (<lo / [lo,hi) / >=hi).
+    None when the value is missing (caller supplies a generic fallback)."""
+    if not isinstance(v, (int, float)):
+        return None
+    return low if v < lo else (high if v >= hi else mid)
+
+
 # --- Per-dimension finding + drill selection --------------------------------
 
 def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
@@ -225,69 +234,105 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
     driver value is missing (never fabricates a number)."""
     keys: List[str] = []
     if dim == "net_play":
-        k = _pct(dr.get("user_kitchen_time_frac"))
-        t = _pct(dr.get("user_transition_time_frac"))
-        b = _pct(dr.get("both_at_kitchen_frac"))
-        parts = []
-        if k:
-            parts.append(f"{k} of rally time at the kitchen line")
-        if t:
-            parts.append(f"{t} in the transition zone")
-        if b:
-            parts.append(f"partners both at the line just {b} of the time")
-        finding = ("Net positioning: " + "; ".join(parts) + "."
-                   if parts else "Limited time established at the kitchen line.")
+        k = dr.get("user_kitchen_time_frac")
+        t = dr.get("user_transition_time_frac")
+        b = dr.get("both_at_kitchen_frac")
+        kv = _verdict(k, 0.25, 0.45,
+                      "so you're not getting up to the kitchen line often enough",
+                      "so you get there but don't hold it for the whole point",
+                      "so you get up there and hold it well")
+        s = (f"You're at the kitchen line about {_pct(k)} of each rally, {kv}"
+             if kv else "You're spending very little time up at the kitchen line")
+        bv = _verdict(b, 0.25, 0.50,
+                      "you and your partner are rarely at the line together at once",
+                      "you and your partner get to the line together only part of "
+                      "the time",
+                      "and you get to the line together as a team well")
+        if bv:
+            s += f"; {bv} ({_pct(b)} of the rally)"
+        finding = s + "."
         keys.append("get_to_line")
-        if (dr.get("both_at_kitchen_frac") or 0) < 0.30:
+        if (b or 0) < 0.30:
             keys.append("move_as_unit")
-        if (dr.get("user_transition_time_frac") or 0) > 0.25:
+        if (t or 0) > 0.25:
             keys.append("transition_resets")
     elif dim == "movement":
         cov = _pct(dr.get("court_coverage_frac"))
-        finding = (f"Court coverage of your half is {cov}."
-                   if cov else "Court coverage looks limited.")
+        dpm = dr.get("distance_ft_per_min")
+        obs = []
+        if cov:
+            obs.append(f"you range across about {cov} of your side of the court")
+        if isinstance(dpm, (int, float)):
+            obs.append(f"and move roughly {int(round(dpm))} ft per minute of play")
+        if obs:
+            finding = ("During points " + " ".join(obs)
+                       + ". On its own that isn't good or bad (strong players often "
+                       "move less but get to better spots), so the lever here is "
+                       "footwork: split-stepping as your opponent hits and recovering "
+                       "to a ready position between shots.")
+        else:
+            finding = ("The lever for your movement is footwork — split-stepping as "
+                       "your opponent hits and recovering to a ready position between "
+                       "shots — rather than simply covering more ground.")
         keys.append("split_step_recover")
         if (dr.get("court_coverage_frac") or 0) < 0.5:
             keys.append("coverage_ladder")
     elif dim == "error_control":
         epr = dr.get("errors_per_rally")
-        finding = (f"Attributed error rate ~{epr:.2f} per rally. "
-                   "(Forced/unforced split unavailable until real ball.)"
+        finding = ((f"You're giving away roughly {epr:.1f} point(s) per rally on "
+                    "mistakes — the single biggest lever at your level, since "
+                    "higher-rated players simply miss less. (We can't split forced "
+                    "vs unforced errors yet; that needs the real-ball upgrade.)")
                    if isinstance(epr, (int, float))
-                   else "Error rate is elevated for the target level.")
+                   else ("Cutting unforced mistakes is the quickest way up — "
+                         "higher-rated players simply miss less."))
         keys += ["coop_dink_count", "reset_under_pressure"]
     elif dim == "shot_skill":
-        drop = _pct(dr.get("third_shot_drop_rate"))
+        drop = dr.get("third_shot_drop_rate")
         var = dr.get("shot_variety")
-        parts = []
-        if drop:
-            parts.append(f"third-shot drop rate {drop}")
-        if isinstance(var, (int, float)):
-            parts.append(f"{int(var)} shot type(s) used")
-        finding = ("Shot skill: " + "; ".join(parts) + "."
-                   if parts else "Shot mix is narrow / inconsistent.")
-        if (dr.get("third_shot_drop_rate") or 0) < 0.4:
+        dv = _verdict(drop, 0.35, 0.65,
+                      "so you drive far more third shots than you drop them",
+                      "so it's roughly a coin-flip rather than a drop you rely on",
+                      "so you're favouring the drop, which is what higher levels do")
+        finding = ((f"On the third shot you drop the ball about {_pct(drop)} of the "
+                    f"time, {dv}.")
+                   if dv else
+                   ("Your third-shot and shot selection are still developing — a "
+                    "drop you can trust is the skill that moves 3.5 players to 4.0."))
+        if (drop or 0) < 0.4:
             keys.append("third_shot_drop_reps")
-        if (dr.get("shot_variety") or 0) < 4:
+        if (var or 0) < 4:
             keys.append("shot_variety_ladder")
         keys.append("soft_game_targets")
     elif dim == "serve":
-        sf = _pct(dr.get("serve_fault_rate"))
-        finding = (f"Serve-fault rate {sf}." if sf
-                   else "Serve consistency needs work.")
-        if (dr.get("serve_fault_rate") or 0) > 0.1:
+        sf = dr.get("serve_fault_rate")
+        sv = _verdict(sf, 0.05, 0.15,
+                      "so your serve is reliable",
+                      "so it mostly goes in but faults more than it should",
+                      "so you're faulting too many serves and giving away free points")
+        finding = (f"About {_pct(sf)} of your serves are faults, {sv}."
+                   if sv else
+                   "Getting a consistent, deep serve in play starts the point on "
+                   "your terms.")
+        if (sf or 0) > 0.1:
             keys.append("deep_serve_targets")
         keys.append("pre_serve_routine")
     elif dim == "rally_consistency":
         ml = dr.get("mean_rally_length")
-        finding = (f"Average rally length ~{ml:.1f} shots."
-                   if isinstance(ml, (int, float))
-                   else "Rallies end quickly / lack sustained exchanges.")
+        rv = _verdict(ml, 4.0, 8.0,
+                      "on the short side, so points end quickly",
+                      "a reasonable length but short of the sustained exchanges the "
+                      "next level rallies through",
+                      "already the sustained length the next level rallies through")
+        finding = (f"Your rallies last about {ml:.0f} shots on average, which is {rv}."
+                   if rv else
+                   "Your rallies are ending quickly; the next level keeps the ball "
+                   "in play longer, especially in the dinking exchanges at the net.")
         keys.append("sustained_rally_game")
         if (dr.get("volley_rate") or 0) < 0.15:
             keys.append("volley_exchanges")
     else:
-        finding = "Below the target level."
+        finding = "This area is below your target level."
     # de-dup preserve order, cap at 3, guarantee >= 1
     seen, ordered = set(), []
     for k in keys:

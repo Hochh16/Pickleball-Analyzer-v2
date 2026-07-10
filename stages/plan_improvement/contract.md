@@ -116,8 +116,8 @@ missing/malformed → fail loudly.
       "current_subscore": 2.78,
       "gap_to_target": 1.22,
       "priority_score": 0.244,
-      "finding": "Only 13% of rally time at the kitchen line and 32% in the transition zone; partners are both at the line just 2% of the time.",
-      "why_it_matters": "USAPA 3.5–4.0 players win the net: they get to the kitchen line, hold it together, and avoid being caught in the transition zone.",
+      "finding": "You're at the kitchen line about 13% of each rally, so you're not getting up to the kitchen line often enough; you and your partner are rarely at the line together at once (2% of the rally).",
+      "why_it_matters": "USAPA 3.5–4.0 players win the net: they get up to the kitchen line, hold it together as a team, and avoid getting stuck back in the middle of the court.",
       "drills": [
         {"name": "Get-to-the-line", "cue": "After every return, sprint to the NVZ line and freeze before the next ball — 'get to the line, then play.'"},
         {"name": "Move as a unit", "cue": "Shadow your partner across the kitchen keeping ~8–10 ft spacing; close the middle together."},
@@ -222,9 +222,16 @@ missing/malformed → fail loudly.
     > Focus areas carry NO capture/app advice — analysis-reliability actions live
     > in the separate `operator_considerations` block below, a different audience
     > (the operator who records/configures) and lower priority than coaching.
-  - `finding` — a plain-language sentence built from the dimension's
-    `driver_metrics` (e.g. kitchen %, transition %, error rate). Numbers come
-    straight from rating.json so the finding can't drift from the rating.
+  - `finding` — a plain-language, second-person sentence built from the
+    dimension's `driver_metrics` (e.g. kitchen %, third-shot-drop %). It pairs the
+    player's number with a **good/bad verdict** (`_verdict` bands the value into
+    not-enough / okay-but / doing-well) so the reader knows whether the number is
+    a problem — a raw stat like "court coverage 37%" told them nothing. No internal
+    jargon ("transition zone", "shot types used", "attributed error rate"); where a
+    metric isn't inherently good or bad (court coverage / distance), the finding
+    says so and points at the trainable lever instead of faking a verdict. Numbers
+    come straight from rating.json so the finding can't drift from the rating; a
+    missing driver falls back to a generic sentence (never a fabricated number).
   - `drills` — 1–3 entries selected from the built-in library for that
     dimension, some chosen conditionally on the driver values (e.g. high
     transition time → include the "Transition resets" drill).
