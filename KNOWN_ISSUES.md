@@ -670,6 +670,28 @@ how Stage 8 maps player foot positions to zones (and whether far-side drift or a
 polygon/threshold error is the cause). FIRST item in the fix program (it drags the
 rating). Re-validate against the rendered report.
 
+> **RESOLVED (2026-07-09, Stage 8 v0.3.0, commit pending).** The zone *mapping*
+> (`zone_from_court_y`) was NOT the bug — it correctly maps the marked kitchen line
+> (court_y≈15) to "kitchen", and when a player genuinely stands at the line the
+> pipeline reads it right. The real root cause: **court position was taken from the
+> bounding-box bottom = the BACK foot.** For a net-facing near player with a
+> staggered stance (step the back foot back to dig out a low ball), the back foot
+> sits several feet behind where the player is playing, so a kitchen-line player
+> was mis-classified as transition. Operator's rule: judge position by the FRONT
+> foot ("front foot within ~2 ft of the kitchen line = at the kitchen"). Fix: Stage
+> 8 now derives court position from the **net-most ankle** (`poses.parquet`,
+> projected via `court.json` `image_to_court`), bbox-foot fallback per frame. The
+> 2-ft tolerance is already the buffer in `KITCHEN_MAX_DIST_FT` (9 = 7 NVZ + 2).
+> **pb_2min result:** user kitchen 5.4%→**26.2%**, partner 33%→**50.4%**,
+> both-at-kitchen (near) 0.3%→**22.6%**; opponents unchanged (far-side bbox bottom
+> already coincides with the front foot — no regression). Operator-validated on the
+> rendered frame-532 overlay (front-foot at the line vs back-foot in transition).
+> **Two follow-ups noted, not yet done:** (1) the metric averages over the WHOLE
+> clip incl. ~42% dead-time (between-points baseline standing) — rally-scoping would
+> further sharpen it (rally-only lifts user kitchen to ~33%); (2) confirm which near
+> player is the user vs partner (Stage 2.5 role stability) if the split still looks
+> off to the operator.
+
 ## Stage 7 — rally over-segmentation (micro-rallies) (2026-07-07)
 
 **Observed:** 2026-07-07, same consumer-report review. Stage 7 segmented **8 rallies**

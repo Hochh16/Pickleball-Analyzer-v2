@@ -88,10 +88,11 @@ Per-video folder positional argument.
 | `rallies.json` | Stage 7 | rally records (`shot_ids`, `n_shots`, `duration_sec`, `server_track_id`, `end_reason`, `end_signals.hitter_side`) — rally-length + serve + error-attribution metrics |
 | `classified.json` | Stage 6 | per-shot (`shot_id`, `track_id`, `is_user`, `is_serve`, `stroke_side`, `shot_type`, `is_volley`, `features.contact_zone`, `features.post_speed_ftps`) — shot-mix + third-shot + per-role shot stats; also `ball_source` for the synthetic flag |
 | `bounces.json` | Stage 5.5 | per-bounce (`court_xy_ft`, `is_in_court`, `court_zone`, `out_side`) — ball-landing heatmap + in/out rate |
-| `players.parquet` | Stage 2 | per-frame `track_id`, `court_x_ft`, `court_y_ft`, `in_court`, `transient` — position / coverage stats + position heatmap |
+| `players.parquet` | Stage 2 | per-frame `track_id`, `court_x_ft`, `court_y_ft`, `in_court`, `transient` — bbox-foot position; fallback when no pose |
+| `poses.parquet` | Stage 3 | per-frame `left/right_ankle_{x,y}_px` + `_visibility`, `pose_detected` — **front-foot** court position (net-most ankle) for all position/zone metrics |
 | `track_roles.json` | Stage 2.5 | `track_roles[tid].role` + `.confidence`, `roles[role].track_ids` — maps every shot/track to a logical player |
 | `roster.json` | setup | `handedness` per role — carried into per-role output for downstream (not used in any formula here) |
-| `court.json` | Stage 1 | `court_geometry_feet` (`length_ft=44`, `width_ft=20`), `video.fps` — net line, grid extent, time base |
+| `court.json` | Stage 1 | `court_geometry_feet` (`length_ft=44`, `width_ft=20`), `video.fps`, `homography.image_to_court` (project pose ankles → court feet) — net line, grid extent, time base |
 | `court_zones.json` | Stage 1 | zone depth bands — documented; the actual binning reuses Stage 6's `zone_from_court_y` constants (single source of truth) |
 
 CLI flags (defaults in Configuration): `--force`, `--log-level`,
@@ -339,8 +340,24 @@ CLI flags (defaults in Configuration): `--force`, `--log-level`,
   (team-level) errors are NOT split into per-role here — they live in
   `error_attribution.by_owner.team_*`. Documented so the per-role number
   doesn't silently absorb ambiguous attribution.
+- **Court position = the FRONT foot (net-most ankle), not the bbox foot.** A
+  player's per-frame court position is taken from the ankle nearest the net
+  (`poses.parquet` `left/right_ankle`, projected to court feet via
+  `court.json` `image_to_court`), falling back to `players.parquet`'s bbox-bottom
+  foot per frame when pose is missing. Why: the bbox bottom is the player's BACK
+  foot for a net-facing near player, so a staggered stance (step the back foot
+  back to dig out a ball) reads several feet behind where the player is really
+  playing — a kitchen-line player mis-classified as transition. This was the
+  root cause of the 2026-07-07 net-play bug (user kitchen time read ~5% while the
+  player lived at the line). The operator's rule "front foot within ~2 ft of the
+  kitchen line still counts as at the kitchen" is satisfied automatically: that
+  2 ft is already the buffer in `KITCHEN_MAX_DIST_FT` (9 = 7-ft NVZ + 2). The
+  net-most ankle is symmetric for near and far players; the far side is unchanged
+  by design (its bbox bottom already coincides with the front foot). All position
+  views below (zones, lateral, area, heatmap, movement) use this front-foot
+  position.
 - **`players.<role>.position` — court-area time (answers "% time in each area
-  of the court").** Three views of the same per-frame foot positions
+  of the court").** Three views of the same per-frame front-foot positions
   (`court_x_ft`, `court_y_ft`), each a set of fractions summing to ~1.0 over
   the role's valid in-extent frames:
   - **`zone_time_frac`** — DEPTH (kitchen / transition / baseline) via Stage

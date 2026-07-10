@@ -42,7 +42,7 @@ from stages.segment_rallies.segment_rallies import main as rallies_main
 from stages.classify_tracks.classify_tracks import main as roles_main
 from stages.compute_metrics.compute_metrics import (
     main as metrics_main, role_valid_rows, role_frame_pos, bin_positions,
-    rally_len_bucket, PLAYING_ROLES,
+    pose_front_foot, role_front_foot_pos, rally_len_bucket, PLAYING_ROLES,
 )
 
 TEST_FOLDER = Path("data/test_clip")
@@ -259,11 +259,17 @@ def cond_heatmaps(m) -> bool:
     helpers; it must equal the player_position grid sum. And ball_landing sum
     must equal bounces with an in-extent court projection."""
     df = pd.read_parquet(TEST_FOLDER / "players.parquet")
+    # mirror production: front foot (net-most ankle) where pose exists, bbox foot else
+    poses_p = TEST_FOLDER / "poses.parquet"
+    poses_df = pd.read_parquet(poses_p) if poses_p.exists() else None
+    court = load("court.json")
+    i2c = (court.get("homography", {}) or {}).get("image_to_court")
+    pose_ff = pose_front_foot(poses_df, i2c) if (poses_df is not None and i2c) else {}
     failures = []
     for r in PLAYING_ROLES:
         tids = m["players"][r]["track_ids"]
         sub = role_valid_rows(df, tids)
-        fpos = role_frame_pos(sub)
+        fpos = role_front_foot_pos(role_frame_pos(sub), pose_ff, tids)
         _, n_ext = bin_positions(list(fpos.values()))
         grid = _v(m["heatmaps"]["player_position"][r])
         gsum = sum(sum(row) for row in grid)

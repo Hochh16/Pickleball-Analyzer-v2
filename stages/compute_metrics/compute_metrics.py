@@ -28,10 +28,11 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
-STAGE_VERSION = "0.2.0"       # Foundation #3 — confidence propagation
+STAGE_VERSION = "0.3.0"       # Front-foot court position for net-play zones (net-most ankle)
 
 # --- Config (matches contract) ----------------------------------------------
 HEATMAP_BIN_FT = 2.0          # court grid bin -> 10 cols (x) x 22 rows (y)
@@ -39,6 +40,7 @@ ROLE_CONF_FLOOR = 0.55        # role_confidence below this -> role_contaminated
 NET_Y_FT = 22.0               # net line (= length_ft / 2)            [Stage 6]
 KITCHEN_MAX_DIST_FT = 9.0     # effective kitchen depth from net      [Stage 6]
 BASELINE_MIN_DIST_FT = 17.0   # within ~5ft of own baseline -> baseline [Stage 6]
+POSE_ANKLE_MIN_VIS = 0.3      # ankle-landmark visibility floor for front-foot depth
 COURT_LEN_FT = 44.0
 COURT_WID_FT = 20.0
 MOVE_MIN_STEP_FT = 0.25       # per-frame foot delta below this = jitter
@@ -307,7 +309,9 @@ def role_valid_rows(df: pd.DataFrame, track_ids: List[int]) -> pd.DataFrame:
 
 def role_frame_pos(sub: pd.DataFrame) -> Dict[int, Tuple[float, float]]:
     """frame -> (mean court_x, mean court_y) for a role's rows (averages any
-    duplicate rows at the same frame)."""
+    duplicate rows at the same frame). Uses the bounding-box foot (bbox bottom):
+    for a net-facing near player this is the BACK foot, which sits farther from
+    the net than the player really stands — see pose_front_foot() for the fix."""
     if sub.empty:
         return {}
     g = sub.groupby("frame")[["court_x_ft", "court_y_ft"]].mean()
@@ -315,9 +319,76 @@ def role_frame_pos(sub: pd.DataFrame) -> Dict[int, Tuple[float, float]]:
             for f, r in g.iterrows()}
 
 
-def compute_position(sub: pd.DataFrame, role: str, fps: float,
+def pose_front_foot(poses_df: Optional[pd.DataFrame],
+                    image_to_court) -> Dict[int, Dict[int, Tuple[float, float]]]:
+    """track_id -> {frame -> (court_x, court_y)} from the FRONT foot (the ankle
+    nearest the net), projected to court feet via the ground homography.
+
+    Why the front foot: a player's court position comes from the bbox bottom,
+    which for a net-facing near player is the BACK foot. With a staggered stance
+    (step the back foot back to take a ball) that reads several feet behind where
+    the player is playing — a kitchen-line player mis-classified as transition.
+    The operator's rule: judge court position by the front foot (front foot within
+    ~2 ft of the kitchen line still counts as being at the kitchen). The net-most
+    ankle implements that symmetrically for both near and far players. The 2-ft
+    tolerance is already the kitchen buffer baked into KITCHEN_MAX_DIST_FT (9 =
+    7-ft NVZ + 2 ft), so no extra threshold is needed once we use the front foot.
+    Ankle landmarks are ~ground level; residual height bias projects toward the
+    net a touch but far less than the back-foot stance error it replaces."""
+    if poses_df is None or poses_df.empty:
+        return {}
+    df = poses_df
+    if "pose_detected" in df.columns:
+        df = df[df["pose_detected"].astype(bool)]
+    if df.empty:
+        return {}
+    H = np.asarray(image_to_court, dtype=np.float64)
+
+    def proj(xcol: str, ycol: str) -> Tuple[np.ndarray, np.ndarray]:
+        pts = np.column_stack([df[xcol].to_numpy(dtype=np.float64),
+                               df[ycol].to_numpy(dtype=np.float64),
+                               np.ones(len(df))])
+        o = pts @ H.T
+        w = o[:, 2]
+        return o[:, 0] / w, o[:, 1] / w
+
+    lx, ly = proj("left_ankle_x_px", "left_ankle_y_px")
+    rx, ry = proj("right_ankle_x_px", "right_ankle_y_px")
+    lvis = df["left_ankle_visibility"].to_numpy(dtype=np.float64)
+    rvis = df["right_ankle_visibility"].to_numpy(dtype=np.float64)
+    ok_l = lvis >= POSE_ANKLE_MIN_VIS
+    ok_r = rvis >= POSE_ANKLE_MIN_VIS
+    # net-most ankle = the (visible) ankle whose court_y is closest to the net.
+    dl = np.where(ok_l, np.abs(ly - NET_Y_FT), np.inf)
+    dr = np.where(ok_r, np.abs(ry - NET_Y_FT), np.inf)
+    use_left = dl <= dr
+    fx = np.where(use_left, lx, rx)
+    fy = np.where(use_left, ly, ry)
+    valid = np.isfinite(fx) & np.isfinite(fy) & (np.minimum(dl, dr) < np.inf)
+    frames = df["frame"].to_numpy()
+    tids = df["track_id"].to_numpy()
+    out: Dict[int, Dict[int, Tuple[float, float]]] = {}
+    for tid, fr, x, y, v in zip(tids, frames, fx, fy, valid):
+        if not v:
+            continue
+        out.setdefault(int(tid), {})[int(fr)] = (float(x), float(y))
+    return out
+
+
+def role_front_foot_pos(bbox_fpos: Dict[int, Tuple[float, float]],
+                        pose_ff: Dict[int, Dict[int, Tuple[float, float]]],
+                        track_ids: List[int]) -> Dict[int, Tuple[float, float]]:
+    """Merge a role's per-frame position: front foot (pose) where available,
+    bbox foot otherwise. A role is one logical person, so at most one track
+    contributes per frame; if tracks overlap, the later one in track_ids wins."""
+    merged = dict(bbox_fpos)
+    for tid in track_ids:
+        merged.update(pose_ff.get(tid, {}))
+    return merged
+
+
+def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float,
                      rally_windows: List[Tuple[int, int]], n_rallies: int) -> dict:
-    fpos = role_frame_pos(sub)
     n_frames = len(fpos)
     own_far = role in FAR_ROLES
     if n_frames == 0:
@@ -507,6 +578,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     rallies_path = folder / "rallies.json"
     bounces_path = folder / "bounces.json"
     players_path = folder / "players.parquet"
+    poses_path = folder / "poses.parquet"
     track_roles_path = folder / "track_roles.json"
     roster_path = folder / "roster.json"
     court_path = folder / "court.json"
@@ -712,6 +784,23 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     rally_windows = [(int(r["start_frame"]), int(r["end_frame"])) for r in rallies]
     n_rallies = len(rallies)
 
+    # Front-foot court position (net-most ankle) from pose. Court position for
+    # every position metric — zones, heatmaps, movement — is the front foot where
+    # pose is available, falling back to the bbox foot per frame. See
+    # pose_front_foot() for why (back-foot bias mis-classifies kitchen play).
+    poses_df = pd.read_parquet(poses_path) if poses_path.exists() else None
+    image_to_court = (court.get("homography", {}) or {}).get("image_to_court")
+    if poses_df is not None and image_to_court is not None:
+        pose_ff = pose_front_foot(poses_df, image_to_court)
+    else:
+        pose_ff = {}
+        warnings.append(
+            "poses.parquet or court homography unavailable: court position falls "
+            "back to the bbox (back) foot; net-play kitchen time is under-counted "
+            "for net-facing players.")
+        log.warning("front-foot position unavailable (no poses.parquet / homography); "
+                    "using bbox foot — kitchen time will be under-counted.")
+
     role_positions: Dict[str, dict] = {}
     role_fpos: Dict[str, Dict[int, Tuple[float, float]]] = {}
     player_pos_heatmaps: Dict[str, List[List[int]]] = {}
@@ -720,14 +809,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     for r in PLAYING_ROLES:
         sub = role_valid_rows(df, role_to_tids[r])
-        role_positions[r] = compute_position(sub, r, fps, rally_windows, n_rallies)
+        fpos = role_front_foot_pos(role_frame_pos(sub), pose_ff, role_to_tids[r])
+        role_positions[r] = compute_position(fpos, r, fps, rally_windows, n_rallies)
         # confidence base for position metrics: near-side reliable / far-side
         # zone-only (Foundation #1). Absent column (pre-#1 fixtures) -> assume 1.0.
         if "court_pos_reliable" in sub.columns and len(sub):
             role_frac_reliable[r] = float(sub["court_pos_reliable"].mean())
         else:
             role_frac_reliable[r] = 1.0
-        fpos = role_frame_pos(sub)
         role_fpos[r] = fpos
         grid, n_ext = bin_positions(list(fpos.values()))
         player_pos_heatmaps[r] = grid
