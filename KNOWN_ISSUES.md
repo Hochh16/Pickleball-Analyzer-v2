@@ -722,6 +722,21 @@ ball-out-of-play splitter.
 **Where to fix:** a minimum-rally filter in Stage 7 (min duration and/or min shots —
 a real rally isn't 0.8s). Easy. Re-validate count against the operator's eye.
 
+> **RESOLVED (2026-07-09, Stage 7 v0.3.0, commit `13b629c`).** Added a
+> minimum-rally filter: a segment is dropped only when it is **BOTH** shorter than
+> `MIN_RALLY_SEC` (2.0s) **AND** has fewer than `MIN_RALLY_SHOTS` (3) shots
+> (conservative AND-logic — either long *or* many-shot always survives). Note
+> rally 7 starts on a **falsely detected serve**, so a serve-flag guard alone could
+> not catch it; size is the only clean separator (real rallies here ≥5.45s / ≥4
+> shots). A lone serve-fault (`n_shots==1`) is guarded and never dropped. Dropped
+> shots roll into `unassigned_shots` (accounting reconciles) with an explicit
+> warning listing each dropped span. Real ball only; synthetic bars unmoved.
+> **pb_2min: 8 → 6 rallies** (matches the operator's count); mean rally length
+> 5.19 → 5.67 shots; `rally_consistency` 3.52 → 3.73. Smoke: Stage 7 9/9, Stage 8
+> 16/16. *Accepted limitation:* a genuine ultra-short point (2 shots, <2s) would
+> also drop — rare, and not separable from between-point taps on the noisy real
+> ball. Tunable via `--min-rally-sec` / `--min-rally-shots`.
+
 ## Rating — dimensions do not match the official USAPA standard (2026-07-07)
 
 **Observed:** 2026-07-07. Stage 9 rates 6 homegrown dimensions (net_play, movement,
