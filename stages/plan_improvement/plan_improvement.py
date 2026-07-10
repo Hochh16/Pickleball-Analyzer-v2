@@ -29,7 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1               # improvement_plan.json schema (additive: +limited_by/remedy)
 METRICS_SCHEMA_VERSION = 2       # Stage 8 metrics.json schema (read-but-not-consumed)
-STAGE_VERSION = "0.4.0"          # plain-English findings with good/bad verdicts (0.3.0: conf gating)
+STAGE_VERSION = "0.5.0"          # re-keyed to Stage 9's 7 USAPA categories (0.4.0: plain findings)
 
 # --- Config (matches contract) ----------------------------------------------
 MAX_FOCUS_AREAS = 4
@@ -46,10 +46,14 @@ OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter
 ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
                                  # coaching signal -> routed to developing_capability
 UNMEASURED_REASON = {
-    "serve": "Serves aren't reliably detected yet (needs serve detection, C3) — "
-             "can't assess serve skill.",
-    "error_control": "Errors aren't attributable yet (rally end_reasons are "
-                     "bounce-recall-gated, mostly unknown) — can't assess error control.",
+    "serve_return": "Serves aren't reliably detected yet (needs serve detection, "
+                    "C3) and returns aren't separated — can't assess serve/return yet.",
+    "forehand": "We can count forehands but can't yet judge their pace, depth, or "
+                "consistency (needs shot speed, landing depth, and reliable "
+                "stroke-side) — forehand quality isn't assessable yet.",
+    "backhand": "We can count backhands but can't yet judge their quality (needs "
+                "shot speed, landing depth, and reliable stroke-side) — not "
+                "assessable yet.",
 }
 LIMITER_CATEGORY = {"sample_size": "more_data",
                     "measurement": "capture_quality",
@@ -89,20 +93,23 @@ def load_json(path: Path) -> dict:
 
 # --- Static knowledge: why-it-matters, drills, developing descriptors -------
 
+# Keyed by the 7 official USAPA categories (Stage 9 v0.4.0).
 WHY = {
-    "net_play": ("USAPA 3.5-4.0 players win the net: they get up to the kitchen "
-                 "line, hold it together as a team, and avoid getting stuck back "
-                 "in the middle of the court."),
-    "movement": ("Good footwork and quick recovery keep you in position to play "
-                 "the next ball instead of reaching or scrambling."),
-    "error_control": ("Cutting unforced errors is the fastest way up the rating "
-                      "ladder — higher levels simply miss less."),
-    "shot_skill": ("Reliable third-shot drops and a varied, controlled shot mix "
-                   "are what separate 3.5 from 4.0+ players."),
-    "serve": ("A consistent, deep serve denies the returner easy offense and "
-              "starts the point on your terms."),
-    "rally_consistency": ("Sustaining longer rallies and being comfortable in "
-                          "net exchanges reflects control under pressure."),
+    "strategy": ("Strategy is where points are won: getting up to the kitchen "
+                 "line, holding it with your partner, covering the court, and "
+                 "keeping the ball in play until you get one you can attack."),
+    "third_shot": ("A reliable third-shot drop is what lets your team get off the "
+                   "baseline and up to the net — the classic 3.0-to-4.0 gate."),
+    "dink": ("The soft game at the kitchen — patient, controlled dinks — is how "
+             "3.5+ players build points and draw errors instead of forcing shots."),
+    "volley": ("Punch volleys, blocks, and resets at the net decide the fast "
+               "exchanges; controlling them keeps you on offense without overhitting."),
+    "serve_return": ("A deep, in-play serve and return start the point on your "
+                     "terms and deny the opponent easy offense."),
+    "forehand": ("A dependable forehand with pace, direction, and depth is the "
+                 "groundstroke you build offense around."),
+    "backhand": ("A steady backhand you can drive, dink, and reset with takes away "
+                 "the side opponents most like to target."),
 }
 
 DRILLS = {
@@ -233,7 +240,7 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
     from its rating.json driver_metrics. Falls back to generic phrasing when a
     driver value is missing (never fabricates a number)."""
     keys: List[str] = []
-    if dim == "net_play":
+    if dim == "strategy":
         k = dr.get("user_kitchen_time_frac")
         t = dr.get("user_transition_time_frac")
         b = dr.get("both_at_kitchen_frac")
@@ -247,7 +254,7 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
                       "you and your partner are rarely at the line together at once",
                       "you and your partner get to the line together only part of "
                       "the time",
-                      "and you get to the line together as a team well")
+                      "and you cover the line together as a team well")
         if bv:
             s += f"; {bv} ({_pct(b)} of the rally)"
         finding = s + "."
@@ -256,40 +263,9 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
             keys.append("move_as_unit")
         if (t or 0) > 0.25:
             keys.append("transition_resets")
-    elif dim == "movement":
-        cov = _pct(dr.get("court_coverage_frac"))
-        dpm = dr.get("distance_ft_per_min")
-        obs = []
-        if cov:
-            obs.append(f"you range across about {cov} of your side of the court")
-        if isinstance(dpm, (int, float)):
-            obs.append(f"and move roughly {int(round(dpm))} ft per minute of play")
-        if obs:
-            finding = ("During points " + " ".join(obs)
-                       + ". On its own that isn't good or bad (strong players often "
-                       "move less but get to better spots), so the lever here is "
-                       "footwork: split-stepping as your opponent hits and recovering "
-                       "to a ready position between shots.")
-        else:
-            finding = ("The lever for your movement is footwork — split-stepping as "
-                       "your opponent hits and recovering to a ready position between "
-                       "shots — rather than simply covering more ground.")
-        keys.append("split_step_recover")
-        if (dr.get("court_coverage_frac") or 0) < 0.5:
-            keys.append("coverage_ladder")
-    elif dim == "error_control":
-        epr = dr.get("errors_per_rally")
-        finding = ((f"You're giving away roughly {epr:.1f} point(s) per rally on "
-                    "mistakes — the single biggest lever at your level, since "
-                    "higher-rated players simply miss less. (We can't split forced "
-                    "vs unforced errors yet; that needs the real-ball upgrade.)")
-                   if isinstance(epr, (int, float))
-                   else ("Cutting unforced mistakes is the quickest way up — "
-                         "higher-rated players simply miss less."))
-        keys += ["coop_dink_count", "reset_under_pressure"]
-    elif dim == "shot_skill":
+        keys.append("split_step_recover")     # court coverage is part of strategy
+    elif dim == "third_shot":
         drop = dr.get("third_shot_drop_rate")
-        var = dr.get("shot_variety")
         dv = _verdict(drop, 0.35, 0.65,
                       "so you drive far more third shots than you drop them",
                       "so it's roughly a coin-flip rather than a drop you rely on",
@@ -297,40 +273,53 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
         finding = ((f"On the third shot you drop the ball about {_pct(drop)} of the "
                     f"time, {dv}.")
                    if dv else
-                   ("Your third-shot and shot selection are still developing — a "
-                    "drop you can trust is the skill that moves 3.5 players to 4.0."))
+                   ("A third-shot drop you can trust — used by choice, not chance — "
+                    "is the skill that moves 3.5 players to 4.0."))
         if (drop or 0) < 0.4:
             keys.append("third_shot_drop_reps")
-        if (var or 0) < 4:
-            keys.append("shot_variety_ladder")
-        keys.append("soft_game_targets")
-    elif dim == "serve":
+        keys += ["transition_resets", "soft_game_targets"]
+    elif dim == "dink":
+        df = dr.get("dink_frac")
+        dc = dr.get("dink_count")
+        fv = _verdict(df, 0.10, 0.30,
+                      "so you're rarely playing the soft dinking game",
+                      "so you mix in some dinks but lean on harder shots",
+                      "so you're comfortable playing the soft game")
+        finding = ((f"About {_pct(df)} of your shots are dinks ({dc} seen), {fv}.")
+                   if fv else
+                   ("Building patience in the dinking game — controlled dinks until "
+                    "you get an attackable ball — is a core 3.5+ skill."))
+        keys += ["coop_dink_count", "soft_game_targets"]
+    elif dim == "volley":
+        vr = dr.get("volley_rate")
+        finding = ((f"About {_pct(vr)} of your shots are volleys at the net; "
+                    "controlling and resetting them is what keeps net exchanges in "
+                    "your favour.")
+                   if vr is not None else
+                   "Getting comfortable controlling and resetting volleys at the net "
+                   "keeps the fast exchanges in your favour.")
+        keys += ["volley_exchanges", "reset_under_pressure"]
+    elif dim == "serve_return":
         sf = dr.get("serve_fault_rate")
+        ns = dr.get("n_serves") or 0
         sv = _verdict(sf, 0.05, 0.15,
                       "so your serve is reliable",
                       "so it mostly goes in but faults more than it should",
                       "so you're faulting too many serves and giving away free points")
-        finding = (f"About {_pct(sf)} of your serves are faults, {sv}."
-                   if sv else
-                   "Getting a consistent, deep serve in play starts the point on "
-                   "your terms.")
+        finding = ((f"About {_pct(sf)} of your serves are faults, {sv}.")
+                   if (sv and ns) else
+                   "Getting a consistent, deep serve and return in play starts the "
+                   "point on your terms.")
         if (sf or 0) > 0.1:
             keys.append("deep_serve_targets")
         keys.append("pre_serve_routine")
-    elif dim == "rally_consistency":
-        ml = dr.get("mean_rally_length")
-        rv = _verdict(ml, 4.0, 8.0,
-                      "on the short side, so points end quickly",
-                      "a reasonable length but short of the sustained exchanges the "
-                      "next level rallies through",
-                      "already the sustained length the next level rallies through")
-        finding = (f"Your rallies last about {ml:.0f} shots on average, which is {rv}."
-                   if rv else
-                   "Your rallies are ending quickly; the next level keeps the ball "
-                   "in play longer, especially in the dinking exchanges at the net.")
-        keys.append("sustained_rally_game")
-        if (dr.get("volley_rate") or 0) < 0.15:
-            keys.append("volley_exchanges")
+    elif dim in ("forehand", "backhand"):
+        cnt = dr.get(f"{dim}_count")
+        finding = (f"You hit {dim}s in the rallies we saw"
+                   + (f" ({cnt} seen)" if isinstance(cnt, int) else "")
+                   + ", but pace, depth, and consistency aren't measured yet, so we "
+                     "can't rate the shot — build a dependable, repeatable stroke.")
+        keys += ["shot_variety_ladder", "soft_game_targets"]
     else:
         finding = "This area is below your target level."
     # de-dup preserve order, cap at 3, guarantee >= 1
@@ -361,6 +350,19 @@ def next_half_step(current_band: str) -> float:
 def conf_label(c: float) -> str:
     """Map a real per-dimension confidence to an honest coaching label."""
     return "high" if c >= 0.6 else ("moderate" if c >= 0.3 else "low")
+
+
+def _category_events(name: str, drivers: dict) -> Optional[int]:
+    """Detected primary-event count for an event-gated category (else None). A
+    category resting on zero detected events (e.g. 0 dinks in a 5-shot sample) is a
+    data gap, not a real weakness — its low subscore is a detection artifact."""
+    return {
+        "dink": drivers.get("dink_count"),
+        "volley": drivers.get("n_volley"),
+        "serve_return": drivers.get("n_serves"),
+        "forehand": drivers.get("forehand_count"),
+        "backhand": drivers.get("backhand_count"),
+    }.get(name)
 
 
 def compute_plan(rating: dict, metrics: Optional[dict],
@@ -399,18 +401,25 @@ def compute_plan(rating: dict, metrics: Optional[dict],
             hit = op_hits.setdefault(cat, {"limiters": set(), "affects": []})
             hit["limiters"].add(limited_by)
             hit["affects"].append(name)
-        # A REAL dimension at near-zero confidence is a DATA GAP, not a signal —
-        # e.g. serve (0 serves detected) or error_control (errors undetectable:
-        # end_reasons all unknown). Presenting it as a weakness to fix OR a
-        # strength to celebrate would coach off missing data, so route it to
-        # developing_capability with the reason and skip focus/strength.
-        if data_source == "real" and dconf < ASSESS_CONF_FLOOR:
+        # A REAL category we can't actually assess is a DATA GAP, not a signal:
+        # (a) near-zero confidence (serve_return with 0 serves; forehand/backhand
+        # count-only), or (b) zero detected primary events (e.g. 0 dinks in a small
+        # shot sample — a low subscore that's a detection artifact). Presenting
+        # either as a weakness to fix OR a strength to celebrate would coach off
+        # missing data, so route to developing_capability and skip focus/strength.
+        n_events = _category_events(name, drivers)
+        if data_source == "real" and (dconf < ASSESS_CONF_FLOOR or n_events == 0):
+            reason = UNMEASURED_REASON.get(name)
+            if reason is None:
+                reason = (f"We didn't see enough of your {name.replace('_', ' ')} "
+                          f"shots to assess it yet ({n_events} detected)."
+                          if n_events == 0 else
+                          f"{name} not reliably measured yet (limited_by {limited_by}).")
             unmeasured.append({
                 "dimension": name,
                 "confidence": round(dconf, 3),
                 "limited_by": limited_by,
-                "reason": UNMEASURED_REASON.get(
-                    name, f"{name} not reliably measured yet (limited_by {limited_by})."),
+                "reason": reason,
             })
             continue
         if sub >= target_level:

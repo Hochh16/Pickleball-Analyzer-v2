@@ -24,17 +24,22 @@ from stages.classify_shots.classify_shots import main as classify_main
 from stages.segment_rallies.segment_rallies import main as rallies_main
 from stages.classify_tracks.classify_tracks import main as roles_main
 from stages.compute_metrics.compute_metrics import main as metrics_main
-from stages.rate.rate import main as rate_main
+from stages.rate.rate import main as rate_main, WEIGHTS
 from stages.plan_improvement.plan_improvement import (
     main as plan_main, compute_plan, next_half_step, OPERATOR_ACTION,
 )
 
 VALID_LIMITERS = {"sample_size", "measurement", "known_limit", "detection_floor"}
-# Mirror Stage 9's real behavior: error_control/serve are sample-size-limited,
-# the rest measurement-limited (used to wrap the synthetic test ratings).
-DIM_LIMITERS = {"net_play": "measurement", "movement": "measurement",
-                "error_control": "sample_size", "shot_skill": "measurement",
-                "serve": "sample_size", "rally_consistency": "measurement"}
+# Mirror Stage 9's real behavior for the 7 USAPA categories: serve_return is
+# sample-size-limited, the rest measurement-limited (used to wrap test ratings).
+DIM_LIMITERS = {"strategy": "measurement", "third_shot": "measurement",
+                "dink": "measurement", "volley": "measurement",
+                "serve_return": "sample_size", "forehand": "measurement",
+                "backhand": "measurement"}
+# Confidence per category mirroring the data reality: strategy is measured, the
+# soft/net categories partial, serve_return + count-only strokes not-assessable.
+DIM_CONF = {"strategy": 0.95, "third_shot": 0.6, "dink": 0.6, "volley": 0.6,
+            "serve_return": 0.05, "forehand": 0.05, "backhand": 0.05}
 
 TEST_FOLDER = Path("data/test_clip")
 SEED = 1234
@@ -46,9 +51,9 @@ REQUIRED_TOP_KEYS = {
     "reliability", "operator_considerations", "warnings", "params",
     "stage_version", "completed_at_utc",
 }
-DIM_NAMES = ["net_play", "movement", "error_control", "shot_skill", "serve",
-             "rally_consistency"]
-REAL_DIMS = {"net_play", "movement"}
+DIM_NAMES = ["strategy", "third_shot", "dink", "volley", "serve_return",
+             "forehand", "backhand"]
+REAL_DIMS = {"strategy"}
 
 
 def _fail(m): print(f"  FAIL: {m}")
@@ -102,27 +107,35 @@ SKILL_COVERAGE = {
 }
 
 DRIVERS = {
-    "net_play": {"user_kitchen_time_frac": 0.13, "both_at_kitchen_frac": 0.02,
-                 "user_transition_time_frac": 0.32},
-    "movement": {"court_coverage_frac": 0.55, "distance_ft_per_min": 57.0},
-    "error_control": {"errors_per_rally": 0.36, "unforced_rate": None},
-    "shot_skill": {"third_shot_drop_rate": 0.38, "shot_variety": 5,
-                   "soft_game_frac": 0.42, "unknown_type_frac": 0.12},
-    "serve": {"serve_fault_rate": 0.0, "n_serves": 12},
-    "rally_consistency": {"mean_rally_length": 5.7, "volley_rate": 0.12},
+    "strategy": {"user_kitchen_time_frac": 0.13, "both_at_kitchen_frac": 0.02,
+                 "user_transition_time_frac": 0.32, "distance_ft_per_min": 120.0,
+                 "unforced_error_rate": 0.36},
+    "third_shot": {"third_shot_drop_rate": 0.38,
+                   "third_shot_by_type": {"drop": 10, "drive": 15},
+                   "per_user": False},
+    "dink": {"dink_count": 20, "dink_frac": 0.2, "mean_rally_length": 5.7},
+    "volley": {"volley_rate": 0.25, "n_volley": 15},
+    "serve_return": {"serve_fault_rate": 0.0, "n_serves": 12, "return_metric": None},
+    "forehand": {"forehand_count": 40, "forehand_frac": 0.33, "pace_mph": None,
+                 "depth": None, "consistency": None},
+    "backhand": {"backhand_count": 30, "backhand_frac": 0.25, "pace_mph": None,
+                 "depth": None, "consistency": None},
 }
 
 
 def make_rating(subscores: dict, band="3.5", ball_source="synthetic") -> dict:
-    weights = {"net_play": 0.20, "movement": 0.10, "error_control": 0.25,
-               "shot_skill": 0.25, "serve": 0.10, "rally_consistency": 0.10}
     dims = []
     for n in DIM_NAMES:
         is_real = n in REAL_DIMS or ball_source == "real"
+        # mirror Stage 9: ball-derived categories are synth-gated x0.35 on the
+        # synthetic ball; count-only strokes are capped low regardless.
+        conf = DIM_CONF[n] if is_real else round(DIM_CONF[n] * 0.35, 4)
         dims.append({
-            "name": n, "subscore_level": subscores[n], "weight": weights[n],
-            "confidence": 1.0 if is_real else 0.35,
+            "name": n, "subscore_level": subscores[n], "weight": WEIGHTS[n],
+            "confidence": conf,
             "data_source": "real" if is_real else "synthetic",
+            "coverage_status": ("measured" if conf >= 0.5 else
+                                "partial" if conf >= 0.1 else "not_assessable"),
             "limited_by": DIM_LIMITERS[n],
             "driver_metrics": DRIVERS[n],
         })
@@ -166,18 +179,21 @@ def cond_focus_correctness(p) -> bool:
         failures.append("priority not contiguous 1..n")
     if len(fa) > p["params"]["max_focus_areas"]:
         failures.append("exceeds max_focus_areas")
-    # strengths == dims >= target. focus + strengths cover all dims UNLESS the
-    # focus list is capped at max_focus_areas (then low-priority below-target dims
-    # are legitimately dropped — neither focus nor strength).
+    # Every category lands in exactly one bucket: focus (below target, assessable),
+    # strength (>= target), or not_assessable_now (data gap: near-zero confidence or
+    # zero detected events). focus+strengths+not_assessable cover all dims UNLESS the
+    # focus list is capped at max_focus_areas (low-priority below-target dims dropped).
     strong_dims = {s["dimension"] for s in p["strengths"]}
     focus_dims = {f["dimension"] for f in fa}
+    na_dims = {e["dimension"]
+               for e in p["developing_capability"]["not_assessable_now"]}
     if strong_dims & focus_dims:
         failures.append("dimension in both focus and strengths")
-    covered = len(strong_dims) + len(focus_dims)
+    covered = len(strong_dims) + len(focus_dims) + len(na_dims)
     capped = len(fa) >= p["params"]["max_focus_areas"]
     if covered != len(DIM_NAMES) and not capped:
-        failures.append(f"focus+strengths cover {covered} != {len(DIM_NAMES)} dims "
-                        f"(focus not capped, so all dims should be covered)")
+        failures.append(f"focus+strengths+not_assessable cover {covered} != "
+                        f"{len(DIM_NAMES)} dims (focus not capped)")
     if failures:
         _fail(f"focus correctness: {failures[:3]}")
         return False
@@ -230,19 +246,19 @@ def cond_developing(p, rating) -> bool:
 
 
 def make_real_lowconf_rating() -> dict:
-    """A real-ball rating with genuinely low-confidence dimensions (so an operator
-    limiter bites): serve sample_size-limited, shot_skill measurement-limited,
-    net_play high-confidence (must NOT trigger)."""
+    """A real-ball rating with genuinely low-confidence categories (so an operator
+    limiter bites): serve_return sample_size-limited, third_shot measurement-
+    limited, strategy high-confidence (must NOT trigger)."""
     dims = [
-        {"name": "net_play", "subscore_level": 2.5, "weight": 0.2,
+        {"name": "strategy", "subscore_level": 2.5, "weight": 0.2,
          "confidence": 0.95, "data_source": "real", "limited_by": "measurement",
-         "driver_metrics": DRIVERS["net_play"]},
-        {"name": "shot_skill", "subscore_level": 2.8, "weight": 0.25,
+         "coverage_status": "measured", "driver_metrics": DRIVERS["strategy"]},
+        {"name": "third_shot", "subscore_level": 2.8, "weight": 0.18,
          "confidence": 0.45, "data_source": "real", "limited_by": "measurement",
-         "driver_metrics": DRIVERS["shot_skill"]},
-        {"name": "serve", "subscore_level": 2.6, "weight": 0.1,
+         "coverage_status": "partial", "driver_metrics": DRIVERS["third_shot"]},
+        {"name": "serve_return", "subscore_level": 2.6, "weight": 0.12,
          "confidence": 0.40, "data_source": "real", "limited_by": "sample_size",
-         "driver_metrics": DRIVERS["serve"]},
+         "coverage_status": "partial", "driver_metrics": DRIVERS["serve_return"]},
     ]
     return {"schema_version": 1, "ball_source": "real",
             "rating": {"estimate": 3.0, "band": "3.0", "confidence": 0.5},
@@ -272,8 +288,8 @@ def cond_operator_considerations(p) -> bool:
     if cats != {"more_data", "capture_quality"}:
         failures.append(f"real-ball low-conf categories {cats} != both")
     affected = {a for it in items for a in it["affects"]}
-    if "net_play" in affected:
-        failures.append("high-confidence net_play wrongly flagged for operator")
+    if "strategy" in affected:
+        failures.append("high-confidence strategy wrongly flagged for operator")
     for it in items:
         if it["action"] != OPERATOR_ACTION[it["category"]]:
             failures.append(f"action mismatch for {it['category']}")
@@ -303,35 +319,28 @@ def cond_reliability(p) -> bool:
 
 
 def cond_directional() -> bool:
-    base = {"net_play": 3.8, "movement": 3.8, "error_control": 3.8,
-            "shot_skill": 3.8, "serve": 3.8, "rally_consistency": 3.8}
+    base = {n: 3.8 for n in DIM_NAMES}
     failures = []
-    # (a) lowering a dimension below target adds it + raises priority_score
-    plan_hi = compute_plan(make_rating({**base, "net_play": 3.8}), None)
-    plan_lo = compute_plan(make_rating({**base, "net_play": 2.5}), None)
+    # (a) lowering strategy (the measured category) below target raises its priority
+    plan_hi = compute_plan(make_rating({**base, "strategy": 3.8}), None)
+    plan_lo = compute_plan(make_rating({**base, "strategy": 2.5}), None)
     hi_fa = {f["dimension"]: f for f in plan_hi["focus_areas"]}
     lo_fa = {f["dimension"]: f for f in plan_lo["focus_areas"]}
-    if "net_play" in hi_fa:   # 3.8 >= 4.0 target? no, 3.8<4.0 -> it's a focus
-        pass
-    if "net_play" not in lo_fa:
-        failures.append("lowered net_play not in focus areas")
-    elif "net_play" in hi_fa and not (lo_fa["net_play"]["priority_score"]
-                                      > hi_fa["net_play"]["priority_score"]):
-        failures.append("lowering net_play did not raise priority_score")
-    # (b) real ranks above synthetic at equal gap+weight (net_play vs ... use
-    #     equal weight pair: error_control(0.25,synth) vs shot_skill(0.25,synth)
-    #     are both synth; compare net_play(0.20,real) vs a synth dim with same
-    #     gap*weight. Construct: net_play gap*0.20 == error_control gap*0.25.
-    r = make_rating({"net_play": 4.0 - 0.50, "movement": 5.0,
-                     "error_control": 4.0 - 0.40, "shot_skill": 5.0,
-                     "serve": 5.0, "rally_consistency": 5.0})
-    # net_play gap 0.50*0.20=0.10 ; error_control gap 0.40*0.25=0.10 (equal)
+    if "strategy" not in lo_fa:
+        failures.append("lowered strategy not in focus areas")
+    elif "strategy" in hi_fa and not (lo_fa["strategy"]["priority_score"]
+                                      > hi_fa["strategy"]["priority_score"]):
+        failures.append("lowering strategy did not raise priority_score")
+    # (b) real ranks above synthetic at equal gap*weight: strategy(0.20,real) vs
+    #     third_shot(0.18,synthetic). Equal leverage: 0.36*0.20 == 0.40*0.18 = 0.072.
+    r = make_rating({**{n: 5.0 for n in DIM_NAMES},
+                     "strategy": 4.0 - 0.36, "third_shot": 4.0 - 0.40})
     plan = compute_plan(r, None)
     ps = {f["dimension"]: f["priority_score"] for f in plan["focus_areas"]}
-    if "net_play" in ps and "error_control" in ps:
-        if not ps["net_play"] > ps["error_control"]:
-            failures.append(f"real net_play {ps['net_play']} not > synthetic "
-                            f"error_control {ps['error_control']} at equal leverage")
+    if "strategy" in ps and "third_shot" in ps:
+        if not ps["strategy"] > ps["third_shot"]:
+            failures.append(f"real strategy {ps['strategy']} not > synthetic "
+                            f"third_shot {ps['third_shot']} at equal leverage")
     # (c) ball_source real -> no provisional flags
     plan_real = compute_plan(make_rating(base, ball_source="real"), None)
     if any(f["confidence"] == "provisional" for f in plan_real["focus_areas"]):
@@ -345,15 +354,21 @@ def cond_directional() -> bool:
 
 
 def cond_degradation() -> bool:
-    """All dims at/above target -> empty focus, populated strengths, no crash."""
+    """All categories at/above target -> empty focus; each category is either a
+    strength or (if not assessable: near-zero confidence / zero events) routed to
+    developing. strengths + not_assessable cover all 7; no crash."""
     allstrong = {n: 5.0 for n in DIM_NAMES}
     plan = compute_plan(make_rating(allstrong, band="2.0"), None)
+    na = {e["dimension"] for e in plan["developing_capability"]["not_assessable_now"]}
+    strong = {s["dimension"] for s in plan["strengths"]}
     ok = (plan["focus_areas"] == []
-          and len(plan["strengths"]) == len(DIM_NAMES)
+          and not (strong & na)
+          and len(strong) + len(na) == len(DIM_NAMES)
           and plan["reliability"]["n_focus_real"] == 0
           and plan["reliability"]["n_focus_provisional"] == 0)
     (_pass if ok else _fail)(
-        "degradation: all-strong -> empty focus, all strengths, valid"
+        f"degradation: all-strong -> empty focus; {len(strong)} strengths + "
+        f"{len(na)} not-assessable cover all {len(DIM_NAMES)}, valid"
         if ok else "degradation handling wrong")
     return ok
 
