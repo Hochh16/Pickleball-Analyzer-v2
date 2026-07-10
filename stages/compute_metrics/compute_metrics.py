@@ -32,7 +32,8 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
-STAGE_VERSION = "0.3.0"       # Front-foot court position for net-play zones (net-most ankle)
+STAGE_VERSION = "0.4.0"       # 0.3.0 front-foot court position -> 0.4.0 rally-scoped
+                              # position stats (in-rally frames only)
 
 # --- Config (matches contract) ----------------------------------------------
 HEATMAP_BIN_FT = 2.0          # court grid bin -> 10 cols (x) x 22 rows (y)
@@ -44,6 +45,7 @@ POSE_ANKLE_MIN_VIS = 0.3      # ankle-landmark visibility floor for front-foot d
 COURT_LEN_FT = 44.0
 COURT_WID_FT = 20.0
 MOVE_MIN_STEP_FT = 0.25       # per-frame foot delta below this = jitter
+MOVE_MAX_GAP_SEC = 0.25       # don't integrate a step across a longer tracking gap
 RALLY_LEN_BUCKETS = ["1", "2-4", "5-8", "9+"]
 
 # Confidence propagation (Foundation #3 — see contract § "Confidence propagation")
@@ -387,13 +389,32 @@ def role_front_foot_pos(bbox_fpos: Dict[int, Tuple[float, float]],
     return merged
 
 
+def scope_to_rally_frames(fpos: Dict[int, Tuple[float, float]],
+                          rally_windows: List[Tuple[int, int]]
+                          ) -> Dict[int, Tuple[float, float]]:
+    """Keep only frames inside a rally window (i.e. while a point is live).
+
+    Position stats answer "where do you play", so between-point frames must not
+    count: players walk to the baseline to retrieve/serve and stand around, which
+    on pb_2min is ~42% of the clip and drags kitchen time down while inflating
+    baseline time. Requires CLEAN rally boundaries — Stage 7 v0.3.0's minimum-rally
+    filter removes the between-point net-tapping segments that would otherwise be
+    counted as play. Caller falls back to whole-clip when no rallies are known."""
+    if not rally_windows:
+        return fpos
+    return {f: xy for f, xy in fpos.items()
+            if _frame_rally_index(f, rally_windows) is not None}
+
+
 def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float,
                      rally_windows: List[Tuple[int, int]], n_rallies: int) -> dict:
     n_frames = len(fpos)
     own_far = role in FAR_ROLES
+    scope = "in_rally" if rally_windows else "whole_clip"
     if n_frames == 0:
         return {
             "n_frames": 0,
+            "scope": scope,
             "zone_time_frac": {"kitchen": 0.0, "transition": 0.0, "baseline": 0.0},
             "lateral_time_frac": {"left": 0.0, "center": 0.0, "right": 0.0},
             "area_time_frac": {f"{d}-{l}": 0.0 for d in
@@ -438,24 +459,32 @@ def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float
     n_half_cells = (N_ROWS // 2) * N_COLS
     coverage = round(len(visited) / n_half_cells, 4) if n_half_cells else 0.0
 
-    # movement: integrate path length above jitter floor
+    # movement: integrate path length above jitter floor. A step is only real if
+    # both endpoints lie in the SAME rally — otherwise the walk from one rally's
+    # end to the next rally's start (or across a tracking gap) would be integrated
+    # as a single huge phantom stride.
+    max_gap = max(1, int(round(MOVE_MAX_GAP_SEC * fps))) if fps > 0 else 1
     total_dist = 0.0
     rally_dist = 0.0
     rallies_present = set()
-    prev = None
+    prev = None          # (frame, x, y, rally_idx)
     for f in sorted(fpos.keys()):
         x, y = fpos[f]
         in_rally_idx = _frame_rally_index(f, rally_windows)
         if in_rally_idx is not None:
             rallies_present.add(in_rally_idx)
         if prev is not None:
-            pf, px, py = prev
+            pf, px, py, p_idx = prev
+            # Same segment: same rally, or (no rally windows known) the whole clip
+            # as one segment — so the fallback path still measures movement.
+            same_segment = (in_rally_idx == p_idx)
+            bridgeable = 0 < (f - pf) <= max_gap
             step = math.hypot(x - px, y - py)
-            if step >= MOVE_MIN_STEP_FT:
+            if step >= MOVE_MIN_STEP_FT and bridgeable and same_segment:
                 total_dist += step
                 if in_rally_idx is not None:
                     rally_dist += step
-        prev = (f, x, y)
+        prev = (f, x, y, in_rally_idx)
 
     active_sec = n_frames / fps if fps > 0 else 0.0
     per_min = round(total_dist / (active_sec / 60.0), 2) if active_sec > 0 else 0.0
@@ -464,6 +493,7 @@ def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float
 
     return {
         "n_frames": n_frames,
+        "scope": scope,
         "zone_time_frac": zone_frac,
         "lateral_time_frac": lat_frac,
         "area_time_frac": area_frac,
@@ -807,9 +837,20 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     pos_heatmap_in_extent: Dict[str, int] = {}
     role_frac_reliable: Dict[str, float] = {}   # court_pos_reliable fraction (Stage 2)
 
+    if not rally_windows:
+        warnings.append(
+            "no rally windows (rallies.json missing/empty): position metrics fall "
+            "back to WHOLE-CLIP scope and include between-point frames, which "
+            "under-counts kitchen time and inflates baseline time.")
+        log.warning("no rally windows: position metrics are whole-clip scoped.")
+
     for r in PLAYING_ROLES:
         sub = role_valid_rows(df, role_to_tids[r])
         fpos = role_front_foot_pos(role_frame_pos(sub), pose_ff, role_to_tids[r])
+        # Position stats describe play, not ball-retrieval: keep only in-rally
+        # frames. Needs Stage 7 v0.3.0's clean boundaries (its minimum-rally filter
+        # removes the between-point net-tapping that would otherwise count as play).
+        fpos = scope_to_rally_frames(fpos, rally_windows)
         role_positions[r] = compute_position(fpos, r, fps, rally_windows, n_rallies)
         # confidence base for position metrics: near-side reliable / far-side
         # zone-only (Foundation #1). Absent column (pre-#1 fixtures) -> assume 1.0.

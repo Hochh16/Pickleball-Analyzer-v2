@@ -694,14 +694,14 @@ rating). Re-validate against the rendered report.
 >
 > **Operator review 2026-07-09 — front-foot calls confirmed correct on all 6 rally
 > snapshots. Two review notes:**
-> - **Between-point frames dilute the metric (follow-up #1, operator-confirmed).**
->   A snapshot inside rally 1's window (f1650) is visibly a *between-points* moment
->   (player reset to baseline) — it is classified correctly but should NOT be counted
->   toward zone-time when computed over the full clip. Fix = **rally-scope the Stage 8
->   position metrics** to frames inside (clean) rally windows. Sequenced AFTER the
->   Stage 7 rally over-segmentation fix, because rally-scoping must use correct
->   boundaries (else the spurious micro-rallies 6/7 = between-point net-gathering
->   would still be counted as play).
+> - **Between-point frames dilute the metric (follow-up #1) — RESOLVED (2026-07-09,
+>   Stage 8 v0.4.0).** Position stats are now **rally-scoped** (in-rally frames
+>   only) via `scope_to_rally_frames`, using Stage 7 v0.3.0's clean boundaries;
+>   movement never integrates a step across a rally boundary or a >`MOVE_MAX_GAP_SEC`
+>   gap. `position.scope` = `in_rally` (or `whole_clip` + warning if rallies.json is
+>   absent). pb_2min: user kitchen 26.2%→**33.6%**, partner→**56.9%**, both-at-kitchen
+>   22.6%→**33.3%**; net_play subscore 3.55→**3.89**, rating 3.71→**3.81** (band 4.0).
+>   Smoke 16/16.
 > - **Near-side user↔partner role gap under-counts user kitchen time (follow-up #2,
 >   = Stage 2.5).** At some frames BOTH near tracks resolve to a single role (pb_2min
 >   f6420: both labeled `partner`, user unidentified), so wherever the user is
@@ -711,6 +711,33 @@ rating). Re-validate against the rendered report.
 >   near-side continuity (same appearance re-id that handles the USER's ID swaps is
 >   not yet keeping the user/partner *split* stable frame-by-frame — cf. the "Court
 >   switches cause user track loss" entry above). Deferred to a Stage 2.5 pass.
+
+## Stage 8 — movement distance uses an un-fps-scaled jitter floor (CONFIDENTLY WRONG) (2026-07-09)
+
+**Observed:** 2026-07-09, while rally-scoping the position metrics on pb_2min (4K/60fps).
+
+**Problem:** `MOVE_MIN_STEP_FT = 0.25` (the per-frame step below which motion is
+treated as jitter) is **not fps-scaled**. At 60 fps, 0.25 ft/frame = **15 ft/s
+(~10 mph)** — so the movement integrator **rejects 84.5% of real steps** (the median
+in-rally step is 0.078 ft ≈ 4.7 ft/s, normal walking/shuffling) and sums mostly the
+noise spikes that DO exceed 15 ft/s (p99 step = 2.37 ft/frame ≈ 142 ft/s, physically
+impossible). So `distance_ft_total` / `distance_ft_per_min` measure jitter, not
+movement. Like net-play, the **Stage 9 `movement` dimension is stamped confidence
+1.00** on this — confidently wrong. (Same class as the front-foot and net-play bugs:
+a systematic error a confidence number can't see.)
+
+**Root cause:** the floor was tuned at the 30 fps design point (where 0.25 ft/frame =
+7.5 ft/s, already high) and never scaled by `fps/30`. Cf. the real-vs-synthetic
+adaptation pattern (SESSION_HANDOFF): "fps scaling — frame-count/per-frame params ×
+fps/30".
+
+**Where to fix:** define the jitter floor in **ft/second** (e.g. ~1–2 ft/s) and
+convert per-frame via `fps`, OR scale `MOVE_MIN_STEP_FT` by `30/fps`. Also cap
+per-frame steps at a physical max (e.g. ~25 ft/s sprint) to reject the tracking
+spikes rather than count them. Re-validate `distance_ft_per_min` against a plausible
+range for a rec player. **Separate from the rally-scoping fix** (which correctly made
+movement in-rally + boundary-safe but left this threshold untouched). NOT yet done —
+flagged for operator prioritization.
 
 ## Stage 7 — rally over-segmentation (micro-rallies) (2026-07-07)
 

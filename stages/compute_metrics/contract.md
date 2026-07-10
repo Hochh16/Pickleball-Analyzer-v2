@@ -356,10 +356,23 @@ CLI flags (defaults in Configuration): `--force`, `--log-level`,
   by design (its bbox bottom already coincides with the front foot). All position
   views below (zones, lateral, area, heatmap, movement) use this front-foot
   position.
+- **Position stats are RALLY-SCOPED (in-rally frames only).** Every position view
+  (zones, lateral, area, coverage, mean position, heatmap, team spacing /
+  both-at-kitchen, movement) counts only frames inside a `rallies.json` window.
+  Position answers "where do you play", so between-point frames must not count:
+  players walk to the baseline to retrieve the ball, serve, and stand around —
+  ~42% of pb_2min — which drags kitchen time down and inflates baseline time.
+  Emitted as `position.scope`: `"in_rally"`, or `"whole_clip"` with a loud warning
+  when `rallies.json` is missing/empty (degradable input). This depends on CLEAN
+  boundaries: Stage 7 v0.3.0's minimum-rally filter removes the between-point
+  net-tapping segments that would otherwise be counted as play. **Movement never
+  integrates a step across a rally boundary or a tracking gap longer than
+  `MOVE_MAX_GAP_SEC`** — otherwise the walk from one rally's end to the next
+  rally's start becomes a single huge phantom stride.
 - **`players.<role>.position` — court-area time (answers "% time in each area
   of the court").** Three views of the same per-frame front-foot positions
   (`court_x_ft`, `court_y_ft`), each a set of fractions summing to ~1.0 over
-  the role's valid in-extent frames:
+  the role's valid in-extent, in-rally frames:
   - **`zone_time_frac`** — DEPTH (kitchen / transition / baseline) via Stage
     6's `zone_from_court_y` (`dist_from_net = abs(court_y − 22)`; ≤9 kitchen,
     ≥17 baseline, else transition). The strategically important axis.

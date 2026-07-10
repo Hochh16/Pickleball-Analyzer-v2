@@ -42,7 +42,8 @@ from stages.segment_rallies.segment_rallies import main as rallies_main
 from stages.classify_tracks.classify_tracks import main as roles_main
 from stages.compute_metrics.compute_metrics import (
     main as metrics_main, role_valid_rows, role_frame_pos, bin_positions,
-    pose_front_foot, role_front_foot_pos, rally_len_bucket, PLAYING_ROLES,
+    pose_front_foot, role_front_foot_pos, scope_to_rally_frames,
+    rally_len_bucket, PLAYING_ROLES,
 )
 
 TEST_FOLDER = Path("data/test_clip")
@@ -265,11 +266,14 @@ def cond_heatmaps(m) -> bool:
     court = load("court.json")
     i2c = (court.get("homography", {}) or {}).get("image_to_court")
     pose_ff = pose_front_foot(poses_df, i2c) if (poses_df is not None and i2c) else {}
+    rally_windows = [(int(x["start_frame"]), int(x["end_frame"]))
+                     for x in load("rallies.json").get("rallies", [])]
     failures = []
     for r in PLAYING_ROLES:
         tids = m["players"][r]["track_ids"]
         sub = role_valid_rows(df, tids)
         fpos = role_front_foot_pos(role_frame_pos(sub), pose_ff, tids)
+        fpos = scope_to_rally_frames(fpos, rally_windows)
         _, n_ext = bin_positions(list(fpos.values()))
         grid = _v(m["heatmaps"]["player_position"][r])
         gsum = sum(sum(row) for row in grid)
