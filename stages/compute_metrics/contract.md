@@ -389,13 +389,20 @@ CLI flags (defaults in Configuration): `--force`, `--log-level`,
   that role's near/far HALF of the court (10 cols × 11 rows = 110 cells per
   half) that the role's foot position visited at least once. Coverage is over
   the player's own half (a near player isn't expected on the far half).
-- **`players.<role>.position.movement`** (REAL): per-frame path length of the
-  role's foot court position (`court_x_ft`, `court_y_ft`), summed over valid
-  frames. A per-step jitter floor (`MOVE_MIN_STEP_FT`) drops sub-threshold
-  deltas so tracking noise isn't integrated as distance. `distance_ft_per_min`
-  normalizes by the role's active wall-clock; `distance_ft_per_rally` divides
-  rally-frame distance by the number of rallies the role was present for. A
-  work-rate / effort signal; ball-independent.
+- **`players.<role>.position.movement`** (REAL): court distance covered during
+  play, integrated from a **noise-robust downsample** (`compute_movement`). Per-
+  frame integration at high fps sums tracking jitter as distance — a stationary
+  player's per-frame foot noise has high instantaneous speed — so positions are
+  binned into `MOVE_SAMPLE_DT_SEC` (0.2s) windows, each window's MEAN position is
+  taken, and displacement is integrated between temporally-adjacent windows in the
+  same rally. Per-segment gates: `>= MOVE_MIN_STEP_FT` (drop residual jitter) and
+  `<= MOVE_MAX_SPEED_FTPS·dt` (drop tracking teleports / front-foot L↔R switches).
+  All thresholds are fps-independent (ft or s), fixing the pre-0.5.0 bug where a
+  per-frame `MOVE_MIN_STEP_FT=0.25` acted as a 15 ft/s floor at 60fps (rejected 84%
+  of real movement, summed noise spikes). `distance_ft_per_min` normalizes by the
+  role's in-rally wall-clock (movement per minute of PLAY); `distance_ft_per_rally`
+  divides by rallies the role was present for. A work-rate / effort signal;
+  ball-independent. pb_2min user ≈ 192 ft/min (was an implausible ~492).
 - **`team`** (REAL): team-level positioning, near (`user`+`partner`) and far
   (`opp_left`+`opp_right`). Computed over frames where BOTH of the team's
   players have a valid position (`n_frames_both_present`):

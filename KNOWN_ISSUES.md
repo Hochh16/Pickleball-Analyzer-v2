@@ -735,9 +735,18 @@ fps/30".
 convert per-frame via `fps`, OR scale `MOVE_MIN_STEP_FT` by `30/fps`. Also cap
 per-frame steps at a physical max (e.g. ~25 ft/s sprint) to reject the tracking
 spikes rather than count them. Re-validate `distance_ft_per_min` against a plausible
-range for a rec player. **Separate from the rally-scoping fix** (which correctly made
-movement in-rally + boundary-safe but left this threshold untouched). NOT yet done —
-flagged for operator prioritization.
+range for a rec player.
+
+> **RESOLVED (2026-07-09, Stage 8 v0.5.0).** A per-frame speed floor turned out to be
+> the wrong tool (jitter has high *instantaneous* speed, so a low floor doesn't
+> reject it and a high one rejects real slow movement). Fix = integrate from a
+> **noise-robust downsample** (`compute_movement`): bin frames into
+> `MOVE_SAMPLE_DT_SEC` (0.2s) windows, take each window's MEAN position (averages
+> out high-frequency jitter), integrate displacement between temporally-adjacent
+> same-rally windows, gated by `MOVE_MIN_STEP_FT` (0.3 ft ≈ 1.5 ft/s floor) and
+> `MOVE_MAX_SPEED_FTPS` (24 ft/s cap, rejects teleports / front-foot L↔R switches).
+> All thresholds fps-independent. pb_2min user `distance_ft_per_min` **492 → 192**
+> (plausible ~3 ft/s average for rec play); per-rally ~34 ft. Smoke 16/16.
 
 ## Stage 7 — rally over-segmentation (micro-rallies) (2026-07-07)
 

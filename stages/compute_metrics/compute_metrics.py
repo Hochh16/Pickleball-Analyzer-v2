@@ -32,8 +32,8 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
-STAGE_VERSION = "0.4.0"       # 0.3.0 front-foot court position -> 0.4.0 rally-scoped
-                              # position stats (in-rally frames only)
+STAGE_VERSION = "0.5.0"       # 0.3.0 front-foot -> 0.4.0 rally-scoped position ->
+                              # 0.5.0 noise-robust (downsampled) movement distance
 
 # --- Config (matches contract) ----------------------------------------------
 HEATMAP_BIN_FT = 2.0          # court grid bin -> 10 cols (x) x 22 rows (y)
@@ -44,8 +44,15 @@ BASELINE_MIN_DIST_FT = 17.0   # within ~5ft of own baseline -> baseline [Stage 6
 POSE_ANKLE_MIN_VIS = 0.3      # ankle-landmark visibility floor for front-foot depth
 COURT_LEN_FT = 44.0
 COURT_WID_FT = 20.0
-MOVE_MIN_STEP_FT = 0.25       # per-frame foot delta below this = jitter
-MOVE_MAX_GAP_SEC = 0.25       # don't integrate a step across a longer tracking gap
+# Movement is integrated from a fixed-cadence DOWNSAMPLE, not per frame: at high
+# fps a stationary player's per-frame foot noise has high instantaneous speed, so
+# per-frame integration sums jitter as distance. Binning to MOVE_SAMPLE_DT_SEC and
+# using each window's MEAN position averages the jitter out; a per-sample floor
+# (locomotion vs residual noise) and a max-speed cap (tracking teleports /
+# front-foot L<->R switches) gate each segment. fps-independent (all in ft or s).
+MOVE_SAMPLE_DT_SEC = 0.2      # integrate at 5 Hz
+MOVE_MIN_STEP_FT = 0.3        # per-sample net displacement below this = jitter (~1.5 ft/s)
+MOVE_MAX_SPEED_FTPS = 24.0    # per-sample speed cap (elite sprint ~24 ft/s); above = tracking error
 RALLY_LEN_BUCKETS = ["1", "2-4", "5-8", "9+"]
 
 # Confidence propagation (Foundation #3 — see contract § "Confidence propagation")
@@ -406,6 +413,56 @@ def scope_to_rally_frames(fpos: Dict[int, Tuple[float, float]],
             if _frame_rally_index(f, rally_windows) is not None}
 
 
+def compute_movement(fpos: Dict[int, Tuple[float, float]], fps: float,
+                     rally_windows: List[Tuple[int, int]]
+                     ) -> Tuple[float, float, int]:
+    """Court distance covered during play, integrated from a noise-robust
+    downsample. Bin frames into MOVE_SAMPLE_DT_SEC windows, take each window's mean
+    position, and integrate displacement between temporally-adjacent windows in the
+    SAME rally. Per-segment gates: >= MOVE_MIN_STEP_FT (drop residual jitter) and
+    <= MOVE_MAX_SPEED_FTPS * dt (drop tracking teleports / front-foot L<->R
+    switches). Adjacent windows only (empty window => data gap => no bridge, so a
+    walk across a between-rally gap is never counted). Returns
+    (total_dist_ft, rally_dist_ft, n_rallies_present)."""
+    if not fpos or fps <= 0:
+        return 0.0, 0.0, 0
+    win = max(1, int(round(MOVE_SAMPLE_DT_SEC * fps)))
+    dt = win / fps
+    max_step = MOVE_MAX_SPEED_FTPS * dt
+    # bucket -> running (sum_x, sum_y, count); key is (segment_idx, bucket_id).
+    # segment = rally index, or the whole clip as one segment when no rally windows
+    # are known (degraded fallback) so movement is still measured.
+    acc: Dict[Tuple[int, int], List[float]] = {}
+    for f in sorted(fpos.keys()):
+        ri = _frame_rally_index(f, rally_windows) if rally_windows else 0
+        if ri is None:
+            continue
+        key = (ri, f // win)
+        x, y = fpos[f]
+        a = acc.get(key)
+        if a is None:
+            acc[key] = [x, y, 1.0]
+        else:
+            a[0] += x; a[1] += y; a[2] += 1.0
+    # window mean positions, ordered by bucket id (= time)
+    samples = sorted((b, ri, sx / n, sy / n)
+                     for (ri, b), (sx, sy, n) in acc.items())
+    total = rally = 0.0
+    present = set()
+    prev = None          # (bucket_id, segment_idx, x, y)
+    for b, ri, x, y in samples:
+        present.add(ri)
+        if prev is not None:
+            pb, pri, px, py = prev
+            if b - pb == 1 and ri == pri:      # temporally adjacent, same segment
+                step = math.hypot(x - px, y - py)
+                if MOVE_MIN_STEP_FT <= step <= max_step:
+                    total += step
+                    rally += step
+        prev = (b, ri, x, y)
+    return total, rally, len(present)
+
+
 def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float,
                      rally_windows: List[Tuple[int, int]], n_rallies: int) -> dict:
     n_frames = len(fpos)
@@ -459,36 +516,12 @@ def compute_position(fpos: Dict[int, Tuple[float, float]], role: str, fps: float
     n_half_cells = (N_ROWS // 2) * N_COLS
     coverage = round(len(visited) / n_half_cells, 4) if n_half_cells else 0.0
 
-    # movement: integrate path length above jitter floor. A step is only real if
-    # both endpoints lie in the SAME rally — otherwise the walk from one rally's
-    # end to the next rally's start (or across a tracking gap) would be integrated
-    # as a single huge phantom stride.
-    max_gap = max(1, int(round(MOVE_MAX_GAP_SEC * fps))) if fps > 0 else 1
-    total_dist = 0.0
-    rally_dist = 0.0
-    rallies_present = set()
-    prev = None          # (frame, x, y, rally_idx)
-    for f in sorted(fpos.keys()):
-        x, y = fpos[f]
-        in_rally_idx = _frame_rally_index(f, rally_windows)
-        if in_rally_idx is not None:
-            rallies_present.add(in_rally_idx)
-        if prev is not None:
-            pf, px, py, p_idx = prev
-            # Same segment: same rally, or (no rally windows known) the whole clip
-            # as one segment — so the fallback path still measures movement.
-            same_segment = (in_rally_idx == p_idx)
-            bridgeable = 0 < (f - pf) <= max_gap
-            step = math.hypot(x - px, y - py)
-            if step >= MOVE_MIN_STEP_FT and bridgeable and same_segment:
-                total_dist += step
-                if in_rally_idx is not None:
-                    rally_dist += step
-        prev = (f, x, y, in_rally_idx)
-
+    # movement: noise-robust path length (see compute_movement). rally_dist ==
+    # total_dist here because fpos is already rally-scoped; both are kept so the
+    # whole-clip fallback (no rally_windows) still reports a per-rally figure of 0.
+    total_dist, rally_dist, n_present = compute_movement(fpos, fps, rally_windows)
     active_sec = n_frames / fps if fps > 0 else 0.0
     per_min = round(total_dist / (active_sec / 60.0), 2) if active_sec > 0 else 0.0
-    n_present = len(rallies_present)
     per_rally = round(rally_dist / n_present, 2) if n_present else 0.0
 
     return {
