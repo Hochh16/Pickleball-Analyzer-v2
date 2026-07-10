@@ -691,6 +691,26 @@ rating). Re-validate against the rendered report.
 > further sharpen it (rally-only lifts user kitchen to ~33%); (2) confirm which near
 > player is the user vs partner (Stage 2.5 role stability) if the split still looks
 > off to the operator.
+>
+> **Operator review 2026-07-09 — front-foot calls confirmed correct on all 6 rally
+> snapshots. Two review notes:**
+> - **Between-point frames dilute the metric (follow-up #1, operator-confirmed).**
+>   A snapshot inside rally 1's window (f1650) is visibly a *between-points* moment
+>   (player reset to baseline) — it is classified correctly but should NOT be counted
+>   toward zone-time when computed over the full clip. Fix = **rally-scope the Stage 8
+>   position metrics** to frames inside (clean) rally windows. Sequenced AFTER the
+>   Stage 7 rally over-segmentation fix, because rally-scoping must use correct
+>   boundaries (else the spurious micro-rallies 6/7 = between-point net-gathering
+>   would still be counted as play).
+> - **Near-side user↔partner role gap under-counts user kitchen time (follow-up #2,
+>   = Stage 2.5).** At some frames BOTH near tracks resolve to a single role (pb_2min
+>   f6420: both labeled `partner`, user unidentified), so wherever the user is
+>   temporarily mislabeled their kitchen frames are attributed to partner (or
+>   dropped). Consequence: the user's 26.2% kitchen is a slight UNDER-count; the
+>   near-team aggregate (both-at-kitchen) is unaffected. Root cause is Stage 2.5
+>   near-side continuity (same appearance re-id that handles the USER's ID swaps is
+>   not yet keeping the user/partner *split* stable frame-by-frame — cf. the "Court
+>   switches cause user track loss" entry above). Deferred to a Stage 2.5 pass.
 
 ## Stage 7 — rally over-segmentation (micro-rallies) (2026-07-07)
 
