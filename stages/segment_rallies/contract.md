@@ -545,13 +545,32 @@ smoke unchanged):
    flows straight into the serve (no dead-ball between) stays in the rally as its
    first shot — separating it needs serve detection (deferred). `serve_is_inferred`
    marks rallies whose start was a gap, not a flagged serve.
+5. **Minimum-rally filter (v0.3.0).** Between points and after the game, players
+   stand at the net and tap the ball a couple of times; the ball-out-of-play
+   splitter turns each such burst into a spurious "rally" (pb_2min rallies 6 & 7:
+   0.8s/2sh and 1.1s/2sh — one even off a *falsely* detected serve, so a
+   serve-flag guard alone cannot catch it). A segment is dropped as a micro-rally
+   only when it is **BOTH** shorter than `MIN_RALLY_SEC` (2.0s) **AND** has fewer
+   than `MIN_RALLY_SHOTS` (3) shots — conservative AND-logic, so a segment that is
+   *either* long *or* has many shots is always kept. A lone serve-fault
+   (`n_shots == 1`, a real serve put into play) is guarded (`n_shots > 1` required
+   to drop) and never removed. Duration is the first→last shot span. Dropped shots
+   roll into `unassigned_shots` (accounting reconciles) with an explicit warning
+   listing each dropped span. Real ball only; synthetic keeps every `is_serve`
+   rally, so its acceptance bars are unperturbed. pb_2min: **8 → 6 rallies**
+   (operator-confirmed count). *Limitation:* a genuine ultra-short point (2 shots,
+   <2s) would also drop; such points are rare and on the noisy real ball are hard
+   to separate from between-point taps. Configurable via `--min-rally-sec` /
+   `--min-rally-shots`.
 
 ## Stage version
 
-`0.2.0`. (0.1.0 initial → 0.2.0 real-ball: ball-out-of-play rally boundaries,
-`hitter_side`-based sides, real-ball `unknown` end_reason, feed drop.) Increment
-minor for behavior changes preserving the `rallies.json` schema. (v0.2.0 adds
-the additive field `serve_is_inferred`; schema kept.)
+`0.3.0`. (0.1.0 initial → 0.2.0 real-ball: ball-out-of-play rally boundaries,
+`hitter_side`-based sides, real-ball `unknown` end_reason, feed drop → 0.3.0:
+minimum-rally filter for between-point/after-game net-tapping.) Increment minor
+for behavior changes preserving the `rallies.json` schema. (v0.3.0 adds the
+additive `params.min_rally_sec` / `min_rally_shots` / `n_micro_rallies_dropped`;
+schema kept.)
 
 ## Out of scope (deferred)
 

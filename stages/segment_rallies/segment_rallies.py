@@ -27,11 +27,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.2.0"  # 0.1.0 -> 0.2.0 (real ball): rally boundaries from the
-                         # ball-OUT-OF-PLAY signal (a sustained not-in-play run),
-                         # robust to missed shots; + courtesy-feed drop; side from
-                         # Stage 5 hitter_side (not the airborne ball projection).
-                         # Gated to real ball; synthetic path unchanged.
+STAGE_VERSION = "0.3.0"  # 0.2.0 -> 0.3.0 (real ball): minimum-rally filter drops
+                         # between-point / after-game net-tapping micro-rallies
+                         # (short AND few-shot). 0.2.0: ball-OUT-OF-PLAY rally
+                         # boundaries, hitter_side sides, real-ball unknown
+                         # end_reason, courtesy-feed drop. Gated to real ball;
+                         # synthetic path unchanged.
 
 # --- Config (matches contract) ----------------------------------------------
 SERVE_FAULT_MAX_FRAMES = 60       # quick-next-serve = serve fault (~2s @ 30fps)
@@ -46,6 +47,16 @@ REFERENCE_FPS = 30.0              # frame-count params tuned at 30fps; scale by 
 # missed). 1.5s sits far above in-rally occlusions and far below real dead time.
 # Seconds (fps-independent). Gated to the real ball (synthetic keeps is_serve-only).
 BALL_DEAD_RUN_SEC = 1.5
+
+# Minimum-rally filter (real ball). A real point is a sustained exchange; between
+# points / after the game players stand at the net and tap the ball a couple times
+# (pb_2min rallies 6 & 7: 0.8s/1.1s, 2 shots each — one even off a FALSELY detected
+# serve). Drop a segment only when it is BOTH shorter than MIN_RALLY_SEC AND has
+# fewer than MIN_RALLY_SHOTS shots — conservative AND-logic, so a segment that is
+# EITHER long OR has many shots is always kept. A lone serve-fault (n_shots==1) is
+# never treated as a micro-rally (guarded), so real serves put into play survive.
+MIN_RALLY_SEC = 2.0
+MIN_RALLY_SHOTS = 3
 
 END_REASONS = {"serve-fault", "double-bounce", "ball-out", "net-or-short",
                "ball-not-returned", "ball-off-frame", "unknown"}
@@ -230,6 +241,30 @@ def segment_rallies(shots: List[dict],
     return rallies, dropped
 
 
+def drop_micro_rallies(rally_groups: List[List[dict]], fps: float,
+                       min_sec: float = MIN_RALLY_SEC,
+                       min_shots: int = MIN_RALLY_SHOTS
+                       ) -> Tuple[List[List[dict]], List[List[dict]]]:
+    """Remove spurious micro-rallies (between-point / after-game net-tapping).
+    A segment is dropped only when it is BOTH shorter than `min_sec` AND has
+    fewer than `min_shots` shots — so anything either long OR with many shots is
+    kept. `n_shots > 1` is required to drop, so a lone serve-fault (a real serve
+    put into play, n_shots==1) is never removed here. Duration is the shot span
+    (first→last shot); the ending bounce isn't needed to judge "too short to be a
+    point". Returns (kept_groups, dropped_groups)."""
+    kept: List[List[dict]] = []
+    dropped: List[List[dict]] = []
+    for g in rally_groups:
+        n = len(g)
+        span_sec = ((int(g[-1]["frame"]) - int(g[0]["frame"])) / fps
+                    if fps > 0 else 0.0)
+        if n > 1 and n < min_shots and span_sec < min_sec:
+            dropped.append(g)
+        else:
+            kept.append(g)
+    return kept, dropped
+
+
 # --- End-reason classification ----------------------------------------------
 
 def classify_rally(rally_shots: List[dict], bounces: List[dict],
@@ -412,6 +447,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     rally_groups, pre_rally = segment_rallies(
         shots, ball_known=ball_known,
         ball_dead_run_frames=ball_dead_run_frames, gap_split=gap_split)
+
+    # Minimum-rally filter (real ball only, like the other real-world-phenomenon
+    # gates): drop between-point/after-game net-tapping bursts. Synthetic keeps
+    # every is_serve rally so its acceptance bars are unperturbed. Dropped shots
+    # roll into the unassigned bucket so shot accounting still reconciles.
+    micro_rallies: List[List[dict]] = []
+    if gap_split:
+        rally_groups, micro_rallies = drop_micro_rallies(
+            rally_groups, float(fps), args.min_rally_sec, args.min_rally_shots)
+        for g in micro_rallies:
+            pre_rally.extend(g)
     if not rally_groups:
         log.warning("no rallies found; emitting empty rallies list")
 
@@ -481,11 +527,20 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     if ball_source == "synthetic":
         warnings.append("ball_source is 'synthetic': rally end_reasons are "
                         "derived from PLACEHOLDER ball data.")
+    if micro_rallies:
+        spans = [f"{round((int(g[-1]['frame'])-int(g[0]['frame']))/float(fps),2)}s"
+                 f"/{len(g)}sh" for g in micro_rallies]
+        warnings.append(
+            f"{len(micro_rallies)} micro-rally segment(s) dropped as non-rally "
+            f"(< {args.min_rally_sec}s AND < {args.min_rally_shots} shots; "
+            f"between-point / after-game net-tapping): {spans}. Their shots are "
+            f"counted as unassigned.")
     if pre_rally:
-        kind = ("non-rally shot(s) (pre-first-rally or courtesy/between-point "
-                "feeds)" if gap_split else "shot(s) preceded the first serve")
+        kind = ("non-rally shot(s) (pre-first-rally, courtesy/between-point "
+                "feeds, or micro-rally)" if gap_split else
+                "shot(s) preceded the first serve")
         warnings.append(f"{len(pre_rally)} {kind} were dropped (unassigned). "
-                        f"Shot_ids: {[int(s['shot_id']) for s in pre_rally]}")
+                        f"Shot_ids: {sorted(int(s['shot_id']) for s in pre_rally)}")
     if not out_rallies:
         warnings.append("no rallies emitted (no serve/rally boundaries found)")
 
@@ -508,6 +563,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "ball_dead_run_sec": BALL_DEAD_RUN_SEC if gap_split else None,
             "ball_dead_run_frames": ball_dead_run_frames if gap_split else None,
             "ball_known_loaded": ball_known is not None,
+            "min_rally_sec": args.min_rally_sec if gap_split else None,
+            "min_rally_shots": args.min_rally_shots if gap_split else None,
+            "n_micro_rallies_dropped": len(micro_rallies),
         },
         "rallies": out_rallies,
         "stats": stats,
@@ -527,6 +585,13 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p.add_argument("folder", type=Path,
                    help="per-video folder with classified.json, bounces.json, court.json")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--min-rally-sec", type=float, default=MIN_RALLY_SEC,
+                   dest="min_rally_sec",
+                   help="drop a rally shorter than this AND below --min-rally-shots "
+                        "(real ball only; between-point net-tapping)")
+    p.add_argument("--min-rally-shots", type=int, default=MIN_RALLY_SHOTS,
+                   dest="min_rally_shots",
+                   help="shot-count half of the minimum-rally filter (see --min-rally-sec)")
     p.add_argument("--log-level", default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"], dest="log_level")
     return p.parse_args(argv)
