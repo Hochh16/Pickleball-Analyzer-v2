@@ -247,10 +247,12 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
 
 def score_volley(user: dict) -> Tuple[float, dict]:
     """Net volleys. volley_rate is the live signal (block/reset/put-away sub-skills
-    are not detected yet). Low confidence (heuristic volley flag, small sample)."""
-    v = (user.get("shot_mix", {}) or {}).get("volley", {}) or {}
-    rate = v.get("volley_rate")
-    drivers = {"volley_rate": rate, "n_volley": v.get("n_volley", 0)}
+    are not detected yet). Low confidence (heuristic volley flag, small sample).
+    NOTE: the scorer sees the UNWRAPPED user, where Stage 8's shot_mix.volley is
+    flattened to shot_mix.volley_rate / shot_mix.n_volley (see _unwrap_user)."""
+    sm = user.get("shot_mix", {}) or {}
+    rate = sm.get("volley_rate")
+    drivers = {"volley_rate": rate, "n_volley": sm.get("n_volley", 0)}
     if rate is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     return clamp_level(lin(rate, 0.0, 2.8, 0.4, 4.2)), drivers

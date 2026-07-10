@@ -264,9 +264,9 @@ def cond_dimension_monotonic() -> bool:
                          {"rally_length_shots": {"mean": 6.0}})
     if not hi_d > lo_d:
         failures.append(f"dink not increasing in dink_frac ({lo_d}->{hi_d})")
-    # volley: higher volley_rate -> higher
-    hi_v, _ = score_volley({"shot_mix": {"volley": {"volley_rate": 0.5, "n_volley": 50}}})
-    lo_v, _ = score_volley({"shot_mix": {"volley": {"volley_rate": 0.05, "n_volley": 5}}})
+    # volley: higher volley_rate -> higher (scorer reads the flattened shot_mix)
+    hi_v, _ = score_volley({"shot_mix": {"volley_rate": 0.5, "n_volley": 50}})
+    lo_v, _ = score_volley({"shot_mix": {"volley_rate": 0.05, "n_volley": 5}})
     if not hi_v > lo_v:
         failures.append(f"volley not increasing in volley_rate ({lo_v}->{hi_v})")
     # serve_return: lower fault -> higher
