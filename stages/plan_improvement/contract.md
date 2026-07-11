@@ -1,5 +1,13 @@
 # Stage 10 — Plan Improvement
 
+> **⚠ RE-KEYED to Stage 9's 7 USAPA categories (v0.5.0, 2026-07-09).** `WHY`,
+> `UNMEASURED_REASON`, and the `finding_and_drills` branches now key on
+> `strategy`/`third_shot`/`dink`/`volley`/`serve_return`/`forehand`/`backhand`
+> (was the 6 homegrown dims). A zero-event guard routes categories with no
+> detected primary events (e.g. 0 dinks) to `developing_capability.not_assessable_now`
+> so an artifact-low subscore can't become a top focus area. See
+> `docs/USAPA_REALIGN_DESIGN.md`. Examples below may still show old dim names.
+
 **Status:** DRAFT for review. Turns the Stage 9 `rating.json` (+ Stage 8
 `metrics.json` for concrete numbers) into an `improvement_plan.json` for the
 **user**: the gap to the next USAPA half-step, a prioritized set of **focus

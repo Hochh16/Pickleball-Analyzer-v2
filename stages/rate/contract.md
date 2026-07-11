@@ -1,5 +1,17 @@
 # Stage 9 — Rate (USAPA skill rating)
 
+> **⚠ REALIGNED to 7 USAPA categories (v0.4.0, 2026-07-09).** The rating now
+> scores the **7 official USA Pickleball categories** — `strategy`, `third_shot`,
+> `dink`, `volley`, `serve_return`, `forehand`, `backhand` (weights in
+> `WEIGHTS`) — each with a `coverage_status` (measured/partial/not_assessable),
+> replacing the 6 homegrown dims (net_play/movement/error_control/shot_skill/
+> serve/rally_consistency). **The authoritative spec for the new categories,
+> scorers, weights, gating, and the single-caveated-estimate design is
+> `docs/USAPA_REALIGN_DESIGN.md`.** The example JSON + field notes BELOW still
+> describe the pre-realign 6-dim shape and are pending a full rewrite; the
+> confidence-weighting / honesty machinery they document is unchanged. See also
+> the closed KNOWN_ISSUES "dimensions do not match USAPA" entry.
+
 **Status:** DRAFT for review. Maps the aggregated `metrics.json` (Stage 8) to a
 **USA Pickleball (USAPA) skill rating** for the **user**: a continuous point
 estimate, the nearest official half-step band, a confidence range, and

@@ -69,12 +69,12 @@ paddle-up) that FEEDS the categories — not a standalone rated dimension.
 
 The vision reorders the roadmap around USAPA legitimacy. Dependency-correct order:
 
-1. **FIX the live output so it's TRUE** — the ● items are currently buggy:
-   - net-play zone %/positioning wrong (players at the kitchen read as ~0%) — court-zone + position→zone.
-   - rally over-segmentation (8 vs 6 — 0.8s micro-rallies) — Stage 7 min-duration/shots filter.
-   - finding language ("court coverage", "recover to middle") → plain English + good/bad context.
-2. **REALIGN the rating to USAPA's 7 categories** — rewrite Stage 9 dims from the 6 homegrown ones to Forehand/Backhand/Serve-Return/Dink/Third-Shot/Volley/Strategy, scored from the ● metrics available, ◐/○ flagged not-yet-measured (confidence-gated as already built).
-3. **ADD the ◐/○ metrics** toward alignment — each maps to a known roadmap item:
+1. **FIX the live output so it's TRUE** — ✅ **DONE (2026-07-09)**:
+   - ✅ net-play zone %/positioning — root cause was measuring the BACK foot; now uses the front foot (net-most ankle) + rally-scoped (Stage 8 v0.3.0/v0.4.0). Bonus: fixed the confidently-wrong movement jitter-floor (v0.5.0).
+   - ✅ rally over-segmentation (8→6) — Stage 7 v0.3.0 minimum-rally filter.
+   - ✅ finding language — Stage 10 v0.4.0 plain-English + good/bad verdicts.
+2. **REALIGN the rating to USAPA's 7 categories** — ✅ **DONE (2026-07-09, Stage 9 v0.4.0 + Stage 10 v0.5.0)**: rating now rates Strategy/Third-Shot/Dink/Volley/Serve-Return/Forehand/Backhand, each with `coverage_status`, hard-gated, single heavily-caveated estimate that leans on Strategy (the one `measured` category today). Design in `docs/USAPA_REALIGN_DESIGN.md`. This was a legitimacy/naming win; new signal comes from step 3.
+3. **ADD the ◐/○ metrics** toward alignment (NEXT) — each maps to a known roadmap item:
    depth/landing → bounce recall (C4); pace → court-plane/3D ball speed (F7/F8);
    FH/BH split → contact side from pose (F16); dink/speed-up/reset sub-types → Stage 6
    extension; opponents/targeting → role-awareness (F12) + opponent pose (C6);

@@ -786,3 +786,21 @@ metrics available and confidence-gating the not-yet-measured ones. The full
 criteria→metric alignment (most metrics still planned = the legitimacy gap) and the
 build program are in `docs/PRODUCT_VISION.md`. Body mechanics is NOT a USAPA category
 (footwork lives inside Strategy) — kept as a planned supporting pose layer.
+
+> **RESOLVED (2026-07-09, Stage 9 v0.4.0 `52c9a56` + Stage 10 v0.5.0 `bc85e80`).**
+> Stage 9 now rates the **7 official USAPA categories** (strategy, third_shot, dink,
+> volley, serve_return, forehand, backhand); Stage 10 findings/why/drills re-keyed to
+> match. Design + weights in `docs/USAPA_REALIGN_DESIGN.md`. Operator decisions: full
+> 7-category structure, hard-gated, single heavily-caveated estimate. Each category
+> carries `coverage_status` (measured/partial/not_assessable); count-only strokes
+> (forehand/backhand) and serve_return-with-no-serves route to `not_assessable`, and
+> Stage 10 adds a zero-event guard (0 dinks → not assessable, not a #1 focus). The
+> confidence-weighted estimate leans on Strategy; a loud USAPA-COVERAGE warning +
+> `reliability.{measured,not_assessable}_categories` surface that only ~1 of 7 is
+> measured today. pb_2min: estimate 3.95 / band 4.0, confidence 0.30; Strategy
+> `measured`, third_shot/dink/volley `partial`, serve_return/forehand/backhand
+> `not_assessable`. Smoke: Stage 9 9/9, Stage 10 9/9. **This is a legitimacy/naming
+> win, not new signal** — the 6 shot-based categories stay data-limited until ball
+> recall (C4) / serve detection (C3) / stroke-side (F16) / shot speed (F7) land
+> (build-program ADD step). Also fixed in passing: `score_volley` read the wrong
+> (nested) shot_mix path and always scored NEUTRAL (`c2a703f`).

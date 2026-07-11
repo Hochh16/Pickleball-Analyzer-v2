@@ -400,12 +400,13 @@ def compute_rating(metrics: dict, ball_source: str,
             "driver_metrics": drivers,
         })
 
-    # Confidence-weight the estimate: each dimension's influence is its static
-    # weight x its confidence, renormalized. A dimension we can't trust (e.g.
-    # error_control at confidence 0 because errors are undetectable, or serve with
-    # 0 detected serves) no longer inflates the headline number — the estimate
-    # leans on the dimensions we can actually measure. Falls back to the plain
-    # static-weight sum only if NO dimension carries any confidence (avoids /0).
+    # Confidence-weight the estimate: each category's influence is its static
+    # weight x its confidence, renormalized. A category we can't trust (e.g.
+    # serve_return at confidence 0 because no serves are detected, or forehand/
+    # backhand where the stroke is counted but its quality is unmeasured) no longer
+    # inflates the headline number — the estimate leans on the categories we can
+    # actually measure (today, mostly Strategy). Falls back to the plain
+    # static-weight sum only if NO category carries any confidence (avoids /0).
     eff = [(d, d["weight"] * d["confidence"]) for d in dimensions]
     eff_sum = sum(w for _, w in eff)
     if eff_sum > 0:
