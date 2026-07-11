@@ -1,12 +1,11 @@
 # Stage 10 — Plan Improvement
 
-> **⚠ RE-KEYED to Stage 9's 7 USAPA categories (v0.5.0, 2026-07-09).** `WHY`,
-> `UNMEASURED_REASON`, and the `finding_and_drills` branches now key on
-> `strategy`/`third_shot`/`dink`/`volley`/`serve_return`/`forehand`/`backhand`
-> (was the 6 homegrown dims). A zero-event guard routes categories with no
-> detected primary events (e.g. 0 dinks) to `developing_capability.not_assessable_now`
-> so an artifact-low subscore can't become a top focus area. See
-> `docs/USAPA_REALIGN_DESIGN.md`. Examples below may still show old dim names.
+> **RE-KEYED to Stage 9's 7 USAPA categories (v0.5.0, 2026-07-09).** `WHY`,
+> `UNMEASURED_REASON`, and the `finding_and_drills` branches key on
+> `strategy`/`third_shot`/`dink`/`volley`/`serve_return`/`forehand`/`backhand`.
+> A zero-event guard routes categories with no detected primary events (e.g. 0
+> dinks) to `developing_capability.not_assessable_now` so an artifact-low subscore
+> can't become a top focus area. See `docs/USAPA_REALIGN_DESIGN.md`.
 
 **Status:** DRAFT for review. Turns the Stage 9 `rating.json` (+ Stage 8
 `metrics.json` for concrete numbers) into an `improvement_plan.json` for the
@@ -26,21 +25,21 @@ confidence, loud failures).
 > v1 (no evidence basis on placeholder data).
 
 > **DECISION (include synthetic weaknesses, flagged provisional).** Prioritize
-> across ALL dimensions, but mark recommendations derived from synthetic-ball
-> dimensions (`error_control`, `shot_skill`, `serve`, `rally_consistency`) as
-> `"provisional"` (pending real ball v4), and let real-data weaknesses
-> (`net_play`, `movement`) rank as higher-confidence via a mild
-> confidence weighting in the priority score. Full plan now, honest about which
-> parts are placeholder.
+> across ALL categories, but mark recommendations derived from synthetic-ball
+> categories as `"provisional"` (pending real ball v4), and let real-data
+> weaknesses (`strategy`) rank as higher-confidence via a mild confidence
+> weighting in the priority score. Full plan now, honest about which parts are
+> placeholder.
 
-> **DECISION (v0.3.0, 2026-07-07 — gate focus/strengths by PER-DIMENSION
-> confidence).** The 06-19 rule gated "provisional" on the coarse `ball_source`
-> (synthetic vs real). The first real-ball run exposed the failure mode: with a
-> real ball, a dimension at **confidence 0** (a data gap, not a signal — `serve`
-> with 0 detected serves, `error_control` with errors undetectable because
-> end_reasons are all `unknown`) was rendered as a confident coaching signal —
-> "work on your serve," "great error control." Now a REAL dimension whose
-> confidence is below `ASSESS_CONF_FLOOR` (0.1) is treated as **not assessable**:
+> **DECISION (v0.3.0, 2026-07-07 — gate focus/strengths by PER-CATEGORY
+> confidence; extended v0.5.0 with a zero-event guard).** The 06-19 rule gated
+> "provisional" on the coarse `ball_source`. The first real-ball run exposed the
+> failure mode: with a real ball, a category at **confidence 0** (a data gap, not
+> a signal — `serve_return` with 0 detected serves) was rendered as a confident
+> coaching signal. Now a REAL category whose confidence is below
+> `ASSESS_CONF_FLOOR` (0.1) **OR that rests on zero detected primary events**
+> (v0.5.0 — e.g. 0 dinks in a small shot sample, an artifact-low subscore) is
+> treated as **not assessable**:
 > it is routed OUT of `focus_areas`/`strengths` into
 > `developing_capability.not_assessable_now` (with its `limited_by` reason), never
 > coached as a weakness or celebrated as a strength. Dimensions above the floor
@@ -105,9 +104,9 @@ missing/malformed → fail loudly.
 ```json
 {
   "schema_version": 1,
-  "source_rating": "data/test_clip/rating.json",
-  "source_metrics": "data/test_clip/metrics.json",
-  "ball_source": "synthetic",
+  "source_rating": "data/pb_2min/rating.json",
+  "source_metrics": "data/pb_2min/metrics.json",
+  "ball_source": "real",
   "rated_role": "user",
   "current": {"estimate": 3.69, "band": "3.5", "confidence": 0.545},
   "target": {
@@ -118,40 +117,40 @@ missing/malformed → fail loudly.
   "focus_areas": [
     {
       "priority": 1,
-      "dimension": "net_play",
+      "dimension": "strategy",
       "data_source": "real",
       "confidence": "high",
-      "current_subscore": 2.78,
-      "gap_to_target": 1.22,
-      "priority_score": 0.244,
-      "finding": "You're at the kitchen line about 13% of each rally, so you're not getting up to the kitchen line often enough; you and your partner are rarely at the line together at once (2% of the rally).",
-      "why_it_matters": "USAPA 3.5–4.0 players win the net: they get up to the kitchen line, hold it together as a team, and avoid getting stuck back in the middle of the court.",
+      "current_subscore": 3.89,
+      "gap_to_target": 0.61,
+      "priority_score": 0.122,
+      "finding": "You're at the kitchen line about 34% of each rally, so you get there but don't hold it for the whole point; you and your partner get to the line together only part of the time (33% of the rally).",
+      "why_it_matters": "Strategy is where points are won: getting up to the kitchen line, holding it with your partner, covering the court, and keeping the ball in play until you get one you can attack.",
       "drills": [
         {"name": "Get-to-the-line", "cue": "After every return, sprint to the NVZ line and freeze before the next ball — 'get to the line, then play.'"},
-        {"name": "Move as a unit", "cue": "Shadow your partner across the kitchen keeping ~8–10 ft spacing; close the middle together."},
-        {"name": "Transition resets", "cue": "From mid-court, reset a hard feed softly into the kitchen, then advance to the line."}
+        {"name": "Split-step + recover", "cue": "Split-step as your opponent contacts the ball, then recover to a paddle-up ready position after each shot."}
       ],
       "provisional_note": null
     },
     {
       "priority": 2,
-      "dimension": "error_control",
-      "data_source": "synthetic",
-      "confidence": "provisional",
-      "current_subscore": 3.64,
-      "gap_to_target": 0.36,
-      "priority_score": 0.061,
-      "finding": "Attributed error rate ≈0.36 per rally. (Forced/unforced split unavailable until real ball.)",
-      "why_it_matters": "Cutting unforced errors is the fastest way up the rating ladder.",
+      "dimension": "third_shot",
+      "data_source": "real",
+      "confidence": "low",
+      "current_subscore": 4.0,
+      "gap_to_target": 0.5,
+      "priority_score": 0.041,
+      "finding": "On the third shot you drop the ball about 50% of the time, so it's roughly a coin-flip rather than a drop you rely on.",
+      "why_it_matters": "A reliable third-shot drop is what lets your team get off the baseline and up to the net — the classic 3.0-to-4.0 gate.",
       "drills": [
-        {"name": "Cooperative dink count", "cue": "Cross-court dink rally to 20 without an error before adding pace."}
+        {"name": "Third-shot-drop reps", "cue": "From the baseline, drop the 3rd ball into the kitchen — target 7/10 before moving up."},
+        {"name": "Soft-game targets", "cue": "Dink and drop to floor targets in the kitchen to build touch and placement."}
       ],
-      "provisional_note": "Derived from the synthetic ball; revisit when real ball detection (v4) lands."
+      "provisional_note": null
     }
   ],
   "strengths": [
-    {"dimension": "serve", "current_subscore": 4.2, "data_source": "synthetic",
-     "note": "At/above the 4.0 target (provisional — synthetic)."}
+    {"dimension": "volley", "current_subscore": 4.2, "data_source": "real",
+     "confidence": "low", "note": "At/above the 4.0 target."}
   ],
   "developing_capability": {
     "_comment": "Skills not yet fully measured. v1 emits NO recommendations for these; they scaffold in once their data source lands, giving the plan full capability post Stage 4/4.5 + the listed new stages.",
@@ -177,33 +176,42 @@ missing/malformed → fail loudly.
         "will_recommend": "Split-step timing drills vs opponent contact."
       }
     ],
+    "not_assessable_now": [
+      {"dimension": "dink", "confidence": 0.155, "limited_by": "measurement",
+       "reason": "We didn't see enough of your dink shots to assess it yet (0 detected)."},
+      {"dimension": "serve_return", "confidence": 0.0, "limited_by": "sample_size",
+       "reason": "Serves aren't reliably detected yet (needs serve detection, C3) and returns aren't separated — can't assess serve/return yet."},
+      {"dimension": "forehand", "confidence": 0.05, "limited_by": "measurement",
+       "reason": "We can count forehands but can't yet judge their pace, depth, or consistency — forehand quality isn't assessable yet."},
+      {"dimension": "backhand", "confidence": 0.05, "limited_by": "measurement",
+       "reason": "We can count backhands but can't yet judge their quality — not assessable yet."}
+    ],
     "out_of_scope": ["spin", "score_situational_decisions"]
   },
   "reliability": {
-    "synthetic_ball": true,
-    "n_focus_real": 1,
-    "n_focus_provisional": 1,
-    "note": "1 of 2 focus areas is provisional (synthetic-ball-derived). The plan's real-data focus areas (positioning/movement) are trustworthy now; the rest firm up at ball v4."
+    "synthetic_ball": false,
+    "n_focus_real": 2,
+    "n_focus_provisional": 0,
+    "note": "0 of 2 focus areas are provisional. Strategy (positioning) is trustworthy now; the shot-based categories firm up as ball recall / serve detection / stroke-side land."
   },
   "operator_considerations": {
-    "_comment": "Analysis-reliability notes for the OPERATOR (separate audience, lower priority than coaching). Surfaced only when a real-data limiter bites; empty otherwise (here: synthetic ball -> suppressed).",
+    "_comment": "Analysis-reliability notes for the OPERATOR (separate audience, lower priority than coaching). Surfaced only when a real-data limiter bites; empty otherwise.",
     "items": []
   },
   "warnings": [
-    "ball_source is 'synthetic': provisional focus areas are derived from PLACEHOLDER ball data — treat as a scaffold until ball detection v4.",
     "Rating + plan thresholds are UNCALIBRATED heuristics (no rated-footage corpus); see KNOWN_ISSUES.md."
   ],
   "params": {"max_focus_areas": 4, "confidence_weight_floor": 0.5},
-  "stage_version": "0.2.0",
-  "completed_at_utc": "2026-05-29T..."
+  "stage_version": "0.5.0",
+  "completed_at_utc": "2026-07-09T..."
 }
 
-// On a REAL-ball plan with a low-confidence dimension, operator_considerations
+// On a REAL-ball plan with a low-confidence category, operator_considerations
 // instead reads e.g.:
 //   "items": [
-//     {"category": "more_data", "limiters": ["sample_size"], "affects": ["serve"],
+//     {"category": "more_data", "limiters": ["sample_size"], "affects": ["serve_return"],
 //      "action": "Record longer sessions, or combine clips across sessions - these assessments currently rest on few rallies."},
-//     {"category": "capture_quality", "limiters": ["measurement"], "affects": ["shot_skill"],
+//     {"category": "capture_quality", "limiters": ["measurement"], "affects": ["third_shot"],
 //      "action": "Capped by single-camera 2D (no ball height/depth) - a higher-mounted or second camera would improve precision."}
 //   ]
 ```
@@ -222,8 +230,8 @@ missing/malformed → fail loudly.
     ones of similar leverage **without burying** a genuinely large synthetic
     gap. `confidence_weight_floor` (default 0.5) bounds how much synthetic
     advice is down-weighted.
-  - `data_source` / `confidence` — `"real"`/`"high"` for net_play + movement;
-    `"synthetic"`/`"provisional"` for the ball-derived dimensions (becomes
+  - `data_source` / `confidence` — `"real"` for strategy (and everything once the
+    ball is real); `"synthetic"`/`"provisional"` for ball-derived categories (becomes
     `"real"`/`"high"` automatically when `ball_source == "real"`, since
     rating.json's `data_source` already flips).
     > **Player coaching stays clean (Foundation #3 decision, David 2026-06-21).**
@@ -276,21 +284,22 @@ There is **no separate `.meta.json`** — metadata lives inside the file.
 
 ## Built-in drill library (USAPA-anchored; documented constants)
 
-A small curated `dimension → [drill]` table (each drill = `{name, cue}`),
+A small curated `category → [drill]` table (each drill = `{name, cue}`),
 plus light conditional selection on driver values. v1 content (tunable):
 
-- **net_play:** Get-to-the-line; Move as a unit (if `both_at_kitchen_frac`
-  low); Transition resets (if `transition_time_frac` high).
-- **movement:** Split-step + recover; Court-coverage ladder (if coverage low).
-- **error_control:** Cooperative dink count; Reset under pressure.
-- **shot_skill:** Third-shot-drop reps (if `drop_rate` low); Shot-variety
-  ladder (if `shot_variety` low); Soft-game targets.
-- **serve:** Deep-serve targets (if `serve_fault_rate` high); Pre-serve routine.
-- **rally_consistency:** Sustained-rally game; Volley exchanges (if
-  `volley_rate` low).
+- **strategy:** Get-to-the-line; Move as a unit (if `both_at_kitchen_frac`
+  low); Transition resets (if `transition_time_frac` high); Split-step + recover.
+- **third_shot:** Third-shot-drop reps (if `drop_rate` low); Transition resets;
+  Soft-game targets.
+- **dink:** Cooperative dink count; Soft-game targets.
+- **volley:** Volley exchanges; Reset under pressure.
+- **serve_return:** Deep-serve targets (if `serve_fault_rate` high); Pre-serve
+  routine.
+- **forehand / backhand:** Shot-variety ladder; Soft-game targets. (Mostly routed
+  to `not_assessable_now` — quality unmeasured — so these rarely surface as focus.)
 
 > The library is intentionally modest and rule-selected — not a content engine.
-> It expands as dimensions are added (developing_capability) and as real-data
+> It expands as categories gain signal (developing_capability) and as real-data
 > calibration tells us which drills move which metric.
 
 ## Method
@@ -422,11 +431,11 @@ field). `0.1.0` was the initial version.
 
 - **Uncalibrated mapping** (inherited from Stage 9): which drills actually move
   which metric is unvalidated. Calibrate with real-data + outcome tracking.
-- **Most v1 focus areas may be provisional** (0.70 of the rating is synthetic),
-  so the trustworthy part of the plan is the positioning/movement items until
-  ball v4. Surfaced in `reliability`.
-- **developing_capability becomes focus_areas** incrementally as each skill's
-  metric lands; the descriptor table is the migration checklist.
+- **Only Strategy is `measured`** today, so the trustworthy part of the plan is
+  the positioning/strategy items; the shot-based categories mostly route to
+  `not_assessable_now` until their metrics land. Surfaced in `reliability`.
+- **not_assessable_now categories become focus_areas** incrementally as each
+  category's metric lands (ball recall, serve detection, stroke-side, shot speed).
 
 ## Architecture note
 
