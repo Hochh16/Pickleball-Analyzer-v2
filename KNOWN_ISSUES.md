@@ -508,6 +508,23 @@ plane). This is also the right speed signal for **Stage 8 metrics**, so do it
 once, there or as a shared helper, rather than patching Stage 6. Full fix = ball
 height / 3D tracking. Deferred until ball speed materially drives a metric.
 
+> **TESTED + REJECTED (2026-07-11) — the "residual bias" is fatal, not residual.**
+> When the USAPA-realign made pace the blocker for 4 categories, the court-plane
+> approach was validated empirically on pb_2min before building: project each
+> shot's post-contact ball pixels through `image_to_court`, measure ft/frame ×
+> fps. Result = **physically impossible garbage**: a *drop* read 157 ft/s, drives
+> 362 ft/s, one shot 5626 ft/s (a hard drive is ~40–60 ft/s), with the airborne
+> ball projecting to `court_y` up to **902 ft** on a 44-ft court. Cause: a ball at
+> even 2–3 ft of height moving horizontally has its ground-intersection race toward
+> the horizon, so real motion becomes hugely amplified projected distance. The
+> ground homography **cannot place an airborne ball** — the same wall as the
+> unusable airborne contact-projection (Stages 5/7 entry). **So court-plane speed
+> is NOT a doable-now helper; real pace requires ball HEIGHT** (parabola-z / 3D
+> reconstruction = F8, the z-recovery spike — a research effort, partly gated on
+> ball-detection recall). Pace deferred; do NOT re-attempt the naive 2D→ground
+> projection. Stroke-side FH/BH (F16, pose-based, no height needed) was done next
+> instead.
+
 ## Stage 6 — serve labeling & courtesy feeds are upstream/downstream concerns
 
 **Observed:** 2026-06-15, same validation.
