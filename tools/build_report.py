@@ -146,10 +146,10 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
 # --- Ball-landing sequence diagram (drawn with OpenCV) -----------------------
 
 def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
-    """Top-down court with ball landings during rallies, numbered in play order and
-    connected WITHIN each rally (the line breaks between points, so it doesn't jump
-    across dead time). Returns a PNG data URI. Volleys have no bounce, so they don't
-    appear here — see the annotated video for the full shot-by-shot."""
+    """Top-down court showing WHERE the ball bounced during rallies (a landing map,
+    not a sequence). No connecting lines or numbers: volleys never bounce and some
+    bounces are missed, so any implied shot-by-shot order would be inaccurate. The
+    map fills in as bounce detection improves. Returns a PNG data URI."""
     import cv2
     def rally_of(f):
         for i, (a, b) in enumerate(rally_windows):
@@ -186,20 +186,12 @@ def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
     for yy, w in [(L_FT / 2, 2), (L_FT / 2 - KIT, 1), (L_FT / 2 + KIT, 1)]:
         cv2.line(img, to_px(0, yy), to_px(W_FT, yy), line, w)
     cv2.line(img, to_px(W_FT / 2, 0), to_px(W_FT / 2, L_FT), line, 1)
-    # landings, numbered in play order; line connects only within the same rally
-    teal, red, grey = (110, 118, 15), (60, 60, 210), (150, 150, 150)
-    prev = None
+    # landing dots only — no lines, no numbers (see docstring)
+    teal, red = (110, 118, 15), (60, 60, 210)
     for (xy, ok, ri) in pts:
         p = to_px(xy[0], xy[1])
-        if prev is not None and prev[1] == ri:
-            cv2.line(img, prev[0], p, grey, 1, cv2.LINE_AA)
-        prev = (p, ri)
-    for i, (xy, ok, ri) in enumerate(pts, 1):
-        p = to_px(xy[0], xy[1])
-        cv2.circle(img, p, 9, teal if ok else red, -1, cv2.LINE_AA)
-        cv2.circle(img, p, 9, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(img, str(i), (p[0] - (4 if i < 10 else 7), p[1] + 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.circle(img, p, 8, teal if ok else red, -1, cv2.LINE_AA)
+        cv2.circle(img, p, 8, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(img, "net", (pad + 4, to_px(0, L_FT / 2)[1] - 4),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, line, 1, cv2.LINE_AA)
     ok, buf = cv2.imencode(".png", img)
@@ -479,17 +471,15 @@ def build_html(folder: Path) -> str:
         A('<div class="grid2"><div class="card hm"><h3>Where the ball bounced</h3>'
           f'<img alt="ball landing sequence" src="{land}"></div>'
           '<div class="card"><h3>Reading it</h3>'
-          f'<p class="small muted">Each dot is a ball bounce during a rally, numbered '
-          f'in play order; the line connects bounces <i>within the same point</i> and '
-          f'breaks between points. '
-          f'<span style="color:var(--court)">●</span> landed in bounds · '
-          f'<span style="color:#d23">●</span> landed out. Near baseline at the bottom, '
-          f'far court at the top, net across the middle.</p>'
+          f'<p class="small muted">Each dot is where the ball bounced during a rally — '
+          f'<span style="color:var(--court)">●</span> in bounds · '
+          f'<span style="color:#d23">●</span> out. Near baseline at the bottom, far '
+          f'court at the top, net across the middle.</p>'
           f'<p class="small muted">Showing the {n_inr} of {len(all_bounces)} detected '
-          f'bounces that happened during rallies (the rest were between points). '
-          f'Volleys (hit in the air) never bounce, so they aren\'t here, and many '
-          f'ground bounces are still missed{fn(6)} — who hit each shot is easiest to '
-          f'follow in the annotated video below.</p></div></div>')
+          f'bounces that happened during rallies. Volleys (hit in the air) never '
+          f'bounce, and many ground bounces are still missed{fn(6)}, so this is a '
+          f'partial map — it will fill in as bounce detection improves. For the full '
+          f'shot-by-shot, see the annotated video below.</p></div></div>')
 
     # ---- Annotated video ----
     A('<h2>Annotated video &amp; timeline</h2><hr class="rule">')
