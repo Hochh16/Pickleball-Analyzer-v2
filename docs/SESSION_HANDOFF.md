@@ -1,4 +1,51 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-11)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-12)
+
+## 2026-07-12 — SETUP UI PHASE 1 DONE (setup wizard) → next = UI Phase 2 (run & progress) — READ FIRST
+
+Built the **input/setup UI Phase 1** per `docs/UI_PLAN.md` — a local FastAPI web
+app + vanilla-JS single-page wizard that replaces the Tkinter `mark_court.py` /
+`mark_user.py` tools. New top-level **`app/`** package. Two commits: backend
+skeleton (`6cf935f`) + front end (`69b42b2`). On branch **`feat/setup-ui-phase1`**
+(not yet merged to main).
+
+- **Backend (`app/`):** `video.py` serves EXACT source frames as JPEGs via OpenCV
+  (same indexing the pipeline uses → marked coords map to original-video pixels);
+  `sessions.py` owns per-video `data/<name>/` folders and writes the input JSONs,
+  calling `stages.calibrate.calibrate()` **in-process** (no reimplementation);
+  `browse.py` = server-side local file browser (the "server" is the user's laptop);
+  `server.py` = FastAPI routes; `__main__.py` = `python -m app` launches uvicorn +
+  opens the browser. Session name auto-derives from the parent folder when the
+  filename is generic (`data/<clip>/video.mp4` → "<clip>", not "video").
+- **Front end (`app/static/`):** 5-step wizard — **Video** (server-side file
+  browser AND browser upload w/ progress; lists prior setups) → **Court** (served-
+  frame canvas marking of the 8 pts in order, zoom loupe, live lines, undo/clear,
+  scrubber, the 3 hand/baseline/corner dropdowns; "Check calibration" runs Stage 1
+  and shows the top-down warp + RMSE/kitchen-error metrics + warnings for
+  confirm-or-redo) → **Players** (per-role handedness → `roster.json`, keys
+  `user/partner/opp_a/opp_b`) → **You** (optional self-ID clicks → `user_clicks.json`;
+  skippable) → **Review** (reads back from disk) → Finish. Theme-aware, court-teal.
+- **Data contracts UNCHANGED** — the wizard produces `markers.json` →
+  `court.json`/`court_zones.json` (via Stage 1), `roster.json`, `user_clicks.json`,
+  exactly as before. Nothing downstream changes.
+- **Validated end-to-end by driving the REAL app in a browser** against the 4K
+  pb_2min clip (browse→pick→mark 8 pts→calibrate RMSE ~0→roster→self-ID→review→
+  finish; all 6 files written correctly), upload endpoint via curl, + **8 passing
+  self-contained pytest smoke tests** (`app/test_app.py`, synthesizes a tiny video —
+  no dependency on gitignored `data/`). Test session folders cleaned up.
+
+**NEXT — UI Phase 2 (run & progress + the Stage-4 hand-off).** Backend job
+orchestration: run Stages 1–3 locally as a background job with per-stage progress
+(SSE/websocket), the guided Stage-4 GPU/Colab hand-off (the one operator-assisted
+step), then resume Stages 5–11 + `build_report.py` + `compress_video.py`, and serve
+the finished report/video. `session.json` already records the resolved video path
+for the orchestrator. Then Phase 3 (library/polish). See `docs/UI_PLAN.md`.
+
+**Also still open / parallel (unchanged):** the ADD metrics are data-gated on the
+cross-venue detector / more footage (bounce recall C4, serve C3, stroke-side F16,
+shot speed F7/F8); operator labeling indoor clips → cross-venue retrain is the
+standing gate (`DATA_COLLECTION_PLAN.md`).
+
+---
 
 ## 2026-07-11 — USAPA REALIGN + CONSUMER REPORT DONE → next = build the UI (Phase 1) — READ FIRST
 

@@ -72,10 +72,14 @@ so nothing downstream changes.
 
 ## Milestones
 
-1. **Phase 1 — Setup wizard** (build first). FastAPI skeleton + frame-serving +
-   the in-browser court-marking canvas + player setup + self-ID + writes the input
-   JSONs and runs Stage 1. Self-contained, most user-facing, replaces the clunkiest
-   current step. Design-invested (outside-user bar).
+1. **Phase 1 — Setup wizard** ✅ **DONE (2026-07-12, branch `feat/setup-ui-phase1`,
+   commits `6cf935f` backend + `69b42b2` front end).** New `app/` package: FastAPI
+   backend (OpenCV exact-frame serving, per-video folder management, Stage 1 called
+   in-process, server-side file browser) + a vanilla-JS 5-step SPA (Video → Court →
+   Players → You → Review). Writes `markers.json`/`court.json`/`court_zones.json`/
+   `roster.json`/`user_clicks.json` — contracts unchanged. Validated end-to-end in a
+   real browser on the 4K pb_2min clip + 8 pytest smoke tests (`app/test_app.py`).
+   Run: `python -m app`. See `app/README.md`.
 2. **Phase 2 — Run & progress + the Stage-4 hand-off.** Job orchestration, progress
    streaming, the guided GPU step, resume-and-finish, report generation.
 3. **Phase 3 — Library + polish.** Past-analysis list, error states, empty states,
