@@ -356,8 +356,9 @@ def build_html(folder: Path) -> str:
              ("Ball bounces", len(bounces_doc.get("bounces", [])))]
     A('<div class="card"><div class="stats">')
     for label, val in stats:
+        ref = fn(6) if label == "Ball bounces" else ""
         A(f'<div class="stat"><div class="stat-n num">{esc(val)}</div>'
-          f'<div class="stat-l">{esc(label)}</div></div>')
+          f'<div class="stat-l">{esc(label)}{ref}</div></div>')
     A('</div></div>')
 
     # ---- 7-category table ----
@@ -466,22 +467,29 @@ def build_html(folder: Path) -> str:
       'bright yellow = where you spent the most time. The white line is the net.</p></div>')
 
     # ball landings
+    all_bounces = bounces_doc.get("bounces", [])
     rally_windows = [(int(r["start_frame"]), int(r["end_frame"]))
                      for r in rallies]
-    land = landing_diagram_uri(bounces_doc.get("bounces", []), rally_windows)
+    def _inr(f):
+        return any(a <= f <= b for a, b in rally_windows)
+    n_inr = sum(1 for b in all_bounces
+                if b.get("court_xy_ft") and _inr(int(b["frame"])))
+    land = landing_diagram_uri(all_bounces, rally_windows)
     if land:
         A('<div class="grid2"><div class="card hm"><h3>Where the ball bounced</h3>'
           f'<img alt="ball landing sequence" src="{land}"></div>'
           '<div class="card"><h3>Reading it</h3>'
-          '<p class="small muted">Each dot is a ball bounce during a rally, numbered '
-          'in play order; the line connects bounces <i>within the same point</i> and '
-          'breaks between points. '
-          '<span style="color:var(--court)">●</span> landed in bounds · '
-          '<span style="color:#d23">●</span> landed out. Near baseline at the bottom, '
-          'far court at the top, net across the middle.</p>'
-          '<p class="small muted">Shots volleyed out of the air never bounce, so they '
-          'aren\'t here — and who hit each shot is easiest to follow in the '
-          'annotated video below.</p></div></div>')
+          f'<p class="small muted">Each dot is a ball bounce during a rally, numbered '
+          f'in play order; the line connects bounces <i>within the same point</i> and '
+          f'breaks between points. '
+          f'<span style="color:var(--court)">●</span> landed in bounds · '
+          f'<span style="color:#d23">●</span> landed out. Near baseline at the bottom, '
+          f'far court at the top, net across the middle.</p>'
+          f'<p class="small muted">Showing the {n_inr} of {len(all_bounces)} detected '
+          f'bounces that happened during rallies (the rest were between points). '
+          f'Volleys (hit in the air) never bounce, so they aren\'t here, and many '
+          f'ground bounces are still missed{fn(6)} — who hit each shot is easiest to '
+          f'follow in the annotated video below.</p></div></div>')
 
     # ---- Annotated video ----
     A('<h2>Annotated video &amp; timeline</h2><hr class="rule">')
@@ -529,6 +537,11 @@ def build_html(folder: Path) -> str:
       'On its own it isn\'t good or bad — strong players often move <i>less</i> but '
       'get to better spots — so we don\'t rate it. The coachable lever is footwork '
       'and positioning, which lives under Strategy above.</li>')
+    A('<li id="fn6">Bounce detection is incomplete. Every groundstroke follows a '
+      'bounce, so bounces should roughly match your non-volley shots — here ~30 are '
+      'expected but fewer are detected. Missed bounces are a known ball-detection '
+      'limit we\'re improving; they thin out the landing map and the depth-based '
+      'stats, but don\'t affect your positioning or rating.</li>')
     A('</ol>')
     for w in (rating.get("warnings", []) or []):
         A(f'<p>⚠ {esc(w)}</p>')

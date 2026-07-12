@@ -578,6 +578,31 @@ interpolation). This is the highest-leverage foundation investment — it improv
 shots, bounces, serves, and end_reason at once. Forcing detections out of gaps in
 Stage 5 instead is rejected: it reintroduces the contamination above.
 
+## Stage 5.5 — bounce recall is ~50% (undercounts landings, caps depth/end_reason) (2026-07-11)
+
+**Observed:** 2026-07-11, building the consumer report — the operator noticed the
+counts don't reconcile. A clean way to see it: **every groundstroke is hit right
+after a bounce**, so bounces should roughly equal the number of non-volley shots.
+On pb_2min there are **39 shots − 9 volleys = 30 groundstrokes**, so we'd expect
+**~30 bounces** (plus a few rally-ending ones) — but only **15 bounces are
+detected** (~50% recall). The shot count makes the miss legible where the raw
+bounce list doesn't.
+
+**Blast radius:** the ball-landing diagram in the report is sparse (13 in-rally
+dots vs the ~30 real bounces); rally `end_reason` is mostly `unknown` (no
+rally-ending bounce detected → Stage 7 depth-speed entry); the `● depth/landing`
+and `dink-rally-length` metrics that feed Third Shot / Dink stay `partial`/`○`;
+in/out and net-or-short attribution are thin. This is the **same root cause** as
+the Stage 4 ball-detection-recall limiter above (a missed ball at ground contact =
+a missed bounce), surfaced as its own entry because it's the specific gate on the
+report's landing map + the depth/landing metrics for the USAPA ADD step.
+
+**Where to fix:** upstream ball-detection recall (Stage 4 v4 retrain — same lever
+as above), plus possibly a more permissive Stage 5.5 bounce detector once recall
+improves (the current precision-tuned detector deliberately under-detects to avoid
+false bounces on the noisy ball). Do NOT loosen Stage 5.5 thresholds before the
+detector improves — it would trade the recall gap for false landings.
+
 ## Stages 5/7 — airborne ball-contact projection is unusable (resolved by hitter_side)
 
 **Observed:** 2026-06-15/16.
