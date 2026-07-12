@@ -145,13 +145,26 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
 
 # --- Ball-landing sequence diagram (drawn with OpenCV) -----------------------
 
-def landing_diagram_uri(bounces: list) -> Optional[str]:
-    """Top-down court with in-bounds ball landings numbered in play order and
-    connected, so the reader sees the sequence. Returns a PNG data URI."""
+def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
+    """Top-down court with ball landings during rallies, numbered in play order and
+    connected WITHIN each rally (the line breaks between points, so it doesn't jump
+    across dead time). Returns a PNG data URI. Volleys have no bounce, so they don't
+    appear here — see the annotated video for the full shot-by-shot."""
     import cv2
-    pts = [(b["court_xy_ft"], bool(b.get("is_in_court")))
-           for b in bounces
-           if b.get("court_xy_ft") and b["court_xy_ft"][0] is not None]
+    def rally_of(f):
+        for i, (a, b) in enumerate(rally_windows):
+            if a <= f <= b:
+                return i
+        return None
+    pts = []
+    for b in bounces:
+        xy = b.get("court_xy_ft")
+        if not xy or xy[0] is None:
+            continue
+        ri = rally_of(int(b["frame"]))
+        if ri is None:           # between-point / out-of-play bounce -> skip
+            continue
+        pts.append((xy, bool(b.get("is_in_court")), ri))
     if not pts:
         return None
     W_FT, L_FT, KIT = 20.0, 44.0, 7.0
@@ -173,15 +186,15 @@ def landing_diagram_uri(bounces: list) -> Optional[str]:
     for yy, w in [(L_FT / 2, 2), (L_FT / 2 - KIT, 1), (L_FT / 2 + KIT, 1)]:
         cv2.line(img, to_px(0, yy), to_px(W_FT, yy), line, w)
     cv2.line(img, to_px(W_FT / 2, 0), to_px(W_FT / 2, L_FT), line, 1)
-    # landings, numbered + connected in order
+    # landings, numbered in play order; line connects only within the same rally
     teal, red, grey = (110, 118, 15), (60, 60, 210), (150, 150, 150)
     prev = None
-    for i, (xy, ok) in enumerate(pts, 1):
+    for (xy, ok, ri) in pts:
         p = to_px(xy[0], xy[1])
-        if prev is not None:
-            cv2.line(img, prev, p, grey, 1, cv2.LINE_AA)
-        prev = p
-    for i, (xy, ok) in enumerate(pts, 1):
+        if prev is not None and prev[1] == ri:
+            cv2.line(img, prev[0], p, grey, 1, cv2.LINE_AA)
+        prev = (p, ri)
+    for i, (xy, ok, ri) in enumerate(pts, 1):
         p = to_px(xy[0], xy[1])
         cv2.circle(img, p, 9, teal if ok else red, -1, cv2.LINE_AA)
         cv2.circle(img, p, 9, (255, 255, 255), 1, cv2.LINE_AA)
@@ -251,6 +264,10 @@ th,td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line);vert
 th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;}
 tbody tr:last-child td{border-bottom:0;}
 .num{font-variant-numeric:tabular-nums;}
+.stats{display:flex;flex-wrap:wrap;gap:10px 28px;justify-content:space-between;}
+.stat{text-align:center;flex:1;min-width:90px;}
+.stat-n{font-family:var(--serif);font-size:28px;font-weight:600;color:var(--court);line-height:1;}
+.stat-l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-top:4px;}
 .lvl{font-family:var(--serif);font-size:19px;font-weight:600;color:var(--court);}
 .bar{height:6px;border-radius:4px;background:var(--na-bg);overflow:hidden;margin-top:6px;max-width:120px;}
 .bar>i{display:block;height:100%;background:var(--court);}
@@ -291,6 +308,8 @@ def build_html(folder: Path) -> str:
     plan = load_json(folder, "improvement_plan.json") or {}
     bounces_doc = load_json(folder, "bounces.json") or {}
     timeline = load_json(folder, "timeline.json") or {}
+    classified = load_json(folder, "classified.json") or {}
+    rallies_doc = load_json(folder, "rallies.json") or {}
 
     rt = rating.get("rating", {}) or {}
     dims = {d["name"]: d for d in rating.get("dimensions", [])}
@@ -324,6 +343,21 @@ def build_html(folder: Path) -> str:
       f'your <b>court strategy &amp; positioning</b> — the part we can measure well '
       f'from one camera. {len(na_cats)} of the 7 categories aren\'t measured yet and '
       f'are marked below.{fn(2)}</p>')
+    A('</div></div>')
+
+    # ---- Session at a glance ----
+    shots = classified.get("shots", [])
+    rallies = rallies_doc.get("rallies", [])
+    n_volley = sum(1 for s in shots if s.get("is_volley"))
+    dur = timeline.get("duration_sec")
+    mins = f"{dur/60:.1f}" if isinstance(dur, (int, float)) else "—"
+    stats = [("Minutes analyzed", mins), ("Rallies", len(rallies)),
+             ("Shots", len(shots)), ("Volleys (hit in the air)", n_volley),
+             ("Ball bounces", len(bounces_doc.get("bounces", [])))]
+    A('<div class="card"><div class="stats">')
+    for label, val in stats:
+        A(f'<div class="stat"><div class="stat-n num">{esc(val)}</div>'
+          f'<div class="stat-l">{esc(label)}</div></div>')
     A('</div></div>')
 
     # ---- 7-category table ----
@@ -364,7 +398,9 @@ def build_html(folder: Path) -> str:
             if k in drivers:
                 s = fmt_metric(fmt, drivers[k])
                 if s is not None:
-                    nums.append(f'<div class="metric">{esc(label)}: <b>{esc(s)}</b></div>')
+                    ref = fn(5) if k == "distance_ft_per_min" else ""
+                    nums.append(f'<div class="metric">{esc(label)}: '
+                                f'<b>{esc(s)}</b>{ref}</div>')
         numhtml = "".join(nums) if nums else '<span class="muted small">—</span>'
         els = "".join(
             f'<span class="el"><span class="sym">{SYMBOL[st]}</span> '
@@ -430,26 +466,34 @@ def build_html(folder: Path) -> str:
       'bright yellow = where you spent the most time. The white line is the net.</p></div>')
 
     # ball landings
-    land = landing_diagram_uri(bounces_doc.get("bounces", []))
+    rally_windows = [(int(r["start_frame"]), int(r["end_frame"]))
+                     for r in rallies]
+    land = landing_diagram_uri(bounces_doc.get("bounces", []), rally_windows)
     if land:
-        A('<div class="grid2"><div class="card hm"><h3>Ball landings, in order</h3>'
+        A('<div class="grid2"><div class="card hm"><h3>Where the ball bounced</h3>'
           f'<img alt="ball landing sequence" src="{land}"></div>'
           '<div class="card"><h3>Reading it</h3>'
-          '<p class="small muted">Each detected ball bounce is numbered in the order '
-          'it happened and connected by a line, so you can follow the flow of play. '
+          '<p class="small muted">Each dot is a ball bounce during a rally, numbered '
+          'in play order; the line connects bounces <i>within the same point</i> and '
+          'breaks between points. '
           '<span style="color:var(--court)">●</span> landed in bounds · '
-          '<span style="color:#d23">●</span> landed out. Near baseline is at the '
-          'bottom, the far court at the top, net across the middle.</p></div></div>')
+          '<span style="color:#d23">●</span> landed out. Near baseline at the bottom, '
+          'far court at the top, net across the middle.</p>'
+          '<p class="small muted">Shots volleyed out of the air never bounce, so they '
+          'aren\'t here — and who hit each shot is easiest to follow in the '
+          'annotated video below.</p></div></div>')
 
     # ---- Annotated video ----
     A('<h2>Annotated video &amp; timeline</h2><hr class="rule">')
-    if (folder / "annotated.mp4").exists():
+    vid = ("annotated_web.mp4" if (folder / "annotated_web.mp4").exists()
+           else "annotated.mp4" if (folder / "annotated.mp4").exists() else None)
+    if vid:
         A('<div class="card vid">'
-          '<video controls preload="metadata" src="annotated.mp4"></video>'
-          '<p class="small muted">Per-shot labels, the ball trail, and a live court '
-          'mini-map. <a href="annotated.mp4" download>Download the video</a>. '
-          '(Plays when you open this report from the same folder as the video; a '
-          'shared/online copy won\'t include it.)</p></div>')
+          f'<video controls preload="metadata" src="{vid}"></video>'
+          f'<p class="small muted">Per-shot labels, the ball trail, and a live court '
+          f'mini-map. <a href="{vid}" download>Download the video</a>. '
+          f'(Plays when you open this report from the same folder as the video; a '
+          f'shared/online copy won\'t include it.)</p></div>')
     else:
         A('<p class="muted small">No annotated video yet — run the render step to '
           'produce <code>annotated.mp4</code> next to this report.</p>')
@@ -481,6 +525,10 @@ def build_html(folder: Path) -> str:
       'USA Pickleball definitions across the seven categories.</li>')
     A('<li id="fn4">Positioning is measured from the player\'s front foot, during '
       'live rallies only (between-point standing is excluded).</li>')
+    A('<li id="fn5">Court covered is a work-rate figure (feet per minute of play). '
+      'On its own it isn\'t good or bad — strong players often move <i>less</i> but '
+      'get to better spots — so we don\'t rate it. The coachable lever is footwork '
+      'and positioning, which lives under Strategy above.</li>')
     A('</ol>')
     for w in (rating.get("warnings", []) or []):
         A(f'<p>⚠ {esc(w)}</p>')

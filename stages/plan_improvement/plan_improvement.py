@@ -244,10 +244,13 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
         k = dr.get("user_kitchen_time_frac")
         t = dr.get("user_transition_time_frac")
         b = dr.get("both_at_kitchen_frac")
+        # NOTE: kitchen time is averaged over the rally, so it can't distinguish
+        # "arrived late" from "left early" — the finding must not assert either.
         kv = _verdict(k, 0.25, 0.45,
-                      "so you're not getting up to the kitchen line often enough",
-                      "so you get there but don't hold it for the whole point",
-                      "so you get up there and hold it well")
+                      "so you're not up at the kitchen line enough — that's where "
+                      "points are won",
+                      "so there's room to be up at the line for more of each point",
+                      "so you're getting up there and staying well")
         s = (f"You're at the kitchen line about {_pct(k)} of each rally, {kv}"
              if kv else "You're spending very little time up at the kitchen line")
         bv = _verdict(b, 0.25, 0.50,
