@@ -1,4 +1,54 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-09)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-11)
+
+## 2026-07-11 — USAPA REALIGN + CONSUMER REPORT DONE → next = build the UI (Phase 1) — READ FIRST
+
+Big session. The build program is now through **FIX → REALIGN → (partial) ADD →
+report**, with the input UI scoped and next. In order:
+
+- **USAPA REALIGN done (Stage 9 v0.4.0 `52c9a56` + Stage 10 v0.5.0 `bc85e80`).**
+  Rating rewritten from 6 homegrown dims to the **7 official USAPA categories**
+  (strategy/third_shot/dink/volley/serve_return/forehand/backhand), each with a
+  `coverage_status` (measured/partial/not_assessable); count-only strokes + no-serve
+  serve_return capped to not_assessable; a zero-event guard in Stage 10 (0 dinks →
+  not assessable); single heavily-caveated estimate that leans on Strategy. Design
+  in `docs/USAPA_REALIGN_DESIGN.md`. Contracts fully rewritten (`21eac19`). Also
+  fixed `score_volley` reading the wrong path (always NEUTRAL) `c2a703f`. pb_2min:
+  3.95 / band 4.0, only Strategy `measured`. Smoke 9/9 both stages.
+- **ADD step — court-plane ball speed (F7) TESTED + REJECTED.** Validated before
+  building: naive image→ground projection of the airborne ball explodes (drop read
+  157 ft/s, one 5626 ft/s; court_y to 902 ft). Real pace needs ball HEIGHT (F8
+  z-recovery, gated on recall). Logged in KNOWN_ISSUES. Stroke-side (A2) also
+  examined — improves counts but does NOT flip forehand/backhand off not_assessable
+  (quality-gated), so deferred. **The remaining ADD metrics are data-gated** (bounce
+  recall C4, serve detection C3, stroke-side F16, shot speed F7/F8) → they wait on
+  the cross-venue detector / more footage (operator labeling indoor clips).
+- **CONSUMER REPORT done — `tools/build_report.py`.** Self-contained `report.html`
+  from the pipeline JSONs: rating hero, session-at-a-glance stats, the 7-category
+  table (what USAPA rates × your level × coverage badge), category detail (plain-
+  English metrics + %, ●◐○ legend), improvement plan, USAPA ladder (user band
+  highlighted), positioning heatmaps + a ball-landing map (dots only), annotated-
+  video embed, technique/trends placeholders, footnotes. Polished visual (court-teal
+  + serif/sans, both themes). Two operator review rounds folded in. `tools/
+  compress_video.py` (new) makes the 462 MB 4K render → 50 MB 720p web clip.
+- **NEW bounce-recall KNOWN_ISSUES entry (2026-07-11):** ~50% recall — 30
+  groundstrokes (39 shots − 9 volleys) imply ~30 bounces but only 15 detected;
+  thins the landing map + depth metrics. Same root cause as Stage 4 recall.
+
+**NEXT — build the input/setup UI, Phase 1 (spec: `docs/UI_PLAN.md`).** Operator
+decisions locked: **local guided web UI (FastAPI + browser) replacing the Tkinter
+`mark_*` tools + orchestrating the local pipeline; GPU ball step = guided Colab
+hand-off; audience = early outside users** (setup + report polished; GPU step
+operator-assisted for v1). Phase 1 = the **setup wizard** (frame-serving + in-browser
+8-point court marking with validation, player setup, optional self-ID, writes the
+same input JSONs + runs Stage 1). Best started fresh — it's a multi-hour,
+outside-user-polish build; UI_PLAN.md is the spec. Data contracts unchanged.
+
+**Also open / parallel:** operator labeling 2–3 indoor clips today → cross-venue
+retrain (the standing data-limited gate, `DATA_COLLECTION_PLAN.md`); the ADD metrics
+above unlock as recall/venues improve. Report follow-ups: annotated video is still
+462 MB at full res (compress step added); landing map thin until bounce recall.
+
+---
 
 ## 2026-07-09 — CONSUMER-OUTPUT FIX STEP COMPLETE (5 fixes) → next = USAPA REALIGN — READ FIRST
 
