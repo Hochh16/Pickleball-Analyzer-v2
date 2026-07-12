@@ -1,2 +1,239 @@
-<!-- placeholder — replaced by the full SPA in the next step -->
-<h1>Pickleball Analyzer — setup wizard</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pickleball Analyzer — Setup</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">Pickleball Analyzer</span>
+      <span class="brand-sub">Setup</span>
+    </div>
+    <ol class="steps" id="stepnav">
+      <li data-step="video"><span class="num">1</span><span class="lbl">Video</span></li>
+      <li data-step="court"><span class="num">2</span><span class="lbl">Court</span></li>
+      <li data-step="players"><span class="num">3</span><span class="lbl">Players</span></li>
+      <li data-step="you"><span class="num">4</span><span class="lbl">You</span></li>
+      <li data-step="review"><span class="num">5</span><span class="lbl">Review</span></li>
+    </ol>
+  </header>
+
+  <main class="stage">
+    <!-- STEP 1: VIDEO -->
+    <section class="panel" id="panel-video" hidden>
+      <div class="panel-head">
+        <h1>Choose your match video</h1>
+        <p class="lead">Pick the video you want analyzed. It stays on this computer — nothing is uploaded to the internet.</p>
+      </div>
+
+      <div class="picker">
+        <div class="picker-tabs">
+          <button class="tab is-active" data-tab="browse" type="button">Browse this computer</button>
+          <button class="tab" data-tab="upload" type="button">Choose a file</button>
+        </div>
+
+        <!-- Browse -->
+        <div class="tabpane" data-tabpane="browse">
+          <div class="browse-roots" id="browseRoots"></div>
+          <div class="browse-path" id="browsePath"></div>
+          <div class="browse-list" id="browseList"></div>
+          <p class="hint">Navigate to where you saved the clip, then click it. Best if you copied it onto this computer first.</p>
+        </div>
+
+        <!-- Upload -->
+        <div class="tabpane" data-tabpane="upload" hidden>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" accept="video/*" hidden />
+            <div class="dz-inner">
+              <div class="dz-icon">↑</div>
+              <div class="dz-title">Click to choose a video</div>
+              <div class="dz-sub">or drag it here — mp4, mov, mkv…</div>
+            </div>
+          </label>
+          <div class="upload-progress" id="uploadProgress" hidden>
+            <div class="bar"><div class="bar-fill" id="uploadBar"></div></div>
+            <div class="upload-note" id="uploadNote">Copying video… large 4K clips can take a minute.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="existing" id="existingWrap" hidden>
+        <h2>Or continue a previous setup</h2>
+        <div class="session-list" id="sessionList"></div>
+      </div>
+    </section>
+
+    <!-- STEP 2: COURT -->
+    <section class="panel" id="panel-court" hidden>
+      <div class="panel-head">
+        <h1>Mark the court</h1>
+        <p class="lead">Find a clear frame, then click the 8 points in order. Follow the prompt above the image.</p>
+      </div>
+
+      <div class="court-grid">
+        <div class="court-main">
+          <div class="prompt-bar" id="promptBar">
+            <span class="prompt-swatch" id="promptSwatch"></span>
+            <span class="prompt-text" id="promptText">Loading frame…</span>
+            <span class="prompt-count" id="promptCount"></span>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="courtCanvas"></canvas>
+            <canvas id="loupe" class="loupe" hidden></canvas>
+          </div>
+
+          <div class="scrubber">
+            <button class="step-btn" id="frameBack" title="Previous frame" type="button">‹</button>
+            <input type="range" id="frameSlider" min="0" max="0" value="0" />
+            <button class="step-btn" id="frameFwd" title="Next frame" type="button">›</button>
+            <span class="frame-label" id="frameLabel">0 / 0</span>
+          </div>
+        </div>
+
+        <aside class="court-side">
+          <div class="side-card">
+            <h3>Your setup</h3>
+            <label class="field">
+              <span>Your dominant hand</span>
+              <select id="selHand"><option value="right">Right</option><option value="left">Left</option></select>
+            </label>
+            <label class="field">
+              <span>Which baseline are you on?</span>
+              <select id="selBaseline"><option value="near">Near (bottom of frame)</option><option value="far">Far (top of frame)</option></select>
+            </label>
+            <label class="field">
+              <span>Your starting corner</span>
+              <select id="selCorner"><option value="left">Left</option><option value="right">Right</option></select>
+            </label>
+          </div>
+
+          <div class="side-card">
+            <h3>Points</h3>
+            <ol class="pointlist" id="pointList"></ol>
+            <div class="side-actions">
+              <button class="btn ghost" id="undoBtn" type="button">Undo</button>
+              <button class="btn ghost" id="clearBtn" type="button">Clear all</button>
+            </div>
+          </div>
+
+          <button class="btn primary block" id="calibrateBtn" type="button" disabled>Check calibration</button>
+        </aside>
+      </div>
+
+      <!-- Calibration result overlay -->
+      <div class="modal" id="calibModal" hidden>
+        <div class="modal-card">
+          <h2>Does this look like a court?</h2>
+          <p class="lead">This is a straightened, top-down view built from your points. It should look like a clean rectangle with two horizontal kitchen lines.</p>
+          <div class="preview-row">
+            <img id="previewImg" alt="Top-down court preview" />
+            <div class="preview-meta" id="previewMeta"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="redoBtn" type="button">Re-mark points</button>
+            <button class="btn primary" id="confirmCourtBtn" type="button">Looks right — continue</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3: PLAYERS -->
+    <section class="panel" id="panel-players" hidden>
+      <div class="panel-head">
+        <h1>Players</h1>
+        <p class="lead">We already have your hand. Add the others if you know them — it sharpens forehand/backhand analysis. Leave as “Not sure” to skip.</p>
+      </div>
+      <div class="roster">
+        <div class="roster-card">
+          <div class="roster-role">You</div>
+          <select id="handUser"><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Your partner</div>
+          <select id="handPartner"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Opponent A</div>
+          <select id="handOppA"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Opponent B</div>
+          <select id="handOppB"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+      </div>
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="court" type="button">Back</button>
+        <button class="btn primary" id="playersNext" type="button">Continue</button>
+      </div>
+    </section>
+
+    <!-- STEP 4: YOU (self-id) -->
+    <section class="panel" id="panel-you" hidden>
+      <div class="panel-head">
+        <h1>Point yourself out <span class="opt">(optional)</span></h1>
+        <p class="lead">Click on yourself in a few spread-out frames so we lock onto the right player. Skip it and we’ll figure it out from your starting corner.</p>
+      </div>
+
+      <div class="court-grid">
+        <div class="court-main">
+          <div class="prompt-bar">
+            <span class="prompt-swatch" style="background:#30ff6a"></span>
+            <span class="prompt-text">Scrub to a frame where you’re clearly visible, then click on your body.</span>
+            <span class="prompt-count" id="youCount">0 marks</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="youCanvas"></canvas>
+          </div>
+          <div class="scrubber">
+            <button class="step-btn" id="youBack" title="Previous frame" type="button">‹</button>
+            <input type="range" id="youSlider" min="0" max="0" value="0" />
+            <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
+            <span class="frame-label" id="youFrameLabel">0 / 0</span>
+          </div>
+        </div>
+        <aside class="court-side">
+          <div class="side-card">
+            <h3>Your marks</h3>
+            <p class="hint">Aim for about 5, spread across the start, middle, and end. Include both ends if you switch sides.</p>
+            <ol class="pointlist" id="youList"></ol>
+            <div class="side-actions">
+              <button class="btn ghost" id="youUndo" type="button">Undo</button>
+              <button class="btn ghost" id="youClear" type="button">Clear</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="players" type="button">Back</button>
+        <div class="nav-right">
+          <button class="btn ghost" id="skipYou" type="button">Skip this</button>
+          <button class="btn primary" id="youNext" type="button">Save &amp; continue</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5: REVIEW -->
+    <section class="panel" id="panel-review" hidden>
+      <div class="panel-head">
+        <h1>Review</h1>
+        <p class="lead">Everything below is saved. You’re ready for processing.</p>
+      </div>
+      <div class="review-grid" id="reviewGrid"></div>
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="you" type="button">Back</button>
+        <button class="btn primary" id="finishBtn" type="button">Finish setup</button>
+      </div>
+      <div class="done-note" id="doneNote" hidden></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -47,6 +47,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Generic filenames that don't make a good session name — fall back to the
+# parent folder (this pipeline names most clips data/<clip>/video.mp4).
+_GENERIC_STEMS = {"video", "clip", "output", "movie", "render", "input", "match"}
+
+
+def _default_name(video_path: Path) -> str:
+    stem = video_path.stem
+    if stem.lower() in _GENERIC_STEMS:
+        parent = video_path.parent.name
+        if parent:
+            return parent
+    return stem
+
+
 def slugify(name: str) -> str:
     """Filesystem-safe folder slug from an arbitrary name."""
     stem = Path(name).stem
@@ -93,10 +107,11 @@ class SessionStore:
         if not video_path.exists() or not video_path.is_file():
             raise SessionError(f"Video file not found: {video_path}")
         meta = video_mod.probe(video_path)  # validates it's a readable video
-        session_id = self._unique_id(slugify(name or video_path.name))
+        display_name = name or _default_name(video_path)
+        session_id = self._unique_id(slugify(display_name))
         return self._write_new_session(
             session_id, video_path.resolve(), meta, source="local",
-            display_name=name or video_path.stem,
+            display_name=display_name,
         )
 
     def create_from_upload(self, filename: str, fileobj) -> Dict:
