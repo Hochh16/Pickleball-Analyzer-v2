@@ -27,8 +27,12 @@ def main() -> None:
         # Open the browser shortly after the server starts accepting connections.
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
-    print(f"\n  Pickleball Analyzer — setup wizard")
-    print(f"  Open:  {url}\n")
+    bar = "=" * 48
+    print(f"\n{bar}", flush=True)
+    print("  Pickleball Analyzer - setup wizard", flush=True)
+    print(f"  Open in your browser:  {url}", flush=True)
+    print("  (press Ctrl+C here to stop)", flush=True)
+    print(f"{bar}\n", flush=True)
 
     uvicorn.run(
         "app.server:app",

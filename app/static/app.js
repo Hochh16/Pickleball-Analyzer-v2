@@ -83,22 +83,27 @@ function goto(step) {
 }
 
 // ================================================================ STEP 1: VIDEO
-function initVideoStep() {
+async function initVideoStep() {
   el('refreshVideos').addEventListener('click', loadVideos);
+  // Always show the folder path first, even if the listing later fails.
+  try {
+    const cfg = await api('/api/config');
+    el('videosDir').textContent = cfg.videos_dir;
+  } catch (e) { /* fall back to whatever /api/videos returns */ }
   loadVideos();
   loadExistingSessions();
 }
 
 async function loadVideos() {
+  const list = el('videoList');
   try {
     const data = await api('/api/videos');
-    el('videosDir').textContent = data.dir;
-    const list = el('videoList');
+    if (data.dir) el('videosDir').textContent = data.dir;
     list.innerHTML = '';
     if (!data.videos.length) {
       list.appendChild(Object.assign(document.createElement('div'), {
         className: 'empty',
-        textContent: 'No videos here yet. Move your clip into the folder above, then press Refresh.',
+        textContent: 'No videos here yet. Copy your clip into the folder shown above, then press Refresh.',
       }));
       return;
     }
@@ -106,7 +111,13 @@ async function loadVideos() {
       const size = v.size_mb >= 1024 ? (v.size_mb / 1024).toFixed(1) + ' GB' : v.size_mb + ' MB';
       list.appendChild(rowEl('video', '🎬', v.name, size, () => pickLocal(v.path)));
     });
-  } catch (e) { toast('Could not read the videos folder: ' + e.message, true); }
+  } catch (e) {
+    list.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'empty';
+    msg.textContent = 'Could not read the videos folder. If you just updated the app, restart the server, then press Refresh.';
+    list.appendChild(msg);
+  }
 }
 
 function rowEl(kind, icon, name, size, onClick) {

@@ -88,14 +88,24 @@ def health() -> dict:
     return {"status": "ok", "data_root": str(DATA_ROOT)}
 
 
+@app.get("/api/config")
+def config() -> dict:
+    """Paths the UI should always be able to show (even if listing fails)."""
+    return {"videos_dir": str(VIDEOS_DIR), "data_root": str(DATA_ROOT)}
+
+
 @app.get("/api/videos")
 def videos() -> dict:
-    """List videos in the single designated drop folder."""
+    """List videos in the single designated drop folder. Always includes the
+    folder path so the UI can show it even when the folder is empty; the folder
+    is (re)created defensively so a missing folder never errors."""
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         data = browse_mod.listing(VIDEOS_DIR)
-    except (FileNotFoundError, NotADirectoryError) as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return {"dir": str(VIDEOS_DIR), "videos": data["videos"]}
+        vids = data["videos"]
+    except (FileNotFoundError, NotADirectoryError, PermissionError):
+        vids = []
+    return {"dir": str(VIDEOS_DIR), "videos": vids}
 
 
 # --------------------------------------------------------------------------
