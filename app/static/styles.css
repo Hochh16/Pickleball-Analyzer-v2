@@ -286,6 +286,42 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 .choice-card .cc-icon { font-size: 24px; color: var(--teal); }
 .choice-card .cc-title { font-weight: 700; }
 
+/* ---------- Step 6: run & progress ---------- */
+.run-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .run-grid { grid-template-columns: 1fr; } }
+.run-steps { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: var(--shadow); }
+.run-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 9px; font-size: 15px; color: var(--muted); }
+.run-step + .run-step { border-top: 1px solid var(--line); }
+.run-step .rs-icon { width: 22px; text-align: center; font-weight: 700; color: var(--muted); }
+.run-step .rs-label { flex: 1; }
+.run-step .rs-dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.run-step.running { color: var(--ink); background: var(--teal-soft); }
+.run-step.running .rs-icon { color: var(--teal); }
+.run-step.done { color: var(--ink); }
+.run-step.done .rs-icon { color: var(--ok); }
+.run-step.failed { color: var(--danger); }
+.run-step.failed .rs-icon { color: var(--danger); }
+.run-step.waiting { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.run-step.waiting .rs-icon { color: var(--warn); }
+
+.run-side { display: flex; flex-direction: column; gap: 14px; }
+.handoff-card, .done-card, .fail-card, .log-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); }
+.handoff-card { border-color: var(--warn); }
+.handoff-card h3, .done-card h3, .fail-card h3, .log-card h3 { margin: 0 0 8px; font-size: 15px; }
+.handoff-card p, .fail-card p { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.handoff-steps { font-size: 13.5px; color: var(--ink); margin: 0 0 14px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.handoff-steps code { background: var(--card-2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.ball-upload { display: block; }
+.ball-note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.done-card { border-color: var(--teal); }
+.done-card .btn { margin-top: 8px; text-decoration: none; text-align: center; }
+.fail-card { border-color: var(--danger); }
+.btn.block { display: block; }
+
+.log-card { padding: 0; overflow: hidden; }
+.log-head { padding: 12px 16px 0; }
+#runLog { margin: 0; padding: 8px 16px 14px; max-height: 260px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);

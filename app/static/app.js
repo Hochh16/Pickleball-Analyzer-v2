@@ -4,7 +4,7 @@
 'use strict';
 
 // ---------------------------------------------------------------- constants
-const STEPS = ['video', 'court', 'players', 'you', 'review'];
+const STEPS = ['video', 'court', 'players', 'you', 'review', 'run'];
 
 const CORNER = '#ff4d4d', KU = '#2ab7ff', KO = '#ffab2e';
 const POINTS = [
@@ -78,6 +78,7 @@ function goto(step) {
   if (step === 'court') enterCourt();
   if (step === 'you') enterYou();
   if (step === 'review') enterReview();
+  if (step === 'run') enterRun();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -468,12 +469,15 @@ async function saveSide() {
 
 // ================================================================ STEP 5: REVIEW
 function initReviewStep() {
-  el('finishBtn').addEventListener('click', () => {
-    el('doneNote').hidden = false;
-    el('doneNote').innerHTML = `✓ Setup complete.`;
+  el('finishBtn').addEventListener('click', async () => {
     el('finishBtn').disabled = true;
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    // Phase 2 will kick off processing here.
+    try {
+      await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' });
+      goto('run');
+    } catch (e) {
+      toast('Could not start analysis: ' + e.message, true);
+      el('finishBtn').disabled = false;
+    }
   });
 }
 
@@ -519,6 +523,85 @@ async function enterReview() {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ================================================================ STEP 6: RUN
+let runES = null;         // EventSource
+let ballBusy = false;
+
+function initRunStep() {
+  el('ballUploadBtn').addEventListener('click', () => el('ballInput').click());
+  el('ballInput').addEventListener('change', () => { if (el('ballInput').files[0]) uploadBall(el('ballInput').files[0]); });
+  el('retryBtn').addEventListener('click', async () => {
+    try { await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' }); enterRun(); }
+    catch (e) { toast('Retry failed: ' + e.message, true); }
+  });
+}
+
+function enterRun() {
+  el('viewReportBtn').href = `/api/sessions/${S.session.id}/report`;
+  el('viewVideoBtn').href = `/api/sessions/${S.session.id}/annotated`;
+  // (re)connect the live stream
+  if (runES) { runES.close(); runES = null; }
+  runES = new EventSource(`/api/sessions/${S.session.id}/run/stream`);
+  runES.onmessage = (ev) => { try { renderRun(JSON.parse(ev.data)); } catch (e) {} };
+  runES.onerror = () => { /* browser auto-reconnects */ };
+}
+
+const STEP_ICON = { pending: '○', running: '<span class="spinner"></span>', done: '✓', failed: '✕', skipped: '–', waiting: '⏸' };
+
+function renderRun(job) {
+  // steps checklist
+  const wrap = el('runSteps');
+  wrap.innerHTML = '';
+  (job.steps || []).forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'run-step ' + s.status;
+    let dur = '';
+    if (s.started_at && s.ended_at) dur = `${Math.round(s.ended_at - s.started_at)}s`;
+    row.innerHTML =
+      `<span class="rs-icon">${STEP_ICON[s.status] || '○'}</span>` +
+      `<span class="rs-label"></span><span class="rs-dur">${dur}</span>`;
+    row.querySelector('.rs-label').textContent = s.label;
+    wrap.appendChild(row);
+  });
+
+  // log tail
+  const log = el('runLog');
+  log.textContent = (job.log || []).join('\n');
+  log.scrollTop = log.scrollHeight;
+
+  // side cards
+  const waiting = job.phase === 'ball';
+  el('ballHandoff').hidden = !waiting;
+  el('runDone').hidden = job.phase !== 'done';
+  el('runFail').hidden = job.phase !== 'failed';
+  if (job.phase === 'failed') el('runFailMsg').textContent = job.error || 'A stage failed. See the activity log.';
+
+  // header
+  const titles = {
+    pre: 'Analyzing your match', ball: 'One step needs a GPU',
+    post: 'Finishing your analysis', done: 'Your report is ready',
+    failed: 'Analysis stopped', idle: 'Analyzing your match',
+  };
+  el('runTitle').textContent = titles[job.phase] || 'Analyzing your match';
+  if (job.phase === 'done' && runES) { runES.close(); runES = null; }
+}
+
+async function uploadBall(file) {
+  if (ballBusy) return;
+  ballBusy = true;
+  const note = el('ballNote');
+  note.textContent = 'Uploading ball.parquet…';
+  const fd = new FormData();
+  fd.append('ball', file);
+  try {
+    const res = await api(`/api/sessions/${S.session.id}/ball`, { method: 'POST', body: fd });
+    note.textContent = res.resumed ? 'Received — resuming analysis…' : 'Received.';
+    el('ballHandoff').hidden = true;
+  } catch (e) {
+    note.textContent = 'Upload failed: ' + e.message;
+  } finally { ballBusy = false; }
+}
+
 // ---------------------------------------------------------------- boot
 function boot() {
   initVideoStep();
@@ -526,6 +609,7 @@ function boot() {
   initPlayersStep();
   initYouStep();
   initReviewStep();
+  initRunStep();
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
   goto('video');
 }

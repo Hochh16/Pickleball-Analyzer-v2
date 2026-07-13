@@ -43,8 +43,26 @@ geometric user seed. (The optional per-frame `user_clicks.json` override endpoin
 still exists in the backend but the wizard no longer needs it — the no-click
 geometric seed is the default flow.)
 
-The GPU ball step (Stage 4) and full run orchestration are **Phase 2** (see the
-plan). Phase 1 is the setup wizard only.
+## Phase 2 — run & progress
+
+After setup, **Start Analysis** kicks off the pipeline as a background job and
+opens the **Run** view (live per-stage progress + activity log via SSE):
+
+- Materializes `video.mp4` into the session folder (hardlink; copy fallback).
+- Runs Stages 2 → 2.5 → 3 locally (`track_players`, `classify_tracks`, `pose`).
+- **Pauses at Stage 4 (ball detection = GPU)** and waits for `ball.parquet`.
+  Since there's no local GPU, this step runs on Colab; the run **auto-resumes**
+  the instant `ball.parquet` is uploaded back (decoupling ball production from
+  the rest of the run).
+- Resumes Stages 5–11 + `compress_video` + `build_report`, then serves
+  `report.html` + the annotated video in-app.
+
+`PB_FAKE_STAGES=1` simulates the stages quickly (no GPU/long wait) to preview
+the Run UI end-to-end. `pipeline.py` owns the runner; endpoints: `POST …/run`,
+`GET …/run` (+ `…/run/stream` SSE), `POST …/ball`, `GET …/report`, `…/annotated`.
+
+> Real full runs are long: Stages 2/3 on a 4K/2-min clip are minutes-to-hours on
+> CPU (see KNOWN_ISSUES C8 throughput). The run is a background job — leave it going.
 
 ## Layout
 

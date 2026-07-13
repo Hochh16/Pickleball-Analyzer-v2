@@ -19,6 +19,7 @@
       <li data-step="players"><span class="num">3</span><span class="lbl">Players</span></li>
       <li data-step="you"><span class="num">4</span><span class="lbl">You</span></li>
       <li data-step="review"><span class="num">5</span><span class="lbl">Review</span></li>
+      <li data-step="run"><span class="num">6</span><span class="lbl">Run</span></li>
     </ol>
   </header>
 
@@ -215,6 +216,55 @@
         <button class="btn primary" id="finishBtn" type="button">Start Analysis →</button>
       </div>
       <div class="done-note" id="doneNote" hidden></div>
+    </section>
+
+    <!-- STEP 6: RUN -->
+    <section class="panel" id="panel-run" hidden>
+      <div class="panel-head">
+        <h1 id="runTitle">Analyzing your match</h1>
+        <p class="lead" id="runLead">This runs on your computer and can take a while — you can leave it going.</p>
+      </div>
+
+      <div class="run-grid">
+        <div class="run-steps" id="runSteps"></div>
+
+        <div class="run-side">
+          <!-- Ball hand-off (shown while waiting for ball.parquet) -->
+          <div class="handoff-card" id="ballHandoff" hidden>
+            <h3>⚡ Ball detection needs a GPU</h3>
+            <p>This one step runs on Colab (free GPU). The rest continues automatically once the result comes back.</p>
+            <ol class="handoff-steps">
+              <li>Open the ball-detection notebook on Colab and run it against this clip.</li>
+              <li>It produces a <code>ball.parquet</code> file.</li>
+              <li>Upload that file below — analysis resumes on its own.</li>
+            </ol>
+            <label class="ball-upload">
+              <input type="file" id="ballInput" accept=".parquet" hidden />
+              <span class="btn primary block" id="ballUploadBtn">Upload ball.parquet</span>
+            </label>
+            <div class="ball-note" id="ballNote"></div>
+          </div>
+
+          <!-- Done -->
+          <div class="done-card" id="runDone" hidden>
+            <h3>✓ Analysis complete</h3>
+            <a class="btn primary block" id="viewReportBtn" target="_blank">View your report →</a>
+            <a class="btn ghost block" id="viewVideoBtn" target="_blank">Watch annotated video</a>
+          </div>
+
+          <!-- Failure -->
+          <div class="fail-card" id="runFail" hidden>
+            <h3>Something went wrong</h3>
+            <p id="runFailMsg"></p>
+            <button class="btn ghost block" id="retryBtn" type="button">Retry</button>
+          </div>
+
+          <div class="log-card">
+            <div class="log-head"><h3>Activity</h3></div>
+            <pre id="runLog"></pre>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 

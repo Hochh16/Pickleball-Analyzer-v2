@@ -9,17 +9,21 @@ Run:  python -m app     (see app/__main__.py)
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import shutil
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import browse as browse_mod
 from . import video as video_mod
+from .pipeline import PipelineRunner
 from .sessions import SessionError, SessionStore
 
 DATA_ROOT = Path(os.environ.get("PB_DATA_DIR", "data")).resolve()
@@ -30,6 +34,7 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 
 store = SessionStore(DATA_ROOT)
+runner = PipelineRunner(store)
 
 app = FastAPI(title="Pickleball Analyzer v2 — Setup Wizard")
 
@@ -181,6 +186,97 @@ def summary_session(session_id: str) -> dict:
         return store.summary(session_id)
     except SessionError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# --------------------------------------------------------------------------
+# Pipeline run (Phase 2)
+# --------------------------------------------------------------------------
+
+@app.post("/api/sessions/{session_id}/run")
+def start_run(session_id: str) -> dict:
+    try:
+        store.get(session_id)  # 404 if unknown
+        job = runner.start(session_id)
+    except SessionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return job.snapshot()
+
+
+@app.get("/api/sessions/{session_id}/run")
+def get_run(session_id: str) -> dict:
+    job = runner.get(session_id)
+    if job is None:
+        return {"phase": "idle", "steps": [], "log": [], "version": 0}
+    return job.snapshot()
+
+
+@app.post("/api/sessions/{session_id}/run/cancel")
+def cancel_run(session_id: str) -> dict:
+    runner.cancel(session_id)
+    return {"ok": True}
+
+
+@app.get("/api/sessions/{session_id}/run/stream")
+async def stream_run(session_id: str) -> StreamingResponse:
+    async def gen():
+        last = -1
+        idle_ticks = 0
+        while True:
+            job = runner.get(session_id)
+            snap = job.snapshot() if job else {"phase": "idle", "steps": [], "log": [], "version": 0}
+            if snap["version"] != last:
+                last = snap["version"]
+                idle_ticks = 0
+                yield f"data: {json.dumps(snap)}\n\n"
+            else:
+                idle_ticks += 1
+                if idle_ticks % 30 == 0:      # keepalive ~ every 15s
+                    yield ": keepalive\n\n"
+            if snap["phase"] in ("done", "failed"):
+                yield f"data: {json.dumps(snap)}\n\n"
+                return
+            await asyncio.sleep(0.5)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/sessions/{session_id}/ball")
+async def upload_ball(session_id: str, ball: UploadFile = File(...)) -> dict:
+    """Receive ball.parquet (from the Colab/GPU step) and auto-resume Stages 5+."""
+    try:
+        folder = store.folder(session_id)
+    except SessionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail="Unknown session")
+    dest = folder / "ball.parquet"
+    try:
+        with dest.open("wb") as out:
+            shutil.copyfileobj(ball.file, out)
+    finally:
+        await ball.close()
+    job = runner.resume_post(session_id)
+    return {"ok": True, "resumed": job is not None}
+
+
+@app.get("/api/sessions/{session_id}/report")
+def get_report(session_id: str) -> FileResponse:
+    path = store.folder(session_id) / "report.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Report not built yet")
+    return FileResponse(path, media_type="text/html")
+
+
+@app.get("/api/sessions/{session_id}/annotated")
+def get_annotated(session_id: str) -> FileResponse:
+    folder = store.folder(session_id)
+    for name in ("annotated_web.mp4", "annotated.mp4"):
+        p = folder / name
+        if p.exists():
+            return FileResponse(p, media_type="video/mp4")
+    raise HTTPException(status_code=404, detail="Annotated video not ready")
 
 
 # --------------------------------------------------------------------------
