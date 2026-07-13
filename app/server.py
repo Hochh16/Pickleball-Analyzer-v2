@@ -23,6 +23,10 @@ from . import video as video_mod
 from .sessions import SessionError, SessionStore
 
 DATA_ROOT = Path(os.environ.get("PB_DATA_DIR", "data")).resolve()
+# One designated drop folder for videos — the user copies a clip here and picks
+# it, instead of browsing the whole filesystem.
+VIDEOS_DIR = Path(os.environ.get("PB_VIDEOS_DIR", "videos")).resolve()
+VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 
 store = SessionStore(DATA_ROOT)
@@ -47,6 +51,10 @@ class CalibrateRequest(BaseModel):
     dominant_hand: str
     user_starting_corner: str
     frame_used_for_calibration: int = 0
+
+
+class StartingCornerRequest(BaseModel):
+    corner: str
 
 
 class RosterRequest(BaseModel):
@@ -75,17 +83,14 @@ def health() -> dict:
     return {"status": "ok", "data_root": str(DATA_ROOT)}
 
 
-@app.get("/api/browse/roots")
-def browse_roots() -> dict:
-    return {"roots": browse_mod.quick_roots(DATA_ROOT)}
-
-
-@app.get("/api/browse")
-def browse(path: str) -> dict:
+@app.get("/api/videos")
+def videos() -> dict:
+    """List videos in the single designated drop folder."""
     try:
-        return browse_mod.listing(Path(path))
+        data = browse_mod.listing(VIDEOS_DIR)
     except (FileNotFoundError, NotADirectoryError) as e:
         raise HTTPException(status_code=404, detail=str(e))
+    return {"dir": str(VIDEOS_DIR), "videos": data["videos"]}
 
 
 # --------------------------------------------------------------------------
@@ -142,6 +147,14 @@ def get_frame(session_id: str, frame_idx: int, maxw: int = 1600) -> Response:
 def calibrate_session(session_id: str, req: CalibrateRequest) -> dict:
     try:
         return store.calibrate(session_id, req.model_dump())
+    except SessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/starting-corner")
+def starting_corner_session(session_id: str, req: StartingCornerRequest) -> dict:
+    try:
+        return store.set_starting_corner(session_id, req.corner)
     except SessionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

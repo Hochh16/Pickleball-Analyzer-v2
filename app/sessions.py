@@ -237,6 +237,35 @@ class SessionStore:
             "frame_used_for_calibration": court_json["video"]["frame_used_for_calibration"],
         }
 
+    def set_starting_corner(self, session_id: str, corner: str) -> Dict:
+        """Patch the user's starting corner into markers.json + court.json.
+
+        `user_starting_corner` isn't used in the homography (only `user_baseline`
+        is), so it can be set visually AFTER calibration without recomputing —
+        we just keep markers.json and court.json.user_inputs consistent for the
+        downstream stages (Stage 2/2.5 read it from court.json)."""
+        if corner not in ("left", "right"):
+            raise SessionError(f"starting corner must be 'left' or 'right'; got {corner!r}")
+        folder = self.folder(session_id)
+        markers_path = folder / "markers.json"
+        court_path = folder / "court.json"
+        if not court_path.exists():
+            raise SessionError("Mark the court first")
+        for path, patch in ((markers_path, "flat"), (court_path, "nested")):
+            if not path.exists():
+                continue
+            with path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if patch == "flat":
+                data["user_starting_corner"] = corner
+            else:
+                data.setdefault("user_inputs", {})["user_starting_corner"] = corner
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with tmp.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            tmp.replace(path)
+        return {"user_starting_corner": corner}
+
     # ----- roster -----
 
     def write_roster(self, session_id: str, handedness: Dict[str, str]) -> Dict:

@@ -27,43 +27,41 @@
     <section class="panel" id="panel-video" hidden>
       <div class="panel-head">
         <h1>Choose your match video</h1>
-        <p class="lead">Pick the video you want analyzed. It stays on this computer — nothing is uploaded to the internet.</p>
+        <p class="lead">It stays on this computer — nothing is uploaded to the internet.</p>
       </div>
 
-      <div class="picker">
-        <div class="picker-tabs">
-          <button class="tab is-active" data-tab="browse" type="button">Browse this computer</button>
-          <button class="tab" data-tab="upload" type="button">Choose a file</button>
-        </div>
+      <div class="video-cols">
+        <div class="video-pick">
+          <div class="folder-callout">
+            <div class="fc-title">Put your video in this folder, then pick it below:</div>
+            <div class="fc-path" id="videosDir">…</div>
+            <div class="fc-note">If your clip is somewhere else, move or copy it into this folder first, then press Refresh.</div>
+          </div>
+          <div class="pick-head">
+            <span class="pick-label">Videos in this folder</span>
+            <button class="btn ghost small" id="refreshVideos" type="button">↻ Refresh</button>
+          </div>
+          <div class="browse-list" id="videoList"></div>
 
-        <!-- Browse -->
-        <div class="tabpane" data-tabpane="browse">
-          <div class="browse-roots" id="browseRoots"></div>
-          <div class="browse-path" id="browsePath"></div>
-          <div class="browse-list" id="browseList"></div>
-          <p class="hint">Navigate to where you saved the clip, then click it. Best if you copied it onto this computer first.</p>
-        </div>
-
-        <!-- Upload -->
-        <div class="tabpane" data-tabpane="upload" hidden>
-          <label class="dropzone" id="dropzone">
-            <input type="file" id="fileInput" accept="video/*" hidden />
-            <div class="dz-inner">
-              <div class="dz-icon">↑</div>
-              <div class="dz-title">Click to choose a video</div>
-              <div class="dz-sub">or drag it here — mp4, mov, mkv…</div>
-            </div>
-          </label>
-          <div class="upload-progress" id="uploadProgress" hidden>
-            <div class="bar"><div class="bar-fill" id="uploadBar"></div></div>
-            <div class="upload-note" id="uploadNote">Copying video… large 4K clips can take a minute.</div>
+          <div class="existing" id="existingWrap" hidden>
+            <h2>Or continue a previous setup</h2>
+            <div class="session-list" id="sessionList"></div>
           </div>
         </div>
-      </div>
 
-      <div class="existing" id="existingWrap" hidden>
-        <h2>Or continue a previous setup</h2>
-        <div class="session-list" id="sessionList"></div>
+        <aside class="camera-reqs">
+          <h3>Recording requirements</h3>
+          <ul class="req-list">
+            <li><b>Camera position:</b> in the corner of the court closest to the starting position of the player being analyzed.</li>
+            <li><b>Framing:</b> the entire court must be in view, plus the space outside the lines where players move.</li>
+            <li><b>Height:</b> on a tripod, at least <b>6 ft</b> high.</li>
+            <li><b>Shutter speed:</b> <b>1/1000 s</b> or faster (freezes the ball).</li>
+            <li><b>Frame rate:</b> <b>60 fps</b>.</li>
+            <li><b>Resolution:</b> <b>4K UHD</b>.</li>
+            <li><b>ISO:</b> <b>800</b>.</li>
+            <li><b>Length:</b> <b>2–5 minutes</b> for now.</li>
+          </ul>
+        </aside>
       </div>
     </section>
 
@@ -93,6 +91,21 @@
             <button class="step-btn" id="frameFwd" title="Next frame" type="button">›</button>
             <span class="frame-label" id="frameLabel">0 / 0</span>
           </div>
+
+          <!-- Inline calibration result (kept below the frame so the marked
+               court stays visible for comparison). -->
+          <div class="calib-result" id="calibResult" hidden>
+            <h2>Does this look like a court?</h2>
+            <p class="lead">Compare your marked frame above with this straightened, top-down view — it should be a clean rectangle with two horizontal kitchen lines.</p>
+            <div class="preview-row">
+              <img id="previewImg" alt="Top-down court preview" />
+              <div class="preview-meta" id="previewMeta"></div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="redoBtn" type="button">Re-mark points</button>
+              <button class="btn primary" id="confirmCourtBtn" type="button">Looks right — continue</button>
+            </div>
+          </div>
         </div>
 
         <aside class="court-side">
@@ -105,10 +118,6 @@
             <label class="field">
               <span>Which baseline are you on?</span>
               <select id="selBaseline"><option value="near">Near (bottom of frame)</option><option value="far">Far (top of frame)</option></select>
-            </label>
-            <label class="field">
-              <span>Your starting corner</span>
-              <select id="selCorner"><option value="left">Left</option><option value="right">Right</option></select>
             </label>
           </div>
 
@@ -123,22 +132,6 @@
 
           <button class="btn primary block" id="calibrateBtn" type="button" disabled>Check calibration</button>
         </aside>
-      </div>
-
-      <!-- Calibration result overlay -->
-      <div class="modal" id="calibModal" hidden>
-        <div class="modal-card">
-          <h2>Does this look like a court?</h2>
-          <p class="lead">This is a straightened, top-down view built from your points. It should look like a clean rectangle with two horizontal kitchen lines.</p>
-          <div class="preview-row">
-            <img id="previewImg" alt="Top-down court preview" />
-            <div class="preview-meta" id="previewMeta"></div>
-          </div>
-          <div class="modal-actions">
-            <button class="btn ghost" id="redoBtn" type="button">Re-mark points</button>
-            <button class="btn primary" id="confirmCourtBtn" type="button">Looks right — continue</button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -172,49 +165,41 @@
       </div>
     </section>
 
-    <!-- STEP 4: YOU (self-id) -->
+    <!-- STEP 4: YOU (which side) -->
     <section class="panel" id="panel-you" hidden>
       <div class="panel-head">
-        <h1>Point yourself out <span class="opt">(optional)</span></h1>
-        <p class="lead">Click on yourself in a few spread-out frames so we lock onto the right player. Skip it and we’ll figure it out from your starting corner.</p>
+        <h1>Which side do you start on?</h1>
+        <p class="lead">Look at the frame below and pick the side of your baseline where you (the player being analyzed) begin. This tells us which player to track.</p>
       </div>
 
-      <div class="court-grid">
-        <div class="court-main">
-          <div class="prompt-bar">
-            <span class="prompt-swatch" style="background:#30ff6a"></span>
-            <span class="prompt-text">Scrub to a frame where you’re clearly visible, then click on your body.</span>
-            <span class="prompt-count" id="youCount">0 marks</span>
-          </div>
-          <div class="canvas-wrap">
-            <canvas id="youCanvas"></canvas>
-          </div>
-          <div class="scrubber">
-            <button class="step-btn" id="youBack" title="Previous frame" type="button">‹</button>
-            <input type="range" id="youSlider" min="0" max="0" value="0" />
-            <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
-            <span class="frame-label" id="youFrameLabel">0 / 0</span>
+      <div class="court-main you-main">
+        <div class="canvas-wrap">
+          <canvas id="youCanvas"></canvas>
+          <div class="side-overlay">
+            <button class="side-half" data-corner="left" id="halfLeft" type="button"><span>◄ Left</span></button>
+            <button class="side-half" data-corner="right" id="halfRight" type="button"><span>Right ►</span></button>
           </div>
         </div>
-        <aside class="court-side">
-          <div class="side-card">
-            <h3>Your marks</h3>
-            <p class="hint">Aim for about 5, spread across the start, middle, and end. Include both ends if you switch sides.</p>
-            <ol class="pointlist" id="youList"></ol>
-            <div class="side-actions">
-              <button class="btn ghost" id="youUndo" type="button">Undo</button>
-              <button class="btn ghost" id="youClear" type="button">Clear</button>
-            </div>
-          </div>
-        </aside>
+        <div class="scrubber">
+          <button class="step-btn" id="youBack" title="Previous frame" type="button">‹</button>
+          <input type="range" id="youSlider" min="0" max="0" value="0" />
+          <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
+          <span class="frame-label" id="youFrameLabel">0 / 0</span>
+        </div>
+        <p class="hint">Scrub to a frame where you can see yourself, then click your side above (or use the buttons).</p>
+        <div class="side-choice">
+          <button class="choice-card" data-corner="left" id="cardLeft" type="button">
+            <div class="cc-icon">◄</div><div class="cc-title">Left side</div>
+          </button>
+          <button class="choice-card" data-corner="right" id="cardRight" type="button">
+            <div class="cc-icon">►</div><div class="cc-title">Right side</div>
+          </button>
+        </div>
       </div>
 
       <div class="panel-nav">
         <button class="btn ghost" data-goto="players" type="button">Back</button>
-        <div class="nav-right">
-          <button class="btn ghost" id="skipYou" type="button">Skip this</button>
-          <button class="btn primary" id="youNext" type="button">Save &amp; continue</button>
-        </div>
+        <button class="btn primary" id="youNext" type="button">Continue</button>
       </div>
     </section>
 
@@ -227,7 +212,7 @@
       <div class="review-grid" id="reviewGrid"></div>
       <div class="panel-nav">
         <button class="btn ghost" data-goto="you" type="button">Back</button>
-        <button class="btn primary" id="finishBtn" type="button">Finish setup</button>
+        <button class="btn primary" id="finishBtn" type="button">Start Analysis →</button>
       </div>
       <div class="done-note" id="doneNote" hidden></div>
     </section>

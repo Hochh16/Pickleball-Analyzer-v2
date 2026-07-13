@@ -116,6 +116,22 @@ def test_full_setup_flow(store, video):
     assert summ["user_clicks_count"] == 2
 
 
+def test_set_starting_corner_patches_both_files(store, video):
+    sid = store.create_from_path(video)["id"]
+    store.calibrate(sid, VALID_MARKERS)  # writes with default corner "left"
+    folder = store.folder(sid)
+    assert json.loads((folder / "court.json").read_text())["user_inputs"]["user_starting_corner"] == "left"
+
+    store.set_starting_corner(sid, "right")
+    court = json.loads((folder / "court.json").read_text())
+    markers = json.loads((folder / "markers.json").read_text())
+    assert court["user_inputs"]["user_starting_corner"] == "right"
+    assert markers["user_starting_corner"] == "right"
+
+    with pytest.raises(SessionError):
+        store.set_starting_corner(sid, "sideways")
+
+
 def test_user_clicks_skip_removes_file(store, video):
     sid = store.create_from_path(video)["id"]
     store.write_user_clicks(sid, [{"frame": 1, "x": 1, "y": 1}])

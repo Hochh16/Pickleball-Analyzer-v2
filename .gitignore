@@ -64,3 +64,6 @@ data/*/rally_verification/
 # Dettor's SavedModel directory (one-time conversion input)
 data/models/dettor_savedmodel/
 
+
+# Setup-wizard video drop folder (local clips, like data/)
+/videos/

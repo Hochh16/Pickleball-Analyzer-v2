@@ -23,10 +23,11 @@ const FRAME_MAXW = 1600;
 const S = {
   step: 'video',
   session: null,
+  startingCorner: 'left',   // set visually on the "You" step; default until then
   court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1 },
   calib: null,
   courtConfirmed: false,
-  you: { frameIdx: 0, clicks: [], img: null, imgFrame: -1 },
+  you: { frameIdx: 0, img: null, imgFrame: -1 },
 };
 
 // ---------------------------------------------------------------- helpers
@@ -82,47 +83,29 @@ function goto(step) {
 
 // ================================================================ STEP 1: VIDEO
 function initVideoStep() {
-  // tabs
-  $$('.picker-tabs .tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      $$('.picker-tabs .tab').forEach((t) => t.classList.toggle('is-active', t === tab));
-      $$('.tabpane').forEach((p) => { p.hidden = (p.dataset.tabpane !== tab.dataset.tab); });
-    });
-  });
-  loadRoots();
+  el('refreshVideos').addEventListener('click', loadVideos);
+  loadVideos();
   loadExistingSessions();
-  initUpload();
 }
 
-async function loadRoots() {
+async function loadVideos() {
   try {
-    const { roots } = await api('/api/browse/roots');
-    const wrap = el('browseRoots');
-    wrap.innerHTML = '';
-    roots.forEach((r) => {
-      const b = document.createElement('button');
-      b.className = 'chip'; b.type = 'button'; b.textContent = r.label;
-      b.addEventListener('click', () => browseTo(r.path));
-      wrap.appendChild(b);
-    });
-    if (roots[0]) browseTo(roots[0].path);
-  } catch (e) { toast('Could not list folders: ' + e.message, true); }
-}
-
-async function browseTo(path) {
-  try {
-    const data = await api('/api/browse?path=' + encodeURIComponent(path));
-    el('browsePath').textContent = data.path;
-    const list = el('browseList');
+    const data = await api('/api/videos');
+    el('videosDir').textContent = data.dir;
+    const list = el('videoList');
     list.innerHTML = '';
-    if (data.parent) list.appendChild(rowEl('dir', '↰', '..', '', () => browseTo(data.parent)));
-    data.dirs.forEach((d) => list.appendChild(rowEl('dir', '📁', d.name, '', () => browseTo(d.path))));
-    data.videos.forEach((v) => list.appendChild(
-      rowEl('video', '🎬', v.name, v.size_mb >= 1024 ? (v.size_mb / 1024).toFixed(1) + ' GB' : v.size_mb + ' MB',
-        () => pickLocal(v.path))));
-    if (!data.dirs.length && !data.videos.length)
-      list.appendChild(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No videos or folders here.' }));
-  } catch (e) { toast('Cannot open folder: ' + e.message, true); }
+    if (!data.videos.length) {
+      list.appendChild(Object.assign(document.createElement('div'), {
+        className: 'empty',
+        textContent: 'No videos here yet. Move your clip into the folder above, then press Refresh.',
+      }));
+      return;
+    }
+    data.videos.forEach((v) => {
+      const size = v.size_mb >= 1024 ? (v.size_mb / 1024).toFixed(1) + ' GB' : v.size_mb + ' MB';
+      list.appendChild(rowEl('video', '🎬', v.name, size, () => pickLocal(v.path)));
+    });
+  } catch (e) { toast('Could not read the videos folder: ' + e.message, true); }
 }
 
 function rowEl(kind, icon, name, size, onClick) {
@@ -143,42 +126,6 @@ async function pickLocal(path) {
   } catch (e) { toast('Could not open that video: ' + e.message, true); }
 }
 
-function initUpload() {
-  const dz = el('dropzone'), input = el('fileInput');
-  input.addEventListener('change', () => { if (input.files[0]) uploadFile(input.files[0]); });
-  ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
-  ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
-  dz.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) uploadFile(f); });
-}
-
-function uploadFile(file) {
-  const prog = el('uploadProgress'), bar = el('uploadBar'), note = el('uploadNote');
-  prog.hidden = false; bar.style.width = '0%';
-  note.textContent = `Copying “${file.name}” (${(file.size / 1073741824).toFixed(2)} GB)…`;
-  const fd = new FormData();
-  fd.append('video', file);
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/sessions/upload');
-  xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) {
-      const pct = Math.round((e.loaded / e.total) * 100);
-      bar.style.width = pct + '%';
-      if (pct >= 100) note.textContent = 'Reading video metadata…';
-    }
-  };
-  xhr.onload = () => {
-    if (xhr.status >= 200 && xhr.status < 300) {
-      onSessionReady(JSON.parse(xhr.responseText));
-    } else {
-      let d = 'upload failed';
-      try { d = JSON.parse(xhr.responseText).detail; } catch (e) {}
-      toast('Upload failed: ' + d, true); prog.hidden = true;
-    }
-  };
-  xhr.onerror = () => { toast('Upload failed (network error)', true); prog.hidden = true; };
-  xhr.send(fd);
-}
-
 async function loadExistingSessions() {
   try {
     const { sessions } = await api('/api/sessions');
@@ -194,7 +141,7 @@ async function loadExistingSessions() {
       card.innerHTML =
         `<div class="sc-name"></div>
          <div class="sc-meta">${s.video.frame_width}×${s.video.frame_height} · ${fmtDuration(s.video.duration_sec)}</div>
-         <div class="sc-steps">${pill('calibration', 'Court')}${pill('roster', 'Players')}${pill('user_clicks', 'You')}</div>`;
+         <div class="sc-steps">${pill('calibration', 'Court')}${pill('roster', 'Players')}</div>`;
       card.querySelector('.sc-name').textContent = s.name;
       card.addEventListener('click', () => onSessionReady(s));
       list.appendChild(card);
@@ -206,7 +153,6 @@ function onSessionReady(session) {
   S.session = session;
   // hydrate prior court state loosely (we always re-mark for Phase 1 simplicity)
   S.courtConfirmed = !!(session.steps && session.steps.calibration);
-  el('uploadProgress').hidden = true;
   toast(`Loaded “${session.name}”`);
   goto('court');
 }
@@ -230,9 +176,11 @@ function initCourtStep() {
   el('frameBack').addEventListener('click', () => setCourtFrame(S.court.frameIdx - 1));
   el('frameFwd').addEventListener('click', () => setCourtFrame(S.court.frameIdx + 1));
   el('calibrateBtn').addEventListener('click', runCalibrate);
-  el('confirmCourtBtn').addEventListener('click', () => { el('calibModal').hidden = true; S.courtConfirmed = true; goto('players'); });
-  el('redoBtn').addEventListener('click', () => { el('calibModal').hidden = true; });
+  el('confirmCourtBtn').addEventListener('click', () => { el('calibResult').hidden = true; S.courtConfirmed = true; goto('players'); });
+  el('redoBtn').addEventListener('click', () => { el('calibResult').hidden = true; window.scrollTo({ top: 0, behavior: 'smooth' }); });
 }
+
+function hideCalibResult() { const r = el('calibResult'); if (r) r.hidden = true; }
 
 function enterCourt() {
   const v = S.session.video;
@@ -320,6 +268,7 @@ function onCourtClick(e) {
   const [sx, sy] = canvasToSource(e);
   S.court.points[idx] = [sx, sy];
   if (idx === 0) S.court.markFrame = S.court.frameIdx;
+  hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();
 }
 
@@ -352,11 +301,13 @@ function undoLastPoint() {
     if (S.court.points[i] !== null) { S.court.points[i] = null; break; }
   }
   if (nextPointIdx() === 0) S.court.markFrame = null;
+  hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();
 }
 function clearPoints() {
   S.court.points = new Array(8).fill(null);
   S.court.markFrame = null;
+  hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();
 }
 
@@ -373,7 +324,7 @@ function renderPointList() {
   // prompt bar
   if (nextIdx === -1) {
     el('promptSwatch').style.background = 'var(--ok)';
-    el('promptText').textContent = 'All points placed. Check the calibration on the right →';
+    el('promptText').textContent = 'All points placed. Press “Check calibration” →';
     el('promptCount').textContent = '8 / 8';
   } else {
     el('promptSwatch').style.background = POINTS[nextIdx].color;
@@ -397,13 +348,13 @@ async function runCalibrate() {
     kitchen_line_opponent_image: pts.slice(6, 8),
     user_baseline: el('selBaseline').value,
     dominant_hand: el('selHand').value,
-    user_starting_corner: el('selCorner').value,
+    user_starting_corner: S.startingCorner,   // confirmed visually on the "You" step
     frame_used_for_calibration: S.court.markFrame ?? S.court.frameIdx,
   };
   try {
     const res = await jsonPost(`/api/sessions/${S.session.id}/calibrate`, payload);
     S.calib = res;
-    showCalibModal(res);
+    showCalibResult(res);
   } catch (e) {
     toast('Calibration failed: ' + e.message, true);
   } finally {
@@ -411,7 +362,7 @@ async function runCalibrate() {
   }
 }
 
-function showCalibModal(res) {
+function showCalibResult(res) {
   el('previewImg').src = 'data:image/jpeg;base64,' + res.preview_jpeg_base64;
   const v = res.validation;
   const meta = el('previewMeta');
@@ -431,7 +382,9 @@ function showCalibModal(res) {
     d.innerHTML = '<span class="k">Warnings</span><span class="v good">none</span>';
     meta.appendChild(d);
   }
-  el('calibModal').hidden = false;
+  const r = el('calibResult');
+  r.hidden = false;
+  r.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ================================================================ STEP 3: PLAYERS
@@ -459,26 +412,24 @@ async function savePlayers() {
   finally { btn.disabled = false; }
 }
 
-// ================================================================ STEP 4: YOU
+// ================================================================ STEP 4: YOU (which side)
 let youCanvas, youCtx;
 function initYouStep() {
   youCanvas = el('youCanvas'); youCtx = youCanvas.getContext('2d');
-  youCanvas.addEventListener('click', onYouClick);
   el('youSlider').addEventListener('input', (e) => setYouFrame(parseInt(e.target.value, 10)));
   el('youBack').addEventListener('click', () => setYouFrame(S.you.frameIdx - 1));
   el('youFwd').addEventListener('click', () => setYouFrame(S.you.frameIdx + 1));
-  el('youUndo').addEventListener('click', () => { S.you.clicks.pop(); drawYou(); renderYouList(); });
-  el('youClear').addEventListener('click', () => { S.you.clicks = []; drawYou(); renderYouList(); });
-  el('skipYou').addEventListener('click', () => saveYou(true));
-  el('youNext').addEventListener('click', () => saveYou(false));
+  ['halfLeft', 'halfRight', 'cardLeft', 'cardRight'].forEach((id) =>
+    el(id).addEventListener('click', () => pickCorner(el(id).dataset.corner)));
+  el('youNext').addEventListener('click', saveSide);
 }
 
 function enterYou() {
   const v = S.session.video;
   el('youSlider').max = Math.max(0, v.frame_count - 1);
   if (S.you.imgFrame < 0) { S.you.frameIdx = Math.floor((v.frame_count || 1) * 0.1); el('youSlider').value = S.you.frameIdx; }
-  renderYouList();
   loadYouFrame();
+  reflectCorner();
 }
 function setYouFrame(idx) {
   const max = Math.max(0, (S.session.video.frame_count || 1) - 1);
@@ -489,61 +440,40 @@ function loadYouFrame() {
   const s = S.session, idx = S.you.frameIdx;
   el('youFrameLabel').textContent = `${idx} / ${Math.max(0, s.video.frame_count - 1)}`;
   const img = new Image();
-  img.onload = () => { S.you.img = img; S.you.imgFrame = idx; youCanvas.width = img.naturalWidth; youCanvas.height = img.naturalHeight; drawYou(); };
+  img.onload = () => { S.you.img = img; S.you.imgFrame = idx; youCanvas.width = img.naturalWidth; youCanvas.height = img.naturalHeight; youCtx.drawImage(img, 0, 0); };
   img.onerror = () => toast('Could not load that frame', true);
   img.src = `/api/sessions/${s.id}/frame/${idx}?maxw=${FRAME_MAXW}`;
 }
-function youScale() { return S.you.img ? (S.you.img.naturalWidth / S.session.video.frame_width) : 1; }
-function drawYou() {
-  if (!S.you.img) return;
-  const ctx = youCtx, sc = youScale();
-  ctx.drawImage(S.you.img, 0, 0);
-  S.you.clicks.forEach((c, i) => {
-    const on = c.frame === S.you.frameIdx;
-    ctx.fillStyle = on ? '#30ff6a' : '#ffab2e';
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(c.x * sc, c.y * sc, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; ctx.font = 'bold 13px sans-serif';
-    ctx.strokeText(String(i + 1), c.x * sc + 10, c.y * sc - 9);
-    ctx.fillText(String(i + 1), c.x * sc + 10, c.y * sc - 9);
+function pickCorner(corner) {
+  S.startingCorner = corner;
+  reflectCorner();
+}
+function reflectCorner() {
+  ['Left', 'Right'].forEach((side) => {
+    const on = S.startingCorner === side.toLowerCase();
+    el('card' + side).classList.toggle('selected', on);
+    el('half' + side).classList.toggle('selected', on);
   });
 }
-function onYouClick(e) {
-  const rect = youCanvas.getBoundingClientRect();
-  const cx = (e.clientX - rect.left) * (youCanvas.width / rect.width);
-  const cy = (e.clientY - rect.top) * (youCanvas.height / rect.height);
-  const sc = youScale();
-  S.you.clicks.push({ frame: S.you.frameIdx, x: Math.round(cx / sc), y: Math.round(cy / sc) });
-  drawYou(); renderYouList();
-}
-function renderYouList() {
-  el('youCount').textContent = `${S.you.clicks.length} mark${S.you.clicks.length === 1 ? '' : 's'}`;
-  const ol = el('youList'); ol.innerHTML = '';
-  S.you.clicks.forEach((c, i) => {
-    const li = document.createElement('li');
-    li.className = 'set';
-    li.innerHTML = `<span><span class="dot" style="background:${c.frame === S.you.frameIdx ? '#30ff6a' : '#ffab2e'}"></span> Mark ${i + 1}</span><span class="frm">frame ${c.frame}</span>`;
-    ol.appendChild(li);
-  });
-}
-async function saveYou(skip) {
-  const clicks = skip ? [] : S.you.clicks;
+async function saveSide() {
+  const btn = el('youNext'); btn.disabled = true;
   try {
-    await jsonPost(`/api/sessions/${S.session.id}/user-clicks`, { clicks });
-    toast(skip ? 'Skipped — we’ll use your starting corner' : `Saved ${clicks.length} marks`);
+    // persist the starting side into markers.json + court.json (used by Stage 2/2.5)
+    await jsonPost(`/api/sessions/${S.session.id}/starting-corner`, { corner: S.startingCorner });
+    toast(`Starting side: ${S.startingCorner}`);
     goto('review');
   } catch (e) { toast('Could not save: ' + e.message, true); }
+  finally { btn.disabled = false; }
 }
 
 // ================================================================ STEP 5: REVIEW
 function initReviewStep() {
   el('finishBtn').addEventListener('click', () => {
     el('doneNote').hidden = false;
-    el('doneNote').innerHTML =
-      `✓ Setup complete. Everything is saved in <code>data/${S.session.id}/</code>. ` +
-      `Next comes processing (tracking, ball detection, and your report) — that’s the next part of the app.`;
+    el('doneNote').innerHTML = `✓ Setup complete.`;
     el('finishBtn').disabled = true;
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Phase 2 will kick off processing here.
   });
 }
 
@@ -581,9 +511,9 @@ async function enterReview() {
       ['Opponent A', handLabel(roster.handedness.opp_a)],
       ['Opponent B', handLabel(roster.handedness.opp_b)],
     ] : [['Status', '<span class="badge skip">not set</span>']]) +
-    card('Identify yourself', [
-      ['Marks placed', sum.user_clicks_count ? `${sum.user_clicks_count}` : '<span class="badge skip">skipped</span>'],
-      ['Fallback', sum.user_clicks_count ? '—' : 'starting corner'],
+    card('Your side', [
+      ['Starting side', S.startingCorner === 'right' ? 'Right' : 'Left'],
+      ['Baseline', cal ? (cal.user_inputs.user_baseline === 'far' ? 'Far' : 'Near') : '—'],
     ]);
 }
 
