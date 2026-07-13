@@ -57,6 +57,50 @@ standing gate (`DATA_COLLECTION_PLAN.md`).
 
 ---
 
+## 2026-07-13 — SETUP UI PHASE 2 (run & progress) — backbone built + REAL post-ball loop proven — READ FIRST
+
+Built Phase 2 (run & progress) on top of the Phase-1 wizard. New `app/pipeline.py`
++ a **Run** view (6th wizard step). Commits on `main`: backbone (`8244fb9`) +
+real-loop fixes (this session's latest).
+
+- **Runner:** each stage runs as an isolated subprocess (`python -m stages.<x>.<x>
+  <folder>`), one at a time, stdout streamed into a live per-job log. State
+  machine: **pre** (materialize video.mp4 via hardlink → Stage 2 track → 2.5
+  classify_tracks → 3 pose) → **pause at ball** → **post** (5→5.5→6→7→8→9→10→11 →
+  compress_video → build_report) → done. Progress via **SSE** (`…/run/stream`).
+- **Stage 4 = GPU/Colab hand-off, decoupled + auto-resume:** the run PAUSES and
+  resumes the instant `ball.parquet` (+ `ball.meta.json`) is uploaded back
+  (`POST …/ball`). No local GPU here (`torch.cuda`=False). **Operator Q answered:**
+  the *app* can't autonomously drive Colab (no Colab API; auto-login is brittle +
+  against the safety rules) — the prior "autonomous" runs were *Claude* driving via
+  the Chrome extension in dev sessions. The backbone makes it hands-off regardless:
+  whoever fills ball.parquet (guided Colab / Claude-via-Chrome / future cloud GPU)
+  triggers the rest automatically.
+- **REAL post-ball loop PROVEN (2026-07-13):** pb_2min already had a real
+  `ball.parquet` + full Stage 1-3 outputs from June, so per operator we skipped a
+  redundant 40-min Colab run. Seeded a session with those real upstream files,
+  uploaded the real ball, and the app **auto-resumed real Stages 5→11 + compress +
+  build_report**, producing the real consumer report (**rating 3.95 / band 4.0**,
+  matching the documented pb_2min result) + a 6 MB web video, served in-app and
+  confirmed rendering in the browser. Analytical stages ran in seconds; render
+  (capped to 15s via `PB_RENDER_MAX_SECONDS`) 137s; compress 41s.
+- **Fixes surfaced by the real run:** Stage 5 needs `ball.meta.json` → `/ball`
+  accepts it + `ensure_ball_meta()` synthesizes one from the video probe if absent;
+  runner passes `--force` to stages (render fails on an existing annotated.mp4
+  without it) for re-runnability; `PB_RENDER_MAX_SECONDS` caps the slow full render.
+  `PB_FAKE_STAGES` simulates stages fast to preview the Run UI without a GPU.
+- **Tests:** 14 app tests (incl. 4 pipeline: state machine, hardlink materialize,
+  failure-stops-run, real subprocess plumbing). Run: `python -m app`.
+
+**NOT yet validated:** the REAL pre-ball stages (2/3) on real 4K through the runner
+(long CPU run — mechanics proven with fakes, not run for real); a full uncapped 4K
+render; the live Colab drive (extension IS connected — deferred to a clip that needs
+a fresh ball). **NEXT options:** (a) live Colab-drive demo on a clip with no ball;
+(b) validate real Stages 2/3 end-to-end (long); (c) Phase 3 (library/polish, embed
+report in-app, error/empty states). See `docs/UI_PLAN.md`.
+
+---
+
 ## 2026-07-11 — USAPA REALIGN + CONSUMER REPORT DONE → next = build the UI (Phase 1) — READ FIRST
 
 Big session. The build program is now through **FIX → REALIGN → (partial) ADD →
