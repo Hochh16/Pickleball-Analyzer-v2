@@ -28,10 +28,20 @@ skeleton (`6cf935f`) + front end (`69b42b2`). On branch **`feat/setup-ui-phase1`
   `court.json`/`court_zones.json` (via Stage 1), `roster.json`, `user_clicks.json`,
   exactly as before. Nothing downstream changes.
 - **Validated end-to-end by driving the REAL app in a browser** against the 4K
-  pb_2min clip (browse→pick→mark 8 pts→calibrate RMSE ~0→roster→self-ID→review→
-  finish; all 6 files written correctly), upload endpoint via curl, + **8 passing
-  self-contained pytest smoke tests** (`app/test_app.py`, synthesizes a tiny video —
-  no dependency on gitignored `data/`). Test session folders cleaned up.
+  pb_2min clip + **self-contained pytest smoke tests** (`app/test_app.py`, 9 tests,
+  synthesizes a tiny video — no dependency on gitignored `data/`).
+- **Operator-feedback UX revision (`e471242`, merged to main):** (1) Video — dropped
+  the full filesystem browser + upload for a **single designated drop folder**
+  (`PB_VIDEOS_DIR`, default `./videos`; user copies the clip in and picks it) + an
+  on-screen **recording-requirements** card (corner-nearest-player, whole-court view,
+  tripod ≥6 ft, shutter 1/1000s+, 60 fps, 4K UHD, ISO 800, 2–5 min). (2) Court — the
+  calibration confirm is now an **inline panel below the still-visible marked frame**
+  (was a modal that hid it). (3) "Point yourself out" (per-frame clicking) → a
+  **visual left/right "which side do you start on"** picker that patches
+  `user_starting_corner` into markers/court (new `POST …/starting-corner`); the
+  no-click geometric seed is the default (user_clicks dropped from the wizard,
+  backend endpoint retained but dormant). (4) Review — simplified to "Setup complete."
+  + a **"Start Analysis →"** button (Phase 2 wires the run).
 
 **NEXT — UI Phase 2 (run & progress + the Stage-4 hand-off).** Backend job
 orchestration: run Stages 1–3 locally as a background job with per-stage progress
