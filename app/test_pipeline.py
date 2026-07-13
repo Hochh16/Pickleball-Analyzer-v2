@@ -38,7 +38,7 @@ def _wait(job, phases, timeout=10.0):
 
 
 def _fake_module(record, fail_key=None):
-    def run(job, module, folder):
+    def run(job, module, folder, extra_args=None):
         record.append(module)
         job.log.append(f"[fake] {module}")
         return 1 if (fail_key and fail_key in module) else 0

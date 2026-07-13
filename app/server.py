@@ -243,20 +243,31 @@ async def stream_run(session_id: str) -> StreamingResponse:
 
 
 @app.post("/api/sessions/{session_id}/ball")
-async def upload_ball(session_id: str, ball: UploadFile = File(...)) -> dict:
-    """Receive ball.parquet (from the Colab/GPU step) and auto-resume Stages 5+."""
+async def upload_ball(
+    session_id: str,
+    ball: UploadFile = File(...),
+    meta: Optional[UploadFile] = File(None),
+) -> dict:
+    """Receive ball.parquet (+ optional ball.meta.json) from the GPU/Colab step
+    and auto-resume Stages 5+. The inference step emits both files; if only the
+    parquet is uploaded we synthesize a minimal ball.meta.json from the video."""
     try:
         folder = store.folder(session_id)
     except SessionError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if not folder.exists():
         raise HTTPException(status_code=404, detail="Unknown session")
-    dest = folder / "ball.parquet"
     try:
-        with dest.open("wb") as out:
+        with (folder / "ball.parquet").open("wb") as out:
             shutil.copyfileobj(ball.file, out)
+        if meta is not None:
+            with (folder / "ball.meta.json").open("wb") as out:
+                shutil.copyfileobj(meta.file, out)
     finally:
         await ball.close()
+        if meta is not None:
+            await meta.close()
+    store.ensure_ball_meta(session_id)  # synthesize if the sidecar wasn't provided
     job = runner.resume_post(session_id)
     return {"ok": True, "resumed": job is not None}
 

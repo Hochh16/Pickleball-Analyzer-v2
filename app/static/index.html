@@ -235,11 +235,11 @@
             <p>This one step runs on Colab (free GPU). The rest continues automatically once the result comes back.</p>
             <ol class="handoff-steps">
               <li>Open the ball-detection notebook on Colab and run it against this clip.</li>
-              <li>It produces a <code>ball.parquet</code> file.</li>
-              <li>Upload that file below — analysis resumes on its own.</li>
+              <li>It produces <code>ball.parquet</code> (and a small <code>ball.meta.json</code>).</li>
+              <li>Upload those files below — analysis resumes on its own.</li>
             </ol>
             <label class="ball-upload">
-              <input type="file" id="ballInput" accept=".parquet" hidden />
+              <input type="file" id="ballInput" accept=".parquet,.json" multiple hidden />
               <span class="btn primary block" id="ballUploadBtn">Upload ball.parquet</span>
             </label>
             <div class="ball-note" id="ballNote"></div>

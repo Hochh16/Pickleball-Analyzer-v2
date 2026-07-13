@@ -266,6 +266,34 @@ class SessionStore:
             tmp.replace(path)
         return {"user_starting_corner": corner}
 
+    def ensure_ball_meta(self, session_id: str) -> Path:
+        """Write a minimal ball.meta.json from the video probe if one is absent.
+
+        The real Stage-4 inference emits ball.meta.json (fps + synthetic flag +
+        stats) beside ball.parquet; when only the parquet is uploaded we
+        synthesize the fields the downstream stages require (fps, synthetic
+        false, video dims). Stats are omitted (unknown without the detector)."""
+        folder = self.folder(session_id)
+        path = folder / "ball.meta.json"
+        if path.exists():
+            return path
+        session = self.get(session_id)
+        v = session["video"]
+        meta = {
+            "schema_version": 1,
+            "synthetic": False,
+            "video_path": str((folder / "video.mp4")),
+            "video_frame_count": v["frame_count"],
+            "video_fps": v["fps"],
+            "video_width": v["frame_width"],
+            "video_height": v["frame_height"],
+            "detector": {"tool": "external (GPU/Colab)", "note": "meta synthesized on upload"},
+            "range": [0, v["frame_count"]],
+        }
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+        return path
+
     # ----- roster -----
 
     def write_roster(self, session_id: str, handedness: Dict[str, str]) -> Dict:

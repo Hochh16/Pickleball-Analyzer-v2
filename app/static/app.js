@@ -529,7 +529,7 @@ let ballBusy = false;
 
 function initRunStep() {
   el('ballUploadBtn').addEventListener('click', () => el('ballInput').click());
-  el('ballInput').addEventListener('change', () => { if (el('ballInput').files[0]) uploadBall(el('ballInput').files[0]); });
+  el('ballInput').addEventListener('change', () => { if (el('ballInput').files.length) uploadBall(el('ballInput').files); });
   el('retryBtn').addEventListener('click', async () => {
     try { await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' }); enterRun(); }
     catch (e) { toast('Retry failed: ' + e.message, true); }
@@ -586,13 +586,18 @@ function renderRun(job) {
   if (job.phase === 'done' && runES) { runES.close(); runES = null; }
 }
 
-async function uploadBall(file) {
+async function uploadBall(files) {
   if (ballBusy) return;
+  files = Array.from(files);
+  const parquet = files.find((f) => f.name.endsWith('.parquet'));
+  const meta = files.find((f) => f.name.endsWith('.json'));
+  if (!parquet) { el('ballNote').textContent = 'Please include the ball.parquet file.'; return; }
   ballBusy = true;
   const note = el('ballNote');
   note.textContent = 'Uploading ball.parquet…';
   const fd = new FormData();
-  fd.append('ball', file);
+  fd.append('ball', parquet);
+  if (meta) fd.append('meta', meta);
   try {
     const res = await api(`/api/sessions/${S.session.id}/ball`, { method: 'POST', body: fd });
     note.textContent = res.resumed ? 'Received — resuming analysis…' : 'Received.';

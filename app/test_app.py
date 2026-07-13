@@ -158,3 +158,17 @@ def test_bad_handedness_rejected(store, video):
 def test_missing_video_rejected(store):
     with pytest.raises(SessionError):
         store.create_from_path(Path("does/not/exist.mp4"))
+
+
+def test_ensure_ball_meta_synthesizes(store, video):
+    import json
+    sid = store.create_from_path(video)["id"]
+    path = store.ensure_ball_meta(sid)
+    assert path.exists()
+    meta = json.loads(path.read_text())
+    assert meta["synthetic"] is False
+    assert meta["video_fps"] > 0 and meta["video_frame_count"] >= 25
+    # existing meta is left untouched
+    path.write_text('{"synthetic": false, "marker": 1}')
+    store.ensure_ball_meta(sid)
+    assert json.loads(path.read_text()).get("marker") == 1

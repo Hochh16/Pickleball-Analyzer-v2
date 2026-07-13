@@ -33,11 +33,14 @@ LOG_TAIL = 240  # lines kept per job for the live log
 # A step is either a module CLI (module + folder arg) or a python callable.
 class Step:
     def __init__(self, key: str, label: str, module: Optional[str] = None,
-                 func: Optional[Callable[[Path], None]] = None):
+                 func: Optional[Callable[[Path], None]] = None,
+                 args: Optional[List[str]] = None):
         self.key = key
         self.label = label
         self.module = module
         self.func = func
+        # extra CLI args after the folder (e.g. --force so re-runs overwrite)
+        self.args = args or []
 
 
 # pre-ball (local), then the ball marker, then post-ball (local)
@@ -48,17 +51,19 @@ PRE_STEPS = [
     Step("pose", "Body pose", module="stages.pose.pose"),
 ]
 BALL_STEP = Step("ball", "Ball detection (GPU)", func=None)
+# --force where supported so a re-run overwrites prior outputs (render fails
+# outright on an existing annotated.mp4 without it).
 POST_STEPS = [
-    Step("shots", "Detect shots", module="stages.detect_shots.detect_shots"),
-    Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces"),
-    Step("classify", "Classify shots", module="stages.classify_shots.classify_shots"),
-    Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies"),
-    Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics"),
-    Step("rate", "USAPA rating", module="stages.rate.rate"),
-    Step("plan", "Improvement plan", module="stages.plan_improvement.plan_improvement"),
-    Step("render", "Annotated video", module="stages.render.render"),
+    Step("shots", "Detect shots", module="stages.detect_shots.detect_shots", args=["--force"]),
+    Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces", args=["--force"]),
+    Step("classify", "Classify shots", module="stages.classify_shots.classify_shots", args=["--force"]),
+    Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies", args=["--force"]),
+    Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics", args=["--force"]),
+    Step("rate", "USAPA rating", module="stages.rate.rate", args=["--force"]),
+    Step("plan", "Improvement plan", module="stages.plan_improvement.plan_improvement", args=["--force"]),
+    Step("render", "Annotated video", module="stages.render.render", args=["--force"]),
     Step("compress", "Compress video", module="tools.compress_video"),
-    Step("report", "Build report", module="tools.build_report"),
+    Step("report", "Build report", module="tools.build_report", args=["--force"]),
 ]
 
 ALL_STEPS = PRE_STEPS + [BALL_STEP] + POST_STEPS
@@ -186,7 +191,12 @@ class PipelineRunner:
                     self._materialize_video(job)
                     ok, rc = True, 0
                 else:
-                    rc = self._run_module(job, step.module, folder)
+                    extra = list(step.args)
+                    # optional preview cap for the slow full render
+                    cap = os.environ.get("PB_RENDER_MAX_SECONDS")
+                    if step.key == "render" and cap:
+                        extra += ["--max-seconds", str(cap)]
+                    rc = self._run_module(job, step.module, folder, extra)
                     ok = (rc == 0)
             except Exception as e:  # noqa: BLE001
                 self._log(job, f"ERROR: {type(e).__name__}: {e}")
@@ -224,12 +234,13 @@ class PipelineRunner:
         self._log(job, "Analysis complete. Report ready.")
         self._bump(job)
 
-    def _run_module(self, job: Job, module: str, folder: Path) -> int:
+    def _run_module(self, job: Job, module: str, folder: Path,
+                    extra_args: Optional[List[str]] = None) -> int:
         # Preview/dev hook: simulate stages fast (no GPU/long wait). Lets the run
         # UI be exercised end-to-end. Never set in a real run.
         if os.environ.get("PB_FAKE_STAGES"):
             return self._fake_module(job, module, folder)
-        cmd = [sys.executable, "-u", "-m", module, str(folder)]
+        cmd = [sys.executable, "-u", "-m", module, str(folder), *(extra_args or [])]
         env = dict(os.environ)
         env["PYTHONUNBUFFERED"] = "1"
         proc = subprocess.Popen(
