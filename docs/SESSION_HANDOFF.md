@@ -112,6 +112,41 @@ can't process real clips") + UI_PLAN.
   `data/pb_5min_test_20s/` (setup reused from David's real `pb_5_minute_outdoor`
   markers — same static court). Server was left running on :8180 paused at ball.
 
+**DONE — MOVE STAGES 2/3 (+2.5, +4) TO GPU/COLAB + APP INTEGRATION (2026-07-14).**
+The combined vision pass is built, **validated on Colab** (Stages 2→2.5→3→4, ~7 min
+on an A100, outputs match local: players 8309/local 8297, poses 4637 identical, roles
+identical, ball detect_frac 0.9275), AND **wired into the app**:
+- **Runner reworked** (`app/pipeline.py`): `prepare` (materialize video) → `vision`
+  (local if a CUDA GPU is present, else a **GPU hand-off** that pauses) → `post`
+  (5→11 + compress + report). The vision hand-off auto-resumes when the outputs
+  arrive — new **multi-file `POST …/vision`** (guarded to known output filenames)
+  replaces the single-file `/ball`. Run view: **vision hand-off card** w/ multi-file
+  upload; phases prepare/vision/post.
+- **Render length-capped by default** (`DEFAULT_RENDER_MAX_SECONDS=90`, override
+  `PB_RENDER_MAX_SECONDS`; "0"/"full"=uncapped) so a 5-min clip's 4K render doesn't
+  dominate. This is the local-side "reasonable time" lever.
+- **`track_ball_v4` now BATCHES** (`detect_batch` + auto batch-size by GPU memory,
+  `--batch` flag; CPU stays per-frame). Identical results, fast enough for full-length
+  clips (per-frame ~100 min on an 18k-frame clip). The vision notebook runs this module
+  → batched automatically. Bundle regenerated with it.
+- **Verified end-to-end via the NEW runner** on real data: start → vision hand-off →
+  `/vision` upload of the real outputs → auto-resume → real Stages 5-11 + capped render
+  → report (http 200). 15 app tests + 5 track_ball tests pass.
+
+**Operator hand-off note (unchanged limit):** the agent **cannot push files to the
+user's Drive** (browser-upload security boundary — rejected scratchpad + @-referenced
+files; binary not shareable; private+stale GitHub). So the operator uploads the bundle
++ setup files to Drive and runs `infer_vision.ipynb` (the ~7-min GPU pass); everything
+around it is automatic. A cloud-GPU runner is the eventual full-self-serve fix.
+
+**REMAINING (next):** the vision notebook needs the setup files on Drive alongside
+video.mp4 — the app could package a per-clip bundle (video + court/roster) to make the
+hand-off one download; and Phase 3 (library / reopen a paused run / polish). For 5-min+
+clips: Colab vision (~few min w/ batched ball) + local post w/ capped render = reasonable.
+
+---
+
+## (superseded) 2026-07-14 — vision pass BUILD notes (pre-integration)
 **IN PROGRESS — MOVE STAGES 2/3 (+2.5, +4) TO GPU/COLAB (combined vision pass).**
 Operator chose **one combined Colab pass** for all heavy vision (2 track → 2.5
 roles → 3 pose → 4 ball) so the app offloads it in one GPU trip and keeps only the
