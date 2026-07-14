@@ -552,6 +552,7 @@ function enterRun() {
   el('viewReportBtn').href = `/api/sessions/${S.session.id}/files/report.html`;
   el('viewVideoBtn').href = `/api/sessions/${S.session.id}/files/annotated_web.mp4`;
   el('bundleDownloadBtn').href = `/api/sessions/${S.session.id}/vision-input.zip`;
+  el('clipNameVal').textContent = S.session.id;
   // (re)connect the live stream
   if (runES) { runES.close(); runES = null; }
   runES = new EventSource(`/api/sessions/${S.session.id}/run/stream`);
