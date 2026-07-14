@@ -112,13 +112,32 @@ can't process real clips") + UI_PLAN.
   `data/pb_5min_test_20s/` (setup reused from David's real `pb_5_minute_outdoor`
   markers — same static court). Server was left running on :8180 paused at ball.
 
-**NEXT — the agreed work item: MOVE STAGES 2 (track) & 3 (pose) TO GPU/COLAB**, like
-Stage 4 already is, so the app offloads all heavy vision (2/3/4) to the GPU step and
-keeps only the light analytical stages (5→11 + report) local. This is what makes the
-app practical on real clips. (Ball step for the current test clip is pending the
-operator putting the video on Drive so Claude can run `infer_v4` on it.) Then Phase 3
-(library/reopen a paused run/embed report/polish). See `docs/UI_PLAN.md` +
-KNOWN_ISSUES.
+**IN PROGRESS — MOVE STAGES 2/3 (+2.5, +4) TO GPU/COLAB (combined vision pass).**
+Operator chose **one combined Colab pass** for all heavy vision (2 track → 2.5
+roles → 3 pose → 4 ball) so the app offloads it in one GPU trip and keeps only the
+light analytical stages (5→11 + report) local. **Built this session (commit below):**
+- `tools/build_vision_bundle.py` → `data/pb_vision_upload.zip` (34 KB; the real
+  stage code — track/classify_tracks/pose/track_ball_v4 + _tracknet_model + inits).
+  Confirmed self-contained (only track_ball_v4 imports _tracknet_model). Both models
+  auto-download on Colab (yolo11s via ultralytics, pose model via MediaPipe); ball
+  weights already in Drive root.
+- `tools/build_vision_nb.py` → `stages/infer_vision.ipynb` (17 cells, GPU). Mounts
+  Drive, pip-installs ultralytics+mediapipe, unzips the bundle, and runs the REAL
+  modules `python -m stages.<x>.<x> <CLIP_DIR>` for 2 → 2.5 → 3 → 4 (YOLO auto-GPU
+  confirmed; track_ball_v4 auto-CUDA confirmed; pose on Colab CPU). Reads `pb_infer/
+  <CLIP>/` (needs video.mp4 + court.json/court_zones.json/roster.json[/user_clicks])
+  and writes players/roles/poses/ball (+metas) back to Drive.
+- **Ball note:** the combined pass runs the per-frame `track_ball_v4` module (auto-
+  CUDA, simple, no code dup) — a bit slower than the standalone batched `infer_v4.ipynb`;
+  folding the batched loop in is a noted future optimization.
+
+**NEXT (not done):** (1) **TEST `infer_vision.ipynb` on Colab** end-to-end (upload
+the bundle to Drive root + the setup files to `pb_infer/<CLIP>/`, Run All, verify
+outputs) — drive it via Chrome like the ball run. (2) **App integration:** rewire the
+runner's local "pre" phase into a **vision GPU hand-off** — get the setup files +
+video to the GPU step, run the combined pass, upload all vision outputs back, then
+auto-resume Stages 5→11 (same decouple/auto-resume mechanism as the ball). Then
+Phase 3 (library/reopen a paused run/polish). See `docs/UI_PLAN.md` + KNOWN_ISSUES.
 
 ---
 
