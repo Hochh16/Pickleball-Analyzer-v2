@@ -23,8 +23,15 @@ from pydantic import BaseModel
 
 from . import browse as browse_mod
 from . import video as video_mod
-from .pipeline import PipelineRunner
+from .pipeline import PipelineRunner, has_vision_outputs
 from .sessions import SessionError, SessionStore
+
+# Only these (known pipeline outputs from the vision GPU pass) may be written via
+# the vision upload — a guard so the endpoint can't drop arbitrary files.
+ALLOWED_VISION_FILES = {
+    "players.parquet", "players_pending.json", "track_roles.json",
+    "poses.parquet", "pose_summary.json", "ball.parquet", "ball.meta.json",
+}
 
 DATA_ROOT = Path(os.environ.get("PB_DATA_DIR", "data")).resolve()
 # One designated drop folder for videos — the user copies a clip here and picks
@@ -252,34 +259,39 @@ async def stream_run(session_id: str) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.post("/api/sessions/{session_id}/ball")
-async def upload_ball(
-    session_id: str,
-    ball: UploadFile = File(...),
-    meta: Optional[UploadFile] = File(None),
-) -> dict:
-    """Receive ball.parquet (+ optional ball.meta.json) from the GPU/Colab step
-    and auto-resume Stages 5+. The inference step emits both files; if only the
-    parquet is uploaded we synthesize a minimal ball.meta.json from the video."""
+@app.post("/api/sessions/{session_id}/vision")
+async def upload_vision(session_id: str, files: List[UploadFile] = File(...)) -> dict:
+    """Receive the combined vision-pass outputs (players.parquet, track_roles.json,
+    poses.parquet, ball.parquet, ball.meta.json, + optional sidecars) produced on
+    Colab, and AUTO-RESUME Stages 5+ once the required set is present."""
     try:
         folder = store.folder(session_id)
     except SessionError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if not folder.exists():
         raise HTTPException(status_code=404, detail="Unknown session")
+    saved, skipped = [], []
     try:
-        with (folder / "ball.parquet").open("wb") as out:
-            shutil.copyfileobj(ball.file, out)
-        if meta is not None:
-            with (folder / "ball.meta.json").open("wb") as out:
-                shutil.copyfileobj(meta.file, out)
+        for f in files:
+            name = Path(f.filename or "").name
+            if name not in ALLOWED_VISION_FILES:
+                skipped.append(name)
+                continue
+            with (folder / name).open("wb") as out:
+                shutil.copyfileobj(f.file, out)
+            saved.append(name)
     finally:
-        await ball.close()
-        if meta is not None:
-            await meta.close()
-    store.ensure_ball_meta(session_id)  # synthesize if the sidecar wasn't provided
+        for f in files:
+            await f.close()
+    store.ensure_ball_meta(session_id)  # synthesize the sidecar if not uploaded
     job = runner.resume_post(session_id)
-    return {"ok": True, "resumed": job is not None}
+    return {
+        "ok": True,
+        "saved": saved,
+        "skipped": skipped,
+        "have_all_outputs": has_vision_outputs(folder),
+        "resumed": job is not None,
+    }
 
 
 @app.get("/api/sessions/{session_id}/files/{file_path:path}")

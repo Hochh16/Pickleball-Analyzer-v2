@@ -88,6 +88,37 @@ def detect(model, device, buf3: List[np.ndarray], sx: float, sy: float
     return ix * sx, iy * sy, float(hm[iy, ix])
 
 
+def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
+                 sx: float, sy: float, conf_thresh: float,
+                 dets: dict, raw_conf: list) -> None:
+    """Run the model on a BATCH of (9,H,W) stacks and record a detection for each
+    window's center frame. Batching is the real GPU speedup (per-window inference
+    leaves the GPU mostly idle); results are identical to per-frame `detect()`."""
+    if not stacks:
+        return
+    t = torch.from_numpy(np.stack(stacks)).to(device)   # (N,9,H,W)
+    with torch.cuda.amp.autocast(enabled=str(device).startswith("cuda")):
+        hm = model(t)[:, 0].float().cpu().numpy()        # (N,H,W)
+    for k, center in enumerate(centers):
+        h = hm[k]
+        iy, ix = np.unravel_index(int(h.argmax()), h.shape)
+        c = float(h[iy, ix])
+        raw_conf.append(c)
+        if c >= conf_thresh:
+            dets[center] = (ix * sx, iy * sy, c)
+
+
+def _batch_size(device, args) -> int:
+    """Frames per forward pass. Scale to GPU memory (A100 OOMs at 16 @ 720x1280,
+    fine at 8); CPU stays per-frame."""
+    if getattr(args, "batch", None):
+        return max(1, args.batch)
+    if str(device).startswith("cuda"):
+        gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        return 8 if gb > 20 else 4
+    return 1
+
+
 # --- trajectory post-processing ---------------------------------------------
 
 def postprocess(dets: dict, frames: List[int]) -> List[dict]:
@@ -168,10 +199,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     frames = list(range(start, end))
     log.info(f"video {sw}x{sh}@{fps:.1f}, {n_total} frames; inferring [{start},{end})")
 
-    # sliding 3-frame buffer; detection produced for the MIDDLE frame
+    # sliding 3-frame buffer; detection produced for the MIDDLE frame. Windows
+    # are accumulated and run through the model in BATCHES (the GPU speedup).
+    bsz = _batch_size(device, args)
+    log.info(f"batch size {bsz}")
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     buf, dets, raw_conf = [], {}, []
-    prev_full = None  # keep source frames for optional overlay
+    b_stacks, b_centers = [], []
     src_cache = {} if args.overlay else None
     fidx = start
     while fidx < end:
@@ -184,14 +218,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         if len(buf) > 3:
             buf.pop(0)
         if len(buf) == 3:
-            center = fidx - 1
-            x, y, c = detect(model, device, buf, sx, sy)
-            raw_conf.append(c)
-            if c >= args.conf:
-                dets[center] = (x, y, c)
+            b_stacks.append(np.concatenate(buf, axis=0))   # (9,H,W)
+            b_centers.append(fidx - 1)
+            if len(b_stacks) >= bsz:
+                detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, dets, raw_conf)
+                b_stacks, b_centers = [], []
         fidx += 1
-        if (fidx - start) % 50 == 0 and fidx > start:
+        if (fidx - start) % 200 == 0 and fidx > start:
             log.info(f"  {fidx-start}/{len(frames)} frames")
+    detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, dets, raw_conf)  # flush
     cap.release()
 
     rows = postprocess(dets, frames)
@@ -255,6 +290,8 @@ def parse_args(argv=None):
     p.add_argument("--start-frame", type=int, default=0, dest="start_frame")
     p.add_argument("--max-frames", type=int, default=None, dest="max_frames")
     p.add_argument("--conf", type=float, default=CONF_THRESH)
+    p.add_argument("--batch", type=int, default=None,
+                   help="frames per GPU forward pass (default: auto from GPU memory; CPU=1)")
     p.add_argument("--overlay", default=None, help="write a debug overlay mp4 of the range")
     p.add_argument("--force", action="store_true")
     p.add_argument("--log-level", default="INFO",

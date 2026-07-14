@@ -536,11 +536,11 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 
 // ================================================================ STEP 6: RUN
 let runES = null;         // EventSource
-let ballBusy = false;
+let visionBusy = false;
 
 function initRunStep() {
-  el('ballUploadBtn').addEventListener('click', () => el('ballInput').click());
-  el('ballInput').addEventListener('change', () => { if (el('ballInput').files.length) uploadBall(el('ballInput').files); });
+  el('visionUploadBtn').addEventListener('click', () => el('visionInput').click());
+  el('visionInput').addEventListener('change', () => { if (el('visionInput').files.length) uploadVision(el('visionInput').files); });
   el('retryBtn').addEventListener('click', async () => {
     try { await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' }); enterRun(); }
     catch (e) { toast('Retry failed: ' + e.message, true); }
@@ -582,15 +582,14 @@ function renderRun(job) {
   log.scrollTop = log.scrollHeight;
 
   // side cards
-  const waiting = job.phase === 'ball';
-  el('ballHandoff').hidden = !waiting;
+  el('visionHandoff').hidden = job.phase !== 'vision';
   el('runDone').hidden = job.phase !== 'done';
   el('runFail').hidden = job.phase !== 'failed';
   if (job.phase === 'failed') el('runFailMsg').textContent = job.error || 'A stage failed. See the activity log.';
 
   // header
   const titles = {
-    pre: 'Analyzing your match', ball: 'One step needs a GPU',
+    prepare: 'Preparing your video', vision: 'Vision runs on a GPU',
     post: 'Finishing your analysis', done: 'Your report is ready',
     failed: 'Analysis stopped', idle: 'Analyzing your match',
   };
@@ -598,25 +597,29 @@ function renderRun(job) {
   if (job.phase === 'done' && runES) { runES.close(); runES = null; }
 }
 
-async function uploadBall(files) {
-  if (ballBusy) return;
+async function uploadVision(files) {
+  if (visionBusy) return;
   files = Array.from(files);
-  const parquet = files.find((f) => f.name.endsWith('.parquet'));
-  const meta = files.find((f) => f.name.endsWith('.json'));
-  if (!parquet) { el('ballNote').textContent = 'Please include the ball.parquet file.'; return; }
-  ballBusy = true;
-  const note = el('ballNote');
-  note.textContent = 'Uploading ball.parquet…';
+  const note = el('visionNote');
+  const hasBall = files.some((f) => f.name === 'ball.parquet');
+  if (!hasBall) { note.textContent = 'Please include at least ball.parquet (and the other vision output files).'; return; }
+  visionBusy = true;
+  note.textContent = `Uploading ${files.length} file(s)…`;
   const fd = new FormData();
-  fd.append('ball', parquet);
-  if (meta) fd.append('meta', meta);
+  files.forEach((f) => fd.append('files', f));
   try {
-    const res = await api(`/api/sessions/${S.session.id}/ball`, { method: 'POST', body: fd });
-    note.textContent = res.resumed ? 'Received — resuming analysis…' : 'Received.';
-    el('ballHandoff').hidden = true;
+    const res = await api(`/api/sessions/${S.session.id}/vision`, { method: 'POST', body: fd });
+    if (res.resumed) {
+      note.textContent = 'Received — resuming analysis…';
+      el('visionHandoff').hidden = true;
+    } else if (!res.have_all_outputs) {
+      note.textContent = 'Got ' + res.saved.join(', ') + '. Still missing some of: players.parquet, track_roles.json, poses.parquet, ball.parquet.';
+    } else {
+      note.textContent = 'Received.';
+    }
   } catch (e) {
     note.textContent = 'Upload failed: ' + e.message;
-  } finally { ballBusy = false; }
+  } finally { visionBusy = false; }
 }
 
 // ---------------------------------------------------------------- boot

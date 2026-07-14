@@ -125,11 +125,10 @@ CELLS.append(md("## Stage 3 — pose"))
 CELLS.append(code("run_stage('stages.pose.pose')\n"))
 
 CELLS.append(md(
-"""## Stage 4 — ball detection (GPU)
+"""## Stage 4 — ball detection (GPU, batched)
 
-Uses the committed `track_ball_v4` module (auto-uses CUDA). This is the per-frame
-path; for the fastest ball inference the standalone **`infer_v4.ipynb`** uses a
-batched GPU loop — a future optimization to fold in here."""))
+Uses the committed `track_ball_v4` module — auto-uses CUDA and runs BATCHED
+(auto-sized to GPU memory), so it's fast enough for full-length clips."""))
 CELLS.append(code("run_stage('stages.track_ball.track_ball_v4', '--weights', str(WEIGHTS), '--force')\n"))
 
 CELLS.append(md("## Done — outputs written to the clip folder on Drive"))

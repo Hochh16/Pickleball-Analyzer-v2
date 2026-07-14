@@ -229,20 +229,20 @@
         <div class="run-steps" id="runSteps"></div>
 
         <div class="run-side">
-          <!-- Ball hand-off (shown while waiting for ball.parquet) -->
-          <div class="handoff-card" id="ballHandoff" hidden>
-            <h3>⚡ Ball detection needs a GPU</h3>
-            <p>This one step runs on Colab (free GPU). The rest continues automatically once the result comes back.</p>
+          <!-- Vision hand-off (shown while waiting for the GPU outputs) -->
+          <div class="handoff-card" id="visionHandoff" hidden>
+            <h3>⚡ Vision runs on a GPU</h3>
+            <p>Player tracking, pose, and ball detection run on Colab (free GPU) — too slow to do here on the CPU. The rest continues automatically once the results come back.</p>
             <ol class="handoff-steps">
-              <li>Open the ball-detection notebook on Colab and run it against this clip.</li>
-              <li>It produces <code>ball.parquet</code> (and a small <code>ball.meta.json</code>).</li>
+              <li>Open the combined vision notebook (<code>infer_vision.ipynb</code>) on Colab and run it against this clip.</li>
+              <li>It produces <code>players.parquet</code>, <code>track_roles.json</code>, <code>poses.parquet</code>, and <code>ball.parquet</code> (+ metas).</li>
               <li>Upload those files below — analysis resumes on its own.</li>
             </ol>
             <label class="ball-upload">
-              <input type="file" id="ballInput" accept=".parquet,.json" multiple hidden />
-              <span class="btn primary block" id="ballUploadBtn">Upload ball.parquet</span>
+              <input type="file" id="visionInput" accept=".parquet,.json" multiple hidden />
+              <span class="btn primary block" id="visionUploadBtn">Upload vision outputs</span>
             </label>
-            <div class="ball-note" id="ballNote"></div>
+            <div class="ball-note" id="visionNote"></div>
           </div>
 
           <!-- Done -->

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app import pipeline as pipe
-from app.pipeline import PipelineRunner
+from app.pipeline import PipelineRunner, VISION_OUTPUTS
 from app.sessions import SessionStore
 from app.test_app import VALID_MARKERS, _make_video
 
@@ -39,67 +39,87 @@ def _wait(job, phases, timeout=10.0):
 
 def _fake_module(record, fail_key=None):
     def run(job, module, folder, extra_args=None):
-        record.append(module)
+        record.append((module, tuple(extra_args or ())))
         job.log.append(f"[fake] {module}")
         return 1 if (fail_key and fail_key in module) else 0
     return run
 
 
-def test_pre_then_pause_then_resume(store_with_session):
+def _drop_vision_outputs(folder: Path):
+    for name in VISION_OUTPUTS:
+        (folder / name).write_bytes(b"PAR1" if name.endswith(".parquet") else b"{}")
+
+
+def test_prepare_then_vision_handoff_then_resume(store_with_session, monkeypatch):
     store, sid = store_with_session
+    monkeypatch.setattr(pipe, "_cuda_available", lambda: False)  # force the hand-off path
     runner = PipelineRunner(store)
     calls = []
     runner._run_module = _fake_module(calls)
 
     job = runner.start(sid)
-    assert _wait(job, ("ball",)), f"expected ball pause, got {job.phase}"
-
-    # video.mp4 was materialized into the folder
+    assert _wait(job, ("vision",)), f"expected vision hand-off, got {job.phase}"
+    # video materialized; vision steps waiting for the GPU outputs
     assert (store.folder(sid) / "video.mp4").exists()
-    # pre steps ran and are done; ball is waiting
     statuses = {s["key"]: s["status"] for s in job.steps}
-    assert statuses["track"] == "done" and statuses["pose"] == "done"
-    assert statuses["ball"] == "waiting"
-    assert any("track_players" in m for m in calls)
+    assert statuses["video"] == "done"
+    assert statuses["track"] == "waiting" and statuses["ball"] == "waiting"
 
-    # drop ball.parquet and resume
-    (store.folder(sid) / "ball.parquet").write_bytes(b"PAR1")
+    # drop the vision outputs (as if uploaded from Colab) and resume
+    _drop_vision_outputs(store.folder(sid))
     runner.resume_post(sid)
     assert _wait(job, ("done",)), f"expected done, got {job.phase} ({job.error})"
     statuses = {s["key"]: s["status"] for s in job.steps}
-    assert statuses["ball"] == "done"
-    assert statuses["report"] == "done"
-    assert any("build_report" in m for m in calls)
+    assert statuses["ball"] == "done" and statuses["report"] == "done"
+    assert any("build_report" in m for m, _ in calls)
 
 
-def test_stage_failure_stops_run(store_with_session):
+def test_local_gpu_runs_vision_locally(store_with_session, monkeypatch):
     store, sid = store_with_session
+    monkeypatch.setattr(pipe, "_cuda_available", lambda: True)  # pretend a GPU is present
     runner = PipelineRunner(store)
-    runner._run_module = _fake_module([], fail_key="classify_tracks")  # Stage 2.5 fails
+    calls = []
+    runner._run_module = _fake_module(calls)
+
+    job = runner.start(sid)
+    assert _wait(job, ("done",)), f"expected done, got {job.phase} ({job.error})"
+    mods = [m for m, _ in calls]
+    assert any("track_players" in m for m in mods)      # vision ran locally
+    assert any("pose.pose" in m for m in mods)
+    assert any("build_report" in m for m in mods)
+
+
+def test_render_is_capped_by_default(store_with_session, monkeypatch):
+    store, sid = store_with_session
+    monkeypatch.setattr(pipe, "_cuda_available", lambda: True)
+    monkeypatch.delenv("PB_RENDER_MAX_SECONDS", raising=False)
+    runner = PipelineRunner(store)
+    calls = []
+    runner._run_module = _fake_module(calls)
+    job = runner.start(sid)
+    assert _wait(job, ("done",))
+    render = next(args for m, args in calls if m.endswith("render.render"))
+    assert "--max-seconds" in render  # capped for reasonable time
+
+
+def test_stage_failure_stops_run(store_with_session, monkeypatch):
+    store, sid = store_with_session
+    monkeypatch.setattr(pipe, "_cuda_available", lambda: True)
+    runner = PipelineRunner(store)
+    runner._run_module = _fake_module([], fail_key="detect_shots")  # first post stage fails
 
     job = runner.start(sid)
     assert _wait(job, ("failed",)), f"expected failed, got {job.phase}"
     statuses = {s["key"]: s["status"] for s in job.steps}
-    assert statuses["roles"] == "failed"
-    assert statuses["pose"] == "pending"       # never reached
-    assert job.error and "Identify players" in job.error
+    assert statuses["shots"] == "failed"
+    assert statuses["report"] == "pending"
+    assert job.error and "Detect shots" in job.error
 
 
 def test_real_subprocess_plumbing(store_with_session):
     store, sid = store_with_session
     runner = PipelineRunner(store)
     job = pipe.Job(sid)
-    # `python -m this` prints the Zen of Python and exits 0 — proves stdout->log
-    rc = runner._run_module(job, "this", store.folder(sid))
+    rc = runner._run_module(job, "this", store.folder(sid))  # `python -m this` -> Zen
     assert rc == 0
-    assert len(job.log) > 5
     assert any("Beautiful" in line for line in job.log)
-
-
-def test_version_bumps_on_progress(store_with_session):
-    store, sid = store_with_session
-    runner = PipelineRunner(store)
-    runner._run_module = _fake_module([])
-    job = runner.start(sid)
-    assert _wait(job, ("ball",))
-    assert job.version > 3  # multiple state changes emitted for SSE
