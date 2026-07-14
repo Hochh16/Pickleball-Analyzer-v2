@@ -92,12 +92,33 @@ real-loop fixes (this session's latest).
 - **Tests:** 14 app tests (incl. 4 pipeline: state machine, hardlink materialize,
   failure-stops-run, real subprocess plumbing). Run: `python -m app`.
 
-**NOT yet validated:** the REAL pre-ball stages (2/3) on real 4K through the runner
-(long CPU run — mechanics proven with fakes, not run for real); a full uncapped 4K
-render; the live Colab drive (extension IS connected — deferred to a clip that needs
-a fresh ball). **NEXT options:** (a) live Colab-drive demo on a clip with no ball;
-(b) validate real Stages 2/3 end-to-end (long); (c) Phase 3 (library/polish, embed
-report in-app, error/empty states). See `docs/UI_PLAN.md`.
+**REAL PRE-BALL STAGES NOW VALIDATED + throughput wall confirmed (2026-07-14).**
+Ran a real end-to-end attempt through the app on a **5-min 4K/60fps outdoor clip**.
+Finding: **Stage 2 (YOLO) runs at ~1 fps on CPU (no GPU) → ~5 h for tracking alone,
+~8–12 h with pose** — the app's "run locally" path is **not viable for real clips on
+CPU**. A **20-s trim** ran Stages 2→2.5→3 correctly in **~17 min** (players.parquet
+8297 rows/56 tracks, all 4 roles, poses 4637 rows), paused at the ball hand-off — so
+the logic is right; the wall is CPU throughput. Logged in KNOWN_ISSUES ("local CPU
+can't process real clips") + UI_PLAN.
+- **The autonomous Colab drive hit a hard limit:** the Chrome-extension file-upload
+  tool caps at **10 MB**, and a 20-s 4K clip is **877 MB** — so Claude **cannot push
+  the video to Drive** to run Colab autonomously. Claude can drive the *notebook* +
+  download the small result, but the operator must get the video onto Drive first
+  (prior "Claude drove Colab" runs had the video pre-placed). Reconfirms: the GPU step
+  isn't fully automatable by the agent for real-size clips → **cloud GPU is the real
+  self-serve fix.**
+- Trimmed test clip: `videos/PB_5min_test_20s.mp4` (2:00–2:20 of the 5-min clip,
+  full 4K/60fps, re-encoded high-bitrate via OpenCV since no ffmpeg). Session
+  `data/pb_5min_test_20s/` (setup reused from David's real `pb_5_minute_outdoor`
+  markers — same static court). Server was left running on :8180 paused at ball.
+
+**NEXT — the agreed work item: MOVE STAGES 2 (track) & 3 (pose) TO GPU/COLAB**, like
+Stage 4 already is, so the app offloads all heavy vision (2/3/4) to the GPU step and
+keeps only the light analytical stages (5→11 + report) local. This is what makes the
+app practical on real clips. (Ball step for the current test clip is pending the
+operator putting the video on Drive so Claude can run `infer_v4` on it.) Then Phase 3
+(library/reopen a paused run/embed report/polish). See `docs/UI_PLAN.md` +
+KNOWN_ISSUES.
 
 ---
 

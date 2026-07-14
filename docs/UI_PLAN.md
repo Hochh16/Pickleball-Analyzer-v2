@@ -89,9 +89,16 @@ so nothing downstream changes.
 
 - **GPU step UX** is the hard part for outside users (the tension above) — the
   guided-Colab flow needs care, or a shared GPU. Cloud GPU is the real fix (later).
-- **Throughput** — even on GPU, inference is decode-bound (~40 min / 2-min clip;
-  KNOWN_ISSUES C8); progress UI must set expectations. GPU-decode (NVDEC) is the
-  standing speedup.
+- **Throughput — THE practicality blocker (confirmed 2026-07-14).** The Phase-2
+  "run Stages 1–3 locally" design is **not viable on a CPU machine for real clips**:
+  a real 5-min 4K/60fps run measured **Stage 2 at ~1 fps → ~5 h for tracking alone,
+  ~8–12 h with pose** (KNOWN_ISSUES "local CPU can't process real clips"). A 20-s
+  trim runs end-to-end fine in ~17 min, so the logic is correct — the wall is CPU.
+  **NEXT WORK ITEM: move Stages 2 (track) & 3 (pose) to GPU/Colab**, exactly like
+  Stage 4 already is, so the app offloads all heavy vision (2/3/4) to the GPU step
+  and keeps only the light analytical stages (5→11 + report, seconds) local. A
+  cloud GPU service is the eventual self-serve fix. Even on GPU, inference is
+  decode-bound (~40 min/2-min clip; C8) — GPU-decode (NVDEC) is the standing speedup.
 - **Video upload size** — 4K clips are large; local file access avoids upload, but a
   cloud version needs chunked upload + storage.
 - **Multi-clip / cross-venue** — the operator's real workload; the library should

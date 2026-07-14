@@ -435,6 +435,43 @@ cross-stage re-classification) and surfaces opponent uncertainty via
 matching for opponents), already queued. Once opponents are continuity-tracked
 like the near side, the L/R split tightens with no Stage 8 change.
 
+## App/pipeline — local CPU can't process real clips; Stages 2 & 3 must move to GPU/Colab (2026-07-14)
+
+**Observed:** 2026-07-13/14, first real end-to-end run through the Phase-2 setup-UI
+runner on a **5-minute 4K/60fps outdoor clip** (`PB 5 minute outdoor.mp4`, 18,862
+frames), on a machine with **no CUDA GPU** (`torch.cuda`=False).
+
+**Problem:** **Stage 2 (YOLO player tracking) ran at ~1.05 frames/sec on CPU** —
+measured from the live log (frame 0 → frame 10,300 in ~161 min). Extrapolated:
+- **Stage 2 alone ≈ ~5 hours** for the full clip; **Stage 3 (MediaPipe pose)** is a
+  similar order on top → **~8–12 h just for tracking + pose**, before the ball step.
+- An outdoor multi-court venue makes it worse (~8 person-detections/frame → heavier
+  YOLO+ByteTrack + more pose crops).
+
+A **20-second trimmed clip** (1,200 frames) confirmed the pipeline runs end-to-end
+correctly through the app: Stages 2 → 2.5 → 3 finished in **~17 min** once the CPU was
+free (≈2.2 fps with nothing competing), producing valid `players.parquet`
+(8,297 rows / 56 tracks), `track_roles.json` (all 4 roles), `poses.parquet` (4,637
+rows), then paused at the ball hand-off as designed. So the **logic is correct; the
+wall is purely CPU throughput** on real-length clips.
+
+**Blast radius:** the setup UI's "run locally" path (UI_PLAN Phase 2) is **not viable
+for real clips** on a CPU machine — a user would wait many hours for Stages 2/3. This
+is the dominant practicality blocker for the app, alongside the Stage-4 GPU need.
+
+**Where to fix (next work item):** **move the heavy vision stages — Stage 2
+(track_players) and Stage 3 (pose) — to GPU/Colab**, exactly like Stage 4 already is.
+The app would offload 2/3/4 to the GPU step (one Colab pass, or a cloud GPU later) and
+keep only the **light analytical stages (5→11 + report) local** (those run in seconds,
+proven on real data). Both YOLO (ultralytics) and MediaPipe support GPU; on Colab's GPU
+Stage 2 would go from ~1 fps to real-time-ish. This also pairs with the Stage-4
+GPU-decode throughput item below (C8) and the cloud-GPU direction in UI_PLAN. Until
+then: the app is only practical on **short clips** locally, or needs a local CUDA GPU.
+
+**Interim mitigations (partial, not the real fix):** track at reduced frame rate
+(players don't need 60 fps), a smaller YOLO model (`yolo11n`), and/or GPU-decode —
+each helps ~2–4× but doesn't close the gap and carries accuracy trade-offs to validate.
+
 ## Stage 4 (v4) — inference throughput is CPU-decode-bound, too slow at scale
 
 **Observed:** 2026-06-11/12, full-clip Colab run of `stages/track_ball/infer_v4.ipynb`
