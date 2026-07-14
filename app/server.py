@@ -308,6 +308,23 @@ def get_session_file(session_id: str, file_path: str) -> FileResponse:
     return FileResponse(target)
 
 
+@app.get("/api/sessions/{session_id}/vision-input.zip")
+def get_vision_input_bundle(session_id: str) -> FileResponse:
+    """One per-clip bundle (video + court/roster) to upload to Drive for the GPU
+    vision pass — so the hand-off is a single download/upload."""
+    try:
+        store.get(session_id)
+    except SessionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    dest = store.folder(session_id) / f"{session_id}_vision_input.zip"
+    try:
+        store.build_vision_input_zip(session_id, dest)
+    except SessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(dest, media_type="application/zip",
+                        filename=f"{session_id}_vision_input.zip")
+
+
 @app.get("/api/sessions/{session_id}/report")
 def get_report(session_id: str) -> FileResponse:
     path = store.folder(session_id) / "report.html"

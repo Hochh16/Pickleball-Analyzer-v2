@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import shutil
 import threading
@@ -337,6 +338,38 @@ class SessionStore:
                 path.unlink()
             self._mark_step(session_id, "user_clicks", False)
         return payload
+
+    # inputs the Colab vision pass needs for a clip (video + setup)
+    VISION_INPUT_FILES = ("video.mp4", "court.json", "court_zones.json",
+                          "roster.json", "user_clicks.json")
+
+    def build_vision_input_zip(self, session_id: str, dest: Path) -> Path:
+        """Zip this clip's video + setup files (STORED — the mp4 is already
+        compressed) so the operator uploads ONE bundle to Drive for the GPU pass.
+        The video is materialized first if needed."""
+        import zipfile
+        folder = self.folder(session_id)
+        if not folder.exists():
+            raise SessionError(f"Unknown session: {session_id}")
+        video = folder / "video.mp4"
+        if not video.exists():
+            src = self.video_path(session_id)
+            if not src.exists():
+                raise SessionError(f"Source video missing: {src}")
+            try:
+                os.link(src, video)
+            except OSError:
+                shutil.copy2(src, video)
+        for req in ("court.json", "court_zones.json"):
+            if not (folder / req).exists():
+                raise SessionError(f"Missing {req} — finish court setup first")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+            for name in self.VISION_INPUT_FILES:
+                p = folder / name
+                if p.exists():
+                    z.write(p, name)   # at zip root
+        return dest
 
     def summary(self, session_id: str) -> Dict:
         """Everything the Review step needs, read back from disk."""

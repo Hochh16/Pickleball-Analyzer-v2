@@ -42,11 +42,11 @@ in one GPU trip, so this heavy vision work is off the local CPU. Writes
 back to Drive; download them into the clip's `data/<clip>/` folder locally, then run
 the light analytical stages (5–11 + report) on your machine.
 
-**Setup on Drive (`MyDrive/`):**
-- `pb_vision_upload.zip`  ← the code bundle (`python tools/build_vision_bundle.py`, then upload)
+**Setup on Drive (`MyDrive/` root):**
+- `pb_vision_upload.zip`  ← the code bundle (`python tools/build_vision_bundle.py`, then upload once)
 - `ball_model_v4.pt`  ← the trained ball model (already there)
-- `pb_infer/<CLIP>/`  ← the clip folder, containing **`video.mp4` + the setup files**
-  (`court.json`, `court_zones.json`, `roster.json`, and optionally `user_clicks.json`)
+- `<CLIP>_vision_input.zip`  ← the per-clip bundle (video + setup) downloaded from the
+  app's run screen; upload it to Drive root. The notebook unzips it to local disk.
 
 **Runtime → Change runtime type → GPU** (A100/L4/T4 all fine). Set `CLIP`, Run All.
 
@@ -86,15 +86,20 @@ assert Path('/content/stages/track_players/track.py').exists()
 
 CELLS.append(code(
 """# ===== KNOBS =====
-CLIP    = 'pb5test'                       # folder under MyDrive/pb_infer/<CLIP>/
+CLIP    = 'pb5test'                       # this clip's name (shown on the app run screen)
 WEIGHTS = DRIVE/'ball_model_v4.pt'        # ball model (Drive root)
 
-CLIP_DIR = DRIVE/'pb_infer'/CLIP
-assert (CLIP_DIR/'video.mp4').exists(), f'missing {CLIP_DIR}/video.mp4'
-for req in ('court.json', 'court_zones.json'):
-    assert (CLIP_DIR/req).exists(), f'missing {CLIP_DIR}/{req} — upload the setup files too'
-print('clip folder:', CLIP_DIR)
-print('inputs:', sorted(p.name for p in CLIP_DIR.iterdir()))
+# Unzip the per-clip bundle (downloaded from the app, uploaded to Drive root) to
+# LOCAL Colab disk — the stages then read/write local disk (fast; avoids Drive FUSE).
+import zipfile
+BUNDLE = DRIVE/f'{CLIP}_vision_input.zip'
+assert BUNDLE.exists(), f'missing {BUNDLE} — download the clip bundle from the app and upload it to Drive root'
+CLIP_DIR = Path('/content')/CLIP
+CLIP_DIR.mkdir(exist_ok=True)
+with zipfile.ZipFile(BUNDLE) as z:
+    z.extractall(CLIP_DIR)
+assert (CLIP_DIR/'video.mp4').exists() and (CLIP_DIR/'court.json').exists(), 'bundle missing video/court.json'
+print('clip dir:', CLIP_DIR, '| inputs:', sorted(p.name for p in CLIP_DIR.iterdir()))
 """))
 
 CELLS.append(code(
@@ -139,7 +144,8 @@ print('Outputs in', CLIP_DIR, ':')
 for o in outs:
     p = CLIP_DIR/o
     print(f"  {'OK ' if p.exists() else 'MISSING '} {o}" + (f"  ({p.stat().st_size//1024} KB)" if p.exists() else ''))
-print('\nDownload these into your local data/<clip>/ folder, then run Stages 5-11 + report.')
+print('\nDownload these from the Files panel (left) -> content/' + CLIP + '/,')
+print('then upload them on the app run screen to resume Stages 5-11 + report.')
 """))
 
 
