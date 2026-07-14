@@ -27,3 +27,5 @@ torch>=2.11.0
 torchvision>=0.26.0
 tqdm>=4.66.0             # progress bar in track_ball inference loop
 h5py>=3.10.0             # Keras-weights reader for tools/convert_dettor_weights.py
+# Web video encoding (browser-playable H.264 via a portable ffmpeg)
+imageio-ffmpeg>=0.5

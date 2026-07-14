@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic>=2.8",
     "python-multipart>=0.0.9",
+    "imageio-ffmpeg>=0.5",    # portable ffmpeg (libx264) for browser-playable H.264 web video
 ]
 
 [project.optional-dependencies]

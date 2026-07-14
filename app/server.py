@@ -282,6 +282,20 @@ async def upload_ball(
     return {"ok": True, "resumed": job is not None}
 
 
+@app.get("/api/sessions/{session_id}/files/{file_path:path}")
+def get_session_file(session_id: str, file_path: str) -> FileResponse:
+    """Serve a file from the session folder (report.html + its sibling assets like
+    annotated_web.mp4, so the report's relative video src resolves in-app). Guarded
+    to the session folder."""
+    folder = store.folder(session_id).resolve()
+    target = (folder / file_path).resolve()
+    if folder not in target.parents and target != folder:
+        raise HTTPException(status_code=403, detail="Path outside session")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(target)
+
+
 @app.get("/api/sessions/{session_id}/report")
 def get_report(session_id: str) -> FileResponse:
     path = store.folder(session_id) / "report.html"
