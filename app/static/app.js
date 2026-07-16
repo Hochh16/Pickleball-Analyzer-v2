@@ -563,7 +563,7 @@ function initRunStep() {
 function enterRun() {
   // serve via /files/ so the report's relative <video src="annotated_web.mp4"> resolves
   el('viewReportBtn').href = `/api/sessions/${S.session.id}/files/report.html`;
-  el('viewVideoBtn').href = `/api/sessions/${S.session.id}/files/annotated_web.mp4`;
+  el('viewVideoBtn').href = `/api/sessions/${S.session.id}/files/video.mp4`;
   el('bundleDownloadBtn').href = `/api/sessions/${S.session.id}/vision-input.zip`;
   el('clipNameVal').textContent = S.session.id;
   // (re)connect the live stream

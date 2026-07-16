@@ -478,23 +478,21 @@ def build_html(folder: Path) -> str:
           f'<p class="small muted">Showing the {n_inr} of {len(all_bounces)} detected '
           f'bounces that happened during rallies. Volleys (hit in the air) never '
           f'bounce, and many ground bounces are still missed{fn(6)}, so this is a '
-          f'partial map — it will fill in as bounce detection improves. For the full '
-          f'shot-by-shot, see the annotated video below.</p></div></div>')
+          f'partial map — it will fill in as bounce detection improves.</p></div></div>')
 
-    # ---- Annotated video ----
-    A('<h2>Annotated video &amp; timeline</h2><hr class="rule">')
-    vid = ("annotated_web.mp4" if (folder / "annotated_web.mp4").exists()
-           else "annotated.mp4" if (folder / "annotated.mp4").exists() else None)
-    if vid:
+    # ---- Match video ----
+    A('<h2>Match video &amp; timeline</h2><hr class="rule">')
+    if (folder / "video.mp4").exists():
         A('<div class="card vid">'
-          f'<video controls preload="metadata" src="{vid}"></video>'
-          f'<p class="small muted">Per-shot labels, the ball trail, and a live court '
-          f'mini-map. <a href="{vid}" download>Download the video</a>. '
-          f'(Plays when you open this report from the same folder as the video; a '
-          f'shared/online copy won\'t include it.)</p></div>')
+          '<p>Your original match video — <a href="video.mp4" target="_blank">open '
+          'it</a> or <a href="video.mp4" download>download it</a>.</p>'
+          '<p class="small muted">We\'re not overlaying boxes on the video for now — '
+          'they added little. Once the shot stats are solid, the video will carry the '
+          'ball trail, per-shot labels, and short clips tied to your improvement plan. '
+          '(Plays when you open this report from the same folder as the video; a '
+          'shared/online copy won\'t include it.)</p></div>')
     else:
-        A('<p class="muted small">No annotated video yet — run the render step to '
-          'produce <code>annotated.mp4</code> next to this report.</p>')
+        A('<p class="muted small">The match video isn\'t in this folder.</p>')
     n_events = len(timeline.get("events", []))
     A(f'<p class="small muted">Timeline: {n_events} shot &amp; bounce events over '
       f'{timeline.get("duration_sec","—")} seconds, each carrying its own confidence.</p>')

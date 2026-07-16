@@ -15,9 +15,11 @@ hours per 5-min clip). So the run:
               AUTO-RESUMES the run (same decouple mechanism the ball step used).
   - post    : 5 detect_shots -> 5.5 detect_bounces -> 6 classify_shots ->
               7 segment_rallies -> 8 compute_metrics -> 9 rate ->
-              10 plan_improvement -> 11 render -> compress_video -> build_report
-              (all light/local; render is length-capped by default so long clips
-              finish in reasonable time).
+              10 plan_improvement -> build_report (all light/local). The Stage-11
+              annotated-overlay render is intentionally skipped: the box overlay
+              added little value, so the report links the original clip instead.
+              (Revisit later with a real ball-trail / shot-label render — see
+              docs/USABILITY_BACKLOG.md.)
 """
 from __future__ import annotations
 
@@ -33,12 +35,6 @@ from typing import Callable, Deque, Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_TAIL = 240  # lines kept per job for the live log
-
-# Full-resolution render of a long clip is the local bottleneck (18k 4K frames
-# for a 5-min clip). Cap the annotated video to a sane preview by default so the
-# run finishes in reasonable time; PB_RENDER_MAX_SECONDS overrides ("0"/"full" =
-# uncapped, N = seconds).
-DEFAULT_RENDER_MAX_SECONDS = "90"
 
 # The vision outputs the post stages need — their presence AUTO-RESUMES the run.
 VISION_OUTPUTS = ("players.parquet", "track_roles.json", "poses.parquet",
@@ -65,8 +61,9 @@ VISION_STEPS = [
     Step("ball", "Ball detection", module="stages.track_ball.track_ball_v4",
          args=["--weights", "data/models/ball_model_v4.pt", "--force"]),
 ]
-# --force where supported so re-runs overwrite (render fails on an existing
-# annotated.mp4 without it).
+# --force where supported so re-runs overwrite prior outputs. The Stage-11
+# annotated render + compress are intentionally omitted (see module docstring);
+# the report links the original clip.
 POST_STEPS = [
     Step("shots", "Detect shots", module="stages.detect_shots.detect_shots", args=["--force"]),
     Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces", args=["--force"]),
@@ -75,8 +72,6 @@ POST_STEPS = [
     Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics", args=["--force"]),
     Step("rate", "USAPA rating", module="stages.rate.rate", args=["--force"]),
     Step("plan", "Improvement plan", module="stages.plan_improvement.plan_improvement", args=["--force"]),
-    Step("render", "Annotated video", module="stages.render.render", args=["--force"]),
-    Step("compress", "Compress video", module="tools.compress_video"),
     Step("report", "Build report", module="tools.build_report", args=["--force"]),
 ]
 
@@ -203,12 +198,6 @@ class PipelineRunner:
         job.log.append(line.rstrip("\n"))
         self._bump(job)
 
-    def _render_extra(self) -> List[str]:
-        cap = os.environ.get("PB_RENDER_MAX_SECONDS", DEFAULT_RENDER_MAX_SECONDS)
-        if cap in ("0", "full", "none", ""):
-            return []
-        return ["--max-seconds", str(cap)]
-
     def _run_steps(self, job: Job, steps: List[Step]) -> bool:
         folder = self.store.folder(job.session_id)
         for step in steps:
@@ -222,10 +211,7 @@ class PipelineRunner:
                     self._materialize_video(job)
                     ok, rc = True, 0
                 else:
-                    extra = list(step.args)
-                    if step.key == "render":
-                        extra += self._render_extra()
-                    rc = self._run_module(job, step.module, folder, extra)
+                    rc = self._run_module(job, step.module, folder, list(step.args))
                     ok = (rc == 0)
             except Exception as e:  # noqa: BLE001
                 self._log(job, f"ERROR: {type(e).__name__}: {e}")

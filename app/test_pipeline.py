@@ -89,17 +89,22 @@ def test_local_gpu_runs_vision_locally(store_with_session, monkeypatch):
     assert any("build_report" in m for m in mods)
 
 
-def test_render_is_capped_by_default(store_with_session, monkeypatch):
+def test_annotated_render_is_skipped(store_with_session, monkeypatch):
+    """The Stage-11 overlay render + compress are intentionally omitted (the box
+    overlay added little); the report links the original clip. Report still builds."""
     store, sid = store_with_session
     monkeypatch.setattr(pipe, "_cuda_available", lambda: True)
-    monkeypatch.delenv("PB_RENDER_MAX_SECONDS", raising=False)
     runner = PipelineRunner(store)
     calls = []
     runner._run_module = _fake_module(calls)
     job = runner.start(sid)
     assert _wait(job, ("done",))
-    render = next(args for m, args in calls if m.endswith("render.render"))
-    assert "--max-seconds" in render  # capped for reasonable time
+    mods = [m for m, _ in calls]
+    assert not any("render.render" in m for m in mods)
+    assert not any("compress_video" in m for m in mods)
+    assert any("build_report" in m for m in mods)
+    # the pipeline no longer defines render/compress steps at all
+    assert {"render", "compress"}.isdisjoint(s["key"] for s in job.steps)
 
 
 def test_stage_failure_stops_run(store_with_session, monkeypatch):
