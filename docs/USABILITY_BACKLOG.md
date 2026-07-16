@@ -26,8 +26,12 @@ robustness) → D (nice-to-haves).**
 ## B. Vision hand-off — "far quicker and easier"
 
 **Pass 1 (reliability & usability) ✓ DONE 2026-07-16** — orchestration moved into
-`tools/colab_vision.py` (real, unit-tested module) and embedded into the notebook
-via `%%writefile`; the notebook is now a Run-All with a single optional knob.
+`tools/colab_vision.py` (real, unit-tested module). The notebook is a tiny
+**git-clone bootstrapper**: it `git pull`s this (public) repo on Colab and calls
+`run_all(REPO)`. So a code change is just `git push` -> **Run All** (pulls latest)
+— no bundle to rebuild, nothing to re-upload. The notebook can be opened straight
+from GitHub. The old `pb_vision_upload.zip` bundle + `build_vision_bundle.py` are
+gone.
 
 - **B1. One knob, or zero.** ✓ `run_all` auto-derives CLIP from the single
   `*_vision_input.zip` on Drive (clear errors on zero/multiple); `CLIP=None` by
@@ -41,9 +45,8 @@ via `%%writefile`; the notebook is now a Run-All with a single optional knob.
   outstanding stages (and skips the whole bundle copy if all outputs exist).
 - **B7. Target flow:** ✓ *download bundle → Run All → upload outputs* (outputs
   also downloadable straight from `<clip>_outputs/` on Drive).
-- **C2 folded in:** the rebuilt `pb_vision_upload.zip` carries the `no_grad` fix,
-  so there's no runtime patch. **Action: re-upload it to Drive** (replacing the
-  stale pre-fix copy).
+- **C2 done:** the `no_grad` fix is pulled from GitHub like the rest of the code —
+  no bundle, no runtime patch. (Superseded the "re-upload the bundle" action.)
 
 **Pass 2 (stage-level performance) — TODO:**
 - **B5. Pose on GPU.** Pose ran 43 min on CPU — the single biggest time sink.

@@ -84,13 +84,15 @@ def test_stage_table_covers_required_outputs():
     assert [s["name"] for s in cv.STAGES if s.get("gpu_batch")] == ["ball"]
 
 
-def test_notebook_builds_and_embeds_module():
+def test_notebook_builds_as_git_bootstrapper():
     from tools import build_vision_nb as gen
     cells = gen.build_cells()
     # valid JSON round-trip (nbformat sanity)
     nb = {"cells": cells, "metadata": {}, "nbformat": 4, "nbformat_minor": 0}
     json.loads(json.dumps(nb))
     src = "".join("".join(c["source"]) for c in cells)
-    assert "%%writefile /content/colab_vision.py" in src
-    assert "colab_vision.run_all(clip=CLIP)" in src
-    assert "def run_all" in src   # the module body is embedded verbatim
+    assert "git" in src and "clone" in src            # pulls code from GitHub
+    assert gen.REPO_URL in src
+    assert "from tools.colab_vision import run_all" in src
+    assert "run_all(REPO, clip=CLIP)" in src          # runs from the cloned repo
+    assert "%%writefile" not in src                   # no embedded bundle anymore

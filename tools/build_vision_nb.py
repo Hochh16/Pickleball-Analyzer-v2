@@ -1,15 +1,13 @@
 """Build `stages/infer_vision.ipynb` — the combined GPU (Colab) vision pass.
 
-Runs Stages **2 (track_players) -> 2.5 (classify_tracks) -> 3 (pose) ->
-4 (track_ball)** in one Colab GPU trip, so the heavy vision work is off the local
-CPU. The orchestration lives in `tools/colab_vision.py` (a real, testable module);
-this generator embeds that module into the notebook via a `%%writefile` cell, so
-the notebook is a dead-simple **Run All** with nothing to edit:
+The notebook is a tiny, stable **git-clone bootstrapper**: it clones (or `git
+pull`s) this repo on Colab and calls `tools.colab_vision.run_all`. So a code
+change is just `git push` here -> **Run All** on Colab (it pulls the latest).
+Nothing to rebuild or re-upload; the notebook itself almost never changes and can
+be opened straight from GitHub (File -> Open notebook -> GitHub).
 
-  - auto-derives CLIP from the single `<clip>_vision_input.zip` on Drive,
-  - pulls the clip + weights to local disk once (robustly),
-  - backs up each stage's outputs to Drive and RESUMES from there (reset-proof),
-  - self-manages the GPU (ball OOM auto-fallback).
+Runs Stages **2 -> 2.5 -> 3 -> 4** on the GPU, backing each stage's outputs up to
+Drive as it finishes (reset-proof; see tools/colab_vision.py).
 
 Usage:
     python tools/build_vision_nb.py
@@ -21,7 +19,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "stages" / "infer_vision.ipynb"
-MODULE = ROOT / "tools" / "colab_vision.py"
+
+# Public repo -> Colab clones it anonymously (no token).
+REPO_URL = "https://github.com/Hochh16/Pickleball-Analyzer-v2.git"
+REPO_DIR = "/content/Pickleball-Analyzer-v2"
 
 
 def md(text: str) -> dict:
@@ -34,26 +35,25 @@ def code(text: str) -> dict:
 
 
 def build_cells() -> list:
-    module_src = MODULE.read_text(encoding="utf-8")
     cells = []
 
     cells.append(md(
-"""# Vision pass — Stages 2 -> 2.5 -> 3 -> 4 on GPU (Colab)
+f"""# Vision pass — Stages 2 -> 2.5 -> 3 -> 4 on GPU (Colab)
 
 Player **tracking**, **role classification**, **pose**, and **ball detection** in
 one GPU trip. **Reset-proof:** each stage's outputs are backed up to Drive as it
 finishes, so if the runtime disconnects you just **Run All** again and it resumes
 where it left off.
 
-**On Drive (`My Drive` root), upload once:**
-- `pb_vision_upload.zip`  — the stage code (`python tools/build_vision_bundle.py`, upload)
-- `ball_model_v4.pt`  — the trained ball model
+The code is pulled fresh from GitHub each run — **there's no bundle to upload and
+nothing to edit.** On Drive (`My Drive` root) you only need, per clip:
+- `ball_model_v4.pt`  — the trained ball model (upload once)
 - `<clip>_vision_input.zip`  — the clip bundle, downloaded from the app's run screen
 
-**Runtime -> Change runtime type -> GPU**, then **Runtime -> Run all**. Nothing to
-edit — the clip is auto-detected from the one `*_vision_input.zip` on Drive.
-Outputs land in `content/<clip>/` and in `My Drive/<clip>_outputs/`; upload them on
-the app run screen to finish the analysis. Built by `tools/build_vision_nb.py`.
+**Runtime -> Change runtime type -> GPU**, then **Runtime -> Run all**. The clip is
+auto-detected from the one `*_vision_input.zip` on Drive. Outputs land in
+`content/<clip>/` and `My Drive/<clip>_outputs/`; upload them on the app run screen
+to finish. Built by `tools/build_vision_nb.py`.
 """))
 
     cells.append(code(
@@ -68,19 +68,29 @@ drive.mount('/content/drive')
 """))
 
     cells.append(code(
+f"""# Pull the code fresh from GitHub (clone, or fast-forward if already cloned).
+import os, subprocess
+REPO_URL = {REPO_URL!r}
+REPO = {REPO_DIR!r}
+if os.path.isdir(os.path.join(REPO, '.git')):
+    subprocess.run(['git', '-C', REPO, 'pull', '--ff-only'], check=True)
+else:
+    subprocess.run(['git', 'clone', '--depth', '1', REPO_URL, REPO], check=True)
+print('repo ready at', REPO)
+"""))
+
+    cells.append(code(
 """# Deps: Colab has torch/opencv/numpy/pandas; the stages also need these.
 !pip -q install ultralytics mediapipe pyarrow 2>/dev/null | tail -1
 print('deps ready')
 """))
 
-    # Embed the orchestration module verbatim, then import it.
-    cells.append(md("## Orchestration (auto-generated from `tools/colab_vision.py`)"))
-    cells.append(code("%%writefile /content/colab_vision.py\n" + module_src))
     cells.append(code(
 """import sys
-sys.path.insert(0, '/content')
-import colab_vision
-print('colab_vision loaded — stages:', [s['name'] for s in colab_vision.STAGES])
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+from tools.colab_vision import run_all, STAGES
+print('loaded — stages:', [s['name'] for s in STAGES])
 """))
 
     cells.append(md(
@@ -90,7 +100,7 @@ print('colab_vision loaded — stages:', [s['name'] for s in colab_vision.STAGES
 have more than one `*_vision_input.zip` uploaded."""))
     cells.append(code(
 """CLIP = None   # None = auto-detect the one uploaded clip; or set e.g. 'pb_5_minute_outdoor'
-colab_vision.run_all(clip=CLIP)
+run_all(REPO, clip=CLIP)
 """))
 
     cells.append(md(

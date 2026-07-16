@@ -1,8 +1,8 @@
 """Colab vision-pass orchestration — Stages 2 -> 2.5 -> 3 -> 4 on GPU.
 
-Embedded into `stages/infer_vision.ipynb` (via a `%%writefile` cell) so the
-notebook stays a dead-simple "Run All" and this logic lives as a real, testable
-module instead of un-testable cell strings.
+Imported from the repo that `stages/infer_vision.ipynb` clones on Colab, so the
+notebook is a dead-simple "Run All" and code changes need only a `git pull` (no
+bundle to rebuild/upload). This logic is a real, testable module.
 
 Reliability goals (docs/USABILITY_BACKLOG.md, B-block):
   - **B1** auto-derive CLIP from the single `<clip>_vision_input.zip` on Drive —
@@ -147,21 +147,12 @@ def copy_inputs(drive_dir, clip: str, content="/content") -> Tuple[Path, Path]:
     return clip_dir, weights
 
 
-def unpack_code(drive_dir, content="/content") -> None:
-    bundle = Path(drive_dir) / "pb_vision_upload.zip"
-    if not bundle.exists():
-        raise SystemExit(
-            f"missing pb_vision_upload.zip on Drive root ({drive_dir}). Build it "
-            "with tools/build_vision_bundle.py and upload it to My Drive.")
-    with zipfile.ZipFile(bundle) as z:
-        z.extractall(content)
-
-
 # ---------------------------------------------------------------- stage runner
 
-def _run(cmd, env=None) -> Tuple[int, str]:
-    """Run a subprocess, streaming its output live; return (rc, captured_output)."""
-    proc = subprocess.Popen(cmd, cwd="/content", stdout=subprocess.PIPE,
+def _run(cmd, cwd, env=None) -> Tuple[int, str]:
+    """Run a subprocess (cwd = the cloned repo so `stages` imports), streaming its
+    output live; return (rc, captured_output)."""
+    proc = subprocess.Popen(cmd, cwd=str(cwd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
     lines: List[str] = []
     assert proc.stdout is not None
@@ -172,7 +163,7 @@ def _run(cmd, env=None) -> Tuple[int, str]:
     return proc.returncode, "".join(lines)
 
 
-def _run_ball_with_fallback(base, args) -> Tuple[int, str]:
+def _run_ball_with_fallback(base, args, cwd) -> Tuple[int, str]:
     """Run the ball stage, auto-falling back down the batch ladder on CUDA OOM.
     A non-OOM failure stops immediately (no point retrying)."""
     last: Tuple[int, str] = (1, "")
@@ -180,7 +171,7 @@ def _run_ball_with_fallback(base, args) -> Tuple[int, str]:
         free_gpu()
         env = dict(os.environ, PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
         print(f"  [ball] batch {b}", flush=True)
-        rc, out = _run(base + args + ["--batch", str(b)], env=env)
+        rc, out = _run(base + args + ["--batch", str(b)], cwd, env=env)
         if rc == 0:
             return rc, out
         if "out of memory" not in out.lower():
@@ -190,7 +181,7 @@ def _run_ball_with_fallback(base, args) -> Tuple[int, str]:
     return last
 
 
-def run_stage(stage, clip_dir, weights, backup_dir) -> str:
+def run_stage(stage, clip_dir, weights, backup_dir, repo_dir) -> str:
     """Run one stage unless its output is already present. Backs up outputs to
     Drive on success. Returns 'skipped' | 'done'."""
     clip_dir = Path(clip_dir)
@@ -204,9 +195,9 @@ def run_stage(stage, clip_dir, weights, backup_dir) -> str:
     t0 = time.time()
     if stage.get("gpu_batch"):
         args = ["--weights", str(weights)] + args
-        rc, _ = _run_ball_with_fallback(base, args)
+        rc, _ = _run_ball_with_fallback(base, args, repo_dir)
     else:
-        rc, _ = _run(base + args)
+        rc, _ = _run(base + args, repo_dir)
     if rc != 0:
         raise RuntimeError(f"{stage['name']} failed (rc={rc})")
     print(f"  -> {stage['name']} done in {time.time() - t0:.0f}s", flush=True)
@@ -226,12 +217,12 @@ def _backup_stage(stage, clip_dir, backup_dir) -> None:
 
 # ---------------------------------------------------------------- entry point
 
-def run_all(drive_dir="/content/drive/MyDrive", clip=None, content="/content"):
-    """Full reset-proof vision pass. Auto-detects the clip, resumes from the Drive
-    backup, runs only the outstanding stages, and backs each up as it finishes."""
+def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/content"):
+    """Full reset-proof vision pass. `repo_dir` is the cloned repo (stages run with
+    it as cwd). Auto-detects the clip, resumes from the Drive backup, runs only the
+    outstanding stages, and backs each up as it finishes."""
     clip = derive_clip(drive_dir, clip)
     print(f"CLIP = {clip}\n", flush=True)
-    unpack_code(drive_dir, content)
 
     clip_dir = Path(content) / clip
     backup_dir = Path(drive_dir) / f"{clip}_outputs"
@@ -245,7 +236,7 @@ def run_all(drive_dir="/content/drive/MyDrive", clip=None, content="/content"):
         clip_dir, weights = copy_inputs(drive_dir, clip, content)
         restore_outputs(backup_dir, clip_dir)   # re-place after unzip (belt+braces)
         for stage in STAGES:
-            run_stage(stage, clip_dir, weights, backup_dir)
+            run_stage(stage, clip_dir, weights, backup_dir, repo_dir)
 
     missing = [f for f in REQUIRED_OUTPUTS if not (clip_dir / f).exists()]
     print("\n" + ("=" * 52), flush=True)
