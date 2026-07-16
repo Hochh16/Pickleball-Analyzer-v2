@@ -111,12 +111,8 @@
 
         <aside class="court-side">
           <div class="side-card">
-            <h3>Your setup</h3>
-            <label class="field">
-              <span>Your dominant hand</span>
-              <select id="selHand"><option value="right">Right</option><option value="left">Left</option></select>
-            </label>
-            <p class="field-note">You're filmed from the corner nearest your start, so you're on the <b>near</b> baseline (bottom of frame). You'll pick which <b>side</b> you start on in a moment.</p>
+            <h3>Your position</h3>
+            <p class="field-note">You're filmed from the corner nearest your start, so you're on the <b>near</b> baseline (bottom of frame). You'll pick which <b>side</b> you start on, and set handedness, on the next screens.</p>
           </div>
 
           <div class="side-card">
@@ -137,7 +133,7 @@
     <section class="panel" id="panel-players" hidden>
       <div class="panel-head">
         <h1>Players</h1>
-        <p class="lead">We already have your hand. Add the others if you know them — it sharpens forehand/backhand analysis. Leave as “Not sure” to skip.</p>
+        <p class="lead">Set your handedness (it sharpens your forehand/backhand analysis). Add the others if you know them — leave as “Not sure” to skip.</p>
       </div>
       <div class="roster">
         <div class="roster-card">
@@ -167,16 +163,12 @@
     <section class="panel" id="panel-you" hidden>
       <div class="panel-head">
         <h1>Which side do you start on?</h1>
-        <p class="lead">Look at the frame below and pick the side of your baseline where you (the player being analyzed) begin. This tells us which player to track.</p>
+        <p class="lead">You're one of the two players <b>closest to the camera</b> (the near baseline, bottom of frame). Pick which side — <b>left or right</b> — you start on. This tells us which of the two near players to analyze.</p>
       </div>
 
       <div class="court-main you-main">
         <div class="canvas-wrap">
           <canvas id="youCanvas"></canvas>
-          <div class="side-overlay">
-            <button class="side-half" data-corner="left" id="halfLeft" type="button"><span>◄ Left</span></button>
-            <button class="side-half" data-corner="right" id="halfRight" type="button"><span>Right ►</span></button>
-          </div>
         </div>
         <div class="scrubber">
           <button class="step-btn" id="youBack" title="Previous frame" type="button">‹</button>
@@ -184,7 +176,7 @@
           <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
           <span class="frame-label" id="youFrameLabel">0 / 0</span>
         </div>
-        <p class="hint">Scrub to a frame where you can see yourself, then click your side above (or use the buttons).</p>
+        <p class="hint">Scrub to a frame where you can see yourself, then choose your side below.</p>
         <div class="side-choice">
           <button class="choice-card" data-corner="left" id="cardLeft" type="button">
             <div class="cc-icon">◄</div><div class="cc-title">Left side</div>

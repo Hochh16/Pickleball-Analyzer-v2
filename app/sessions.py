@@ -310,8 +310,33 @@ class SessionStore:
         roster = {"schema_version": ROSTER_SCHEMA_VERSION, "handedness": clean}
         with (folder / "roster.json").open("w", encoding="utf-8") as f:
             json.dump(roster, f, indent=2)
+        # Handedness is collected here now (not on the Court step). Stage 6 reads
+        # roster.json, but the calibrate contract expects court.json.dominant_hand to
+        # match — the Court step sends a placeholder, so reconcile it from the roster.
+        if clean["user"] in ("left", "right"):
+            self._patch_dominant_hand(session_id, clean["user"])
         self._mark_step(session_id, "roster", True)
         return roster
+
+    def _patch_dominant_hand(self, session_id: str, hand: str) -> None:
+        """Keep dominant_hand consistent across markers.json (flat) + court.json
+        (user_inputs) after the roster sets it — so a later re-calibrate (which
+        rebuilds court.json from markers.json) preserves the real hand."""
+        folder = self.folder(session_id)
+        for path, kind in ((folder / "markers.json", "flat"),
+                           (folder / "court.json", "nested")):
+            if not path.exists():
+                continue
+            with path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if kind == "flat":
+                data["dominant_hand"] = hand
+            else:
+                data.setdefault("user_inputs", {})["dominant_hand"] = hand
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with tmp.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            tmp.replace(path)
 
     # ----- user clicks (optional self-identification) -----
 

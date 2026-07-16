@@ -372,7 +372,10 @@ async function runCalibrate() {
     // points 5-6 as the user's (near/bottom) kitchen line. Asked once, on the "You"
     // step (which SIDE). Stage 2.5 v1 only supports the user on the near baseline.
     user_baseline: 'near',
-    dominant_hand: el('selHand').value,
+    // Handedness is collected on the Players step (roster.json is authoritative for
+    // Stage 6). Calibration still needs the field, so send a placeholder now; the
+    // backend patches court.json.dominant_hand from the roster when Players saves.
+    dominant_hand: 'right',
     user_starting_corner: S.startingCorner,   // confirmed visually on the "You" step
     frame_used_for_calibration: S.court.markFrame ?? S.court.frameIdx,
   };
@@ -419,8 +422,6 @@ function initPlayersStep() {
 }
 
 async function savePlayers() {
-  // keep user hand in sync with the court step's dominant-hand pick
-  el('handUser').value = el('selHand').value;
   const body = {
     user: el('handUser').value,
     partner: el('handPartner').value,
@@ -444,7 +445,7 @@ function initYouStep() {
   el('youSlider').addEventListener('input', (e) => setYouFrame(parseInt(e.target.value, 10)));
   el('youBack').addEventListener('click', () => setYouFrame(S.you.frameIdx - 1));
   el('youFwd').addEventListener('click', () => setYouFrame(S.you.frameIdx + 1));
-  ['halfLeft', 'halfRight', 'cardLeft', 'cardRight'].forEach((id) =>
+  ['cardLeft', 'cardRight'].forEach((id) =>
     el(id).addEventListener('click', () => pickCorner(el(id).dataset.corner)));
   el('youNext').addEventListener('click', saveSide);
 }
@@ -475,9 +476,7 @@ function pickCorner(corner) {
 }
 function reflectCorner() {
   ['Left', 'Right'].forEach((side) => {
-    const on = S.startingCorner === side.toLowerCase();
-    el('card' + side).classList.toggle('selected', on);
-    el('half' + side).classList.toggle('selected', on);
+    el('card' + side).classList.toggle('selected', S.startingCorner === side.toLowerCase());
   });
 }
 async function saveSide() {
