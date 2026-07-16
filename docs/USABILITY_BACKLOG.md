@@ -9,24 +9,19 @@ cleanup pass once the run is validated.
 Priority order: **A (setup confusion) → B (hand-off speed/robustness) → C (code
 robustness) → D (nice-to-haves).**
 
-## A. Setup wizard — direct operator feedback
+## A. Setup wizard — direct operator feedback  ✓ DONE 2026-07-15
 
-- **A1. Ask starting position ONCE.** Today the Court step has a "Which baseline
-  are you on? (near/far)" dropdown AND the You step asks which side you start on
-  visually. Two places for one fact → confusing, and they can disagree. Decide a
-  single source of truth. *Recommendation:* drop the Court-step baseline dropdown
-  entirely; infer near/far + corner from the single visual "which side do you
-  start on" click combined with the marked court geometry. One question, visual,
-  unambiguous.
-- **A2. Make the step nav clickable.** Clicking a prior step (e.g. "Court") in the
-  top step bar must jump back to it. David got stuck — the court field was
-  "locked" and he couldn't return to re-mark. Every completed step should be
-  re-editable.
-- **A3. Never emit `user_baseline='far'`.** Stage 2.5 v1 only supports the analyzed
-  player on the NEAR baseline. The wizard must guarantee near — either by
-  construction (always orient so the analyzed player's baseline is near) or by
-  validating before the run and blocking with a plain-language message. A `far`
-  value must never reach the pipeline (it silently killed Stage 2.5 this run).
+- **A1. Ask starting position ONCE.** ✓ Removed the Court-step near/far dropdown.
+  The camera protocol puts the camera in the corner nearest the analyzed player,
+  and the court marking already treats points 5-6 as the user's (near/bottom)
+  kitchen line, so the player is always on the NEAR baseline. Position is now
+  asked once, visually, on the "You" step (which side).
+- **A2. Make the step nav clickable.** ✓ Any reached step can be clicked in the
+  step bar to jump back and re-edit (gated by a furthest-reached index + session
+  presence). Was locked before.
+- **A3. Never emit `user_baseline='far'`.** ✓ The wizard now always sends `near`
+  (see A1), so `far` can't reach Stage 2.5. Backend contract stays general
+  (still accepts near/far) for a future baseline-agnostic Stage 2.5.
 
 ## B. Vision hand-off — "far quicker and easier"
 
@@ -63,3 +58,12 @@ robustness) → D (nice-to-haves).**
 
 - Per-stage progress + time estimates on the app run screen.
 - Validate throughput for clips longer than 5 minutes (David wants longer to work).
+
+## Video (product decision)  ✓ DONE 2026-07-15
+
+Decided to **drop the box-overlay render and link the original clip** (the boxes
+added little value). Pipeline no longer renders/compresses an annotated video;
+the report's "Match video" section and the app done-card link the original.
+**Revisit** once the shot stats are solid: the valuable form is a ball-trail +
+per-shot-label render, and especially short **evidence clips tied to each
+improvement-plan point** — not a full annotated replay.
