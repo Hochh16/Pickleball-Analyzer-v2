@@ -25,25 +25,31 @@ robustness) → D (nice-to-haves).**
 
 ## B. Vision hand-off — "far quicker and easier"
 
-- **B1. One knob, or zero.** The notebook has multiple textual `CLIP` references;
-  David didn't know which to edit. Reduce to a single obvious knob — better,
-  auto-derive `CLIP` from the one `*_vision_input.zip` present on Drive (glob it)
-  so there is nothing to type.
-- **B2. Notebook self-manages the GPU.** On start: clear any prior allocation,
-  verify free memory, and on OOM auto-retry at a smaller batch instead of failing.
-  (This run OOM'd repeatedly and needed manual restarts.)
-- **B3. Pull the clip to local disk ONCE, robustly.** Sequential copy + remount
-  retries; never random-read the 4.6 GB bundle over Drive FUSE (that dropped with
-  `Errno 107` mid-run). Now done by hand in the recovery cell — bake it in.
-- **B4. Auto-backup each stage's outputs to Drive as it finishes.** A runtime reset
-  wiped ALL local state this run (video, code, outputs) and forced a re-run. If
-  every stage backs up on completion, a reset costs "re-run one cell," never
-  "start over."
+**Pass 1 (reliability & usability) ✓ DONE 2026-07-16** — orchestration moved into
+`tools/colab_vision.py` (real, unit-tested module) and embedded into the notebook
+via `%%writefile`; the notebook is now a Run-All with a single optional knob.
+
+- **B1. One knob, or zero.** ✓ `run_all` auto-derives CLIP from the single
+  `*_vision_input.zip` on Drive (clear errors on zero/multiple); `CLIP=None` by
+  default, set only to disambiguate.
+- **B2. Notebook self-manages the GPU.** ✓ `free_gpu()` between stages + ball OOM
+  auto-fallback down a batch ladder [8,4,2,1] with `expandable_segments:True`.
+- **B3. Pull the clip to local disk ONCE, robustly.** ✓ `robust_copy` (sequential
+  + force-remount retries) for the bundle + weights; stages read local disk.
+- **B4. Auto-backup each stage's outputs to Drive as it finishes.** ✓ Backs up to
+  `My Drive/<clip>_outputs/` and RESUMES from there — a reset re-runs only the
+  outstanding stages (and skips the whole bundle copy if all outputs exist).
+- **B7. Target flow:** ✓ *download bundle → Run All → upload outputs* (outputs
+  also downloadable straight from `<clip>_outputs/` on Drive).
+- **C2 folded in:** the rebuilt `pb_vision_upload.zip` carries the `no_grad` fix,
+  so there's no runtime patch. **Action: re-upload it to Drive** (replacing the
+  stale pre-fix copy).
+
+**Pass 2 (stage-level performance) — TODO:**
 - **B5. Pose on GPU.** Pose ran 43 min on CPU — the single biggest time sink.
-  Move it to GPU.
+  Likely a pose-model swap (MediaPipe CPU → a CUDA model), which changes keypoint
+  format and needs Stage 6 validation.
 - **B6. GPU-decode (NVDEC)** for video reads to cut ball/decode time.
-- **B7. Target flow:** *download bundle → Run All → upload outputs.* No editing,
-  no manual patch cells, no per-stage babysitting.
 
 ## C. Code / pipeline robustness (from this run)
 
