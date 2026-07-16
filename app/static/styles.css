@@ -82,6 +82,9 @@ body {
 .steps li.is-done .num { background: var(--ok); color: #fff; border-color: var(--ok); }
 .steps li.is-done .num::after { content: "✓"; }
 .steps li.is-done .num span { display: none; }
+/* Reachable steps are clickable to jump back and re-edit. */
+.steps li.is-clickable { cursor: pointer; }
+.steps li.is-clickable:not(.is-active):hover { background: var(--card-2); color: var(--ink); }
 @media (max-width: 720px) { .steps .lbl { display: none; } }
 
 /* ---------- Stage / panels ---------- */
@@ -193,6 +196,7 @@ body {
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; font-size: 14px; }
 .field:last-child { margin-bottom: 0; }
 .field span { font-weight: 600; }
+.field-note { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 select { font: inherit; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--card-2); color: var(--ink); }
 select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 

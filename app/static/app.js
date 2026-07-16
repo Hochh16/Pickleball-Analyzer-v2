@@ -22,6 +22,7 @@ const FRAME_MAXW = 1600;
 // ---------------------------------------------------------------- state
 const S = {
   step: 'video',
+  reachedIdx: 0,            // furthest step reached — earlier steps stay clickable
   session: null,
   startingCorner: 'left',   // set visually on the "You" step; default until then
   court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1 },
@@ -64,14 +65,23 @@ function fmtDuration(sec) {
 }
 
 // ---------------------------------------------------------------- routing
+// A step is reachable if it's at/behind the furthest step we've reached, and
+// (for anything past Video) we have a loaded session. Lets the user click the
+// step bar to jump back and re-edit without a linear back-button trail.
+function canGoto(i) {
+  return i <= S.reachedIdx && (i === 0 || !!S.session);
+}
+
 function goto(step) {
   S.step = step;
   STEPS.forEach((s) => { const p = el('panel-' + s); if (p) p.hidden = (s !== step); });
   const idxCur = STEPS.indexOf(step);
+  S.reachedIdx = Math.max(S.reachedIdx, idxCur);
   $$('#stepnav li').forEach((li) => {
     const i = STEPS.indexOf(li.dataset.step);
     li.classList.toggle('is-active', i === idxCur);
     li.classList.toggle('is-done', i < idxCur);
+    li.classList.toggle('is-clickable', canGoto(i));
     const num = li.querySelector('.num');
     num.innerHTML = i < idxCur ? '' : String(i + 1);
   });
@@ -181,7 +191,6 @@ function initCourtStep() {
   courtCanvas.addEventListener('mousemove', onCourtMove);
   courtCanvas.addEventListener('mouseleave', () => { loupeCanvas.hidden = true; });
 
-  el('selBaseline').addEventListener('change', updateCalibButton);
   el('undoBtn').addEventListener('click', () => { undoLastPoint(); });
   el('clearBtn').addEventListener('click', () => { clearPoints(); });
   el('frameSlider').addEventListener('input', (e) => setCourtFrame(parseInt(e.target.value, 10)));
@@ -358,7 +367,11 @@ async function runCalibrate() {
     court_corners_image: pts.slice(0, 4),
     kitchen_line_user_image: pts.slice(4, 6),
     kitchen_line_opponent_image: pts.slice(6, 8),
-    user_baseline: el('selBaseline').value,
+    // The analyzed player is always on the near baseline: the camera protocol puts
+    // the camera in the corner nearest their start, and the court marking treats
+    // points 5-6 as the user's (near/bottom) kitchen line. Asked once, on the "You"
+    // step (which SIDE). Stage 2.5 v1 only supports the user on the near baseline.
+    user_baseline: 'near',
     dominant_hand: el('selHand').value,
     user_starting_corner: S.startingCorner,   // confirmed visually on the "You" step
     frame_used_for_calibration: S.court.markFrame ?? S.court.frameIdx,
@@ -633,6 +646,10 @@ function boot() {
   initReviewStep();
   initRunStep();
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
+  $$('#stepnav li').forEach((li) => li.addEventListener('click', () => {
+    const i = STEPS.indexOf(li.dataset.step);
+    if (canGoto(i)) goto(li.dataset.step);
+  }));
   goto('video');
 }
 document.addEventListener('DOMContentLoaded', boot);
