@@ -23,6 +23,7 @@ const FRAME_MAXW = 1600;
 const S = {
   step: 'video',
   reachedIdx: 0,            // furthest step reached — earlier steps stay clickable
+  driveSync: false,         // Google Drive for Desktop auto-sync available (from /api/config)
   session: null,
   startingCorner: 'left',   // set visually on the "You" step; default until then
   court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1 },
@@ -99,6 +100,7 @@ async function initVideoStep() {
   try {
     const cfg = await api('/api/config');
     el('videosDir').textContent = cfg.videos_dir;
+    S.driveSync = !!cfg.drive_sync;
   } catch (e) { /* fall back to whatever /api/videos returns */ }
   loadVideos();
   loadExistingSessions();
@@ -559,11 +561,26 @@ function initRunStep() {
   });
 }
 
+// When Google Drive for Desktop is configured, the app pushes the clip to Drive
+// and auto-ingests the results — rewrite the hand-off card to that (no manual
+// download; upload stays as a fallback).
+function applyHandoffMode() {
+  if (!S.driveSync) return;
+  el('handoffIntro').textContent =
+    'Vision runs on Colab’s GPU. Your clip is synced to Google Drive automatically — run the notebook and the results import themselves.';
+  el('handoffSteps').innerHTML =
+    '<li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). Your clip is already on Drive — nothing to upload or edit.</li>' +
+    '<li>Leave this page open — when Colab finishes, analysis <b>resumes automatically</b>. (Or upload the outputs yourself below if you prefer.)</li>';
+  el('bundleDownloadBtn').hidden = true;   // bundle is auto-pushed to Drive
+  el('visionNote').textContent = '⏳ Waiting for Colab results (auto-syncing from Google Drive)…';
+}
+
 function enterRun() {
   // serve via /files/ so the report's relative <video src="annotated_web.mp4"> resolves
   el('viewReportBtn').href = `/api/sessions/${S.session.id}/files/report.html`;
   el('viewVideoBtn').href = `/api/sessions/${S.session.id}/files/video.mp4`;
   el('bundleDownloadBtn').href = `/api/sessions/${S.session.id}/vision-input.zip`;
+  applyHandoffMode();
   // (re)connect the live stream
   if (runES) { runES.close(); runES = null; }
   runES = new EventSource(`/api/sessions/${S.session.id}/run/stream`);
@@ -614,8 +631,9 @@ async function uploadVision(files) {
   if (visionBusy) return;
   files = Array.from(files);
   const note = el('visionNote');
+  const hasZip = files.some((f) => f.name.toLowerCase().endsWith('.zip'));
   const hasBall = files.some((f) => f.name === 'ball.parquet');
-  if (!hasBall) { note.textContent = 'Please include at least ball.parquet (and the other vision output files).'; return; }
+  if (!hasZip && !hasBall) { note.textContent = 'Please include ball.parquet and the other output files (or a .zip of them).'; return; }
   visionBusy = true;
   note.textContent = `Uploading ${files.length} file(s)…`;
   const fd = new FormData();

@@ -126,8 +126,9 @@ class Job:
 
 
 class PipelineRunner:
-    def __init__(self, store):
+    def __init__(self, store, drivesync=None):
         self.store = store
+        self.drivesync = drivesync   # optional Drive-for-Desktop auto-sync
         self.jobs: Dict[str, Job] = {}
         self.lock = threading.Lock()
 
@@ -176,6 +177,46 @@ class PipelineRunner:
             job._cancel = True
             if job._proc and job._proc.poll() is None:
                 job._proc.terminate()
+
+    # ---- Drive-for-Desktop auto-sync (optional) ----
+
+    def _maybe_drive_sync(self, job: Job) -> None:
+        """If a synced Drive folder is configured, push the clip bundle into it and
+        start a background watcher that auto-resumes when the vision outputs land
+        back — so the operator only runs the Colab notebook (no download/upload)."""
+        ds = self.drivesync
+        if not (ds and ds.enabled()):
+            return
+        sid = job.session_id
+        folder = self.store.folder(sid)
+        try:
+            bundle = folder / f"{sid}_vision_input.zip"
+            self.store.build_vision_input_zip(sid, bundle)
+            dest = ds.push_bundle(sid, bundle)
+        except Exception as e:  # noqa: BLE001
+            self._log(job, f"Drive auto-sync unavailable ({e}); use the manual buttons.")
+            return
+        self._log(job, f"Clip synced to Google Drive as {dest.name}. Open the Colab "
+                       "notebook and Run all — the results import automatically.")
+        threading.Thread(target=self._watch_drive_outputs, args=(job,), daemon=True).start()
+
+    def _watch_drive_outputs(self, job: Job) -> None:
+        ds = self.drivesync
+        sid = job.session_id
+        folder = self.store.folder(sid)
+        poll = float(os.environ.get("PB_DRIVE_POLL", "5"))
+        settle = float(os.environ.get("PB_DRIVE_SETTLE", "3"))
+        while not job._cancel and job.phase == "vision":
+            if ds.outputs_ready(sid):
+                time.sleep(settle)          # let Drive finish syncing every file
+                if not ds.outputs_ready(sid):
+                    continue
+                got = ds.ingest_outputs(sid, folder)
+                self._log(job, f"Vision results synced from Drive ({len(got)} files). Resuming.")
+                self.store.ensure_ball_meta(sid)
+                self.resume_post(sid)
+                return
+            time.sleep(poll)
 
     # ---- internals ----
 
@@ -248,10 +289,10 @@ class PipelineRunner:
         else:
             for key in _VISION_KEYS:
                 self._set(job, key, "waiting", bump=False)
-            self._log(job, "Vision (tracking, pose, ball) needs a GPU. Run the combined "
-                           "vision pass on Colab (stages/infer_vision.ipynb) and upload its "
-                           "outputs to continue.")
+            self._log(job, "Vision (tracking, pose, ball) needs a GPU. Run the Colab "
+                           "notebook (Run all) to produce the outputs.")
             self._bump(job)
+            self._maybe_drive_sync(job)
 
     def _run_post(self, job: Job) -> None:
         job.phase = "post"

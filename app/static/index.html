@@ -221,16 +221,16 @@
           <!-- Vision hand-off (shown while waiting for the GPU outputs) -->
           <div class="handoff-card" id="visionHandoff" hidden>
             <h3>⚡ Vision runs on a GPU (Colab)</h3>
-            <p>Player tracking, pose, and ball detection run on Colab's GPU — too slow on this computer. Bring the results back and the rest of the analysis finishes on its own.</p>
-            <ol class="handoff-steps">
+            <p id="handoffIntro">Player tracking, pose, and ball detection run on Colab's GPU — too slow on this computer. Bring the results back and the rest of the analysis finishes on its own.</p>
+            <ol class="handoff-steps" id="handoffSteps">
               <li><b>Download the clip bundle</b> (button below) and put it in your Google Drive (top level, “My Drive”).</li>
               <li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). It finds this clip automatically — nothing to edit.</li>
               <li>When Colab prints <b>“ALL 7 OUTPUTS READY”</b>, download those files and <b>upload them here</b>.</li>
             </ol>
             <a class="btn ghost block" id="bundleDownloadBtn" download>⬇ 1. Download clip bundle (video + setup)</a>
             <a class="btn ghost block" id="openColabBtn" target="_blank" rel="noopener" href="https://colab.research.google.com/github/Hochh16/Pickleball-Analyzer-v2/blob/main/stages/infer_vision.ipynb">↗ 2. Open Colab notebook (Run all)</a>
-            <label class="ball-upload">
-              <input type="file" id="visionInput" accept=".parquet,.json" multiple hidden />
+            <label class="ball-upload" id="visionUploadWrap">
+              <input type="file" id="visionInput" accept=".parquet,.json,.zip" multiple hidden />
               <span class="btn primary block" id="visionUploadBtn">3. Upload vision outputs</span>
             </label>
             <div class="ball-note" id="visionNote"></div>

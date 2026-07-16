@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import shutil
+import zipfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -23,6 +24,7 @@ from pydantic import BaseModel
 
 from . import browse as browse_mod
 from . import video as video_mod
+from .drivesync import DriveSync, detect_drive_dir
 from .pipeline import PipelineRunner, has_vision_outputs
 from .sessions import SessionError, SessionStore
 
@@ -41,7 +43,8 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 
 store = SessionStore(DATA_ROOT)
-runner = PipelineRunner(store)
+drivesync = DriveSync(detect_drive_dir())
+runner = PipelineRunner(store, drivesync=drivesync)
 
 app = FastAPI(title="Pickleball Analyzer v2 — Setup Wizard")
 
@@ -98,7 +101,12 @@ def health() -> dict:
 @app.get("/api/config")
 def config() -> dict:
     """Paths the UI should always be able to show (even if listing fails)."""
-    return {"videos_dir": str(VIDEOS_DIR), "data_root": str(DATA_ROOT)}
+    return {
+        "videos_dir": str(VIDEOS_DIR),
+        "data_root": str(DATA_ROOT),
+        "drive_sync": drivesync.enabled(),
+        "drive_dir": str(drivesync.drive_dir) if drivesync.drive_dir else None,
+    }
 
 
 @app.get("/api/videos")
@@ -274,6 +282,21 @@ async def upload_vision(session_id: str, files: List[UploadFile] = File(...)) ->
     try:
         for f in files:
             name = Path(f.filename or "").name
+            # A .zip (e.g. what Google Drive's web download hands you) — extract the
+            # allowed members so the operator never has to unzip by hand.
+            if name.lower().endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(f.file) as z:
+                        for member in z.namelist():
+                            base = Path(member).name
+                            if member.endswith("/") or base not in ALLOWED_VISION_FILES:
+                                continue
+                            with z.open(member) as src, (folder / base).open("wb") as out:
+                                shutil.copyfileobj(src, out)
+                            saved.append(base)
+                except zipfile.BadZipFile:
+                    skipped.append(name)
+                continue
             if name not in ALLOWED_VISION_FILES:
                 skipped.append(name)
                 continue

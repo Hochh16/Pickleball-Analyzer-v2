@@ -107,6 +107,40 @@ def test_annotated_render_is_skipped(store_with_session, monkeypatch):
     assert {"render", "compress"}.isdisjoint(s["key"] for s in job.steps)
 
 
+def test_drive_autosync_pushes_bundle_and_resumes(store_with_session, tmp_path, monkeypatch):
+    """With a synced Drive folder, the run pushes the clip bundle there and a watcher
+    auto-resumes when the vision outputs appear back — no manual upload."""
+    from app.drivesync import DriveSync
+    store, sid = store_with_session
+    monkeypatch.setattr(pipe, "_cuda_available", lambda: False)   # hand-off path
+    monkeypatch.setenv("PB_DRIVE_POLL", "0.2")
+    monkeypatch.setenv("PB_DRIVE_SETTLE", "0.2")
+    drive = tmp_path / "MyDrive"
+    drive.mkdir()
+    runner = PipelineRunner(store, drivesync=DriveSync(drive))
+    calls = []
+    runner._run_module = _fake_module(calls)
+
+    job = runner.start(sid)
+    assert _wait(job, ("vision",)), f"expected vision hand-off, got {job.phase}"
+    bundle = drive / f"{sid}_vision_input.zip"
+    t0 = time.time()
+    while not bundle.exists() and time.time() - t0 < 5:
+        time.sleep(0.05)
+    assert bundle.exists(), f"bundle not pushed to Drive; log: {list(job.log)}"  # auto-pushed
+
+    # simulate Colab writing the outputs back into the synced folder
+    outs = drive / f"{sid}_outputs"
+    outs.mkdir()
+    for f in VISION_OUTPUTS:
+        (outs / f).write_bytes(b"PAR1" if f.endswith(".parquet") else b"{}")
+
+    assert _wait(job, ("done",), timeout=15), f"expected done, got {job.phase} ({job.error})"
+    for f in VISION_OUTPUTS:
+        assert (store.folder(sid) / f).exists()                 # ingested locally
+    assert any("build_report" in m for m, _ in calls)           # post ran
+
+
 def test_stage_failure_stops_run(store_with_session, monkeypatch):
     store, sid = store_with_session
     monkeypatch.setattr(pipe, "_cuda_available", lambda: True)

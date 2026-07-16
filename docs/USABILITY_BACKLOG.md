@@ -48,6 +48,16 @@ gone.
 - **C2 done:** the `no_grad` fix is pulled from GitHub like the rest of the code —
   no bundle, no runtime patch. (Superseded the "re-upload the bundle" action.)
 
+**Pass 1.5 (Drive-for-Desktop auto-sync) ✓ DONE 2026-07-16** — with Google Drive
+for Desktop installed, the app auto-detects the synced `My Drive` (`?:\My Drive`,
+or `PB_DRIVE_DIR`). On the GPU hand-off it **writes the clip bundle into the synced
+folder** (Drive uploads it; clears stale `*_vision_input.zip`) and **watches
+`<clip>_outputs/`**, ingesting the results + auto-resuming the moment they sync
+back — no manual download/upload/unzip. Falls back to the manual buttons when no
+synced folder is present; the manual upload also accepts a `.zip`. Operator's only
+action is **Run All** on Colab. (`app/drivesync.py`, watcher in `pipeline.py`.)
+Caveat: wait for Drive to finish uploading the (large) clip before running Colab.
+
 **Pass 2 (stage-level performance) — TODO:**
 - **B5. Pose on GPU.** Pose ran 43 min on CPU — the single biggest time sink.
   Likely a pose-model swap (MediaPipe CPU → a CUDA model), which changes keypoint
