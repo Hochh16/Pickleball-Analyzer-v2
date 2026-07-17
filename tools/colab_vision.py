@@ -107,7 +107,7 @@ def free_gpu() -> None:
 
 # ---------------------------------------------------------------- resume / inputs
 
-def wait_for_complete_zip(path, tries: int = 30, wait: float = 20.0) -> None:
+def wait_for_complete_zip(path, tries: int = 120, wait: float = 30.0) -> None:
     """Block until `path` is a complete zip archive. A bundle freshly dropped into
     the synced Drive folder may still be UPLOADING when the notebook starts —
     reading it too early yields a partial file (`BadZipFile`). The end-of-archive
