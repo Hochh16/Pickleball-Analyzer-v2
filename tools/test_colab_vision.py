@@ -109,4 +109,5 @@ def test_notebook_builds_as_git_bootstrapper():
     assert gen.REPO_URL in src
     assert "from tools.colab_vision import run_all" in src
     assert "run_all(REPO, clip=CLIP)" in src          # runs from the cloned repo
+    assert "del sys.modules[name]" in src             # re-runs reload pulled code
     assert "%%writefile" not in src                   # no embedded bundle anymore

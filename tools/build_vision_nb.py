@@ -89,6 +89,10 @@ print('deps ready')
 """import sys
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
+# A re-run in the SAME session must pick up freshly pulled code: Python caches
+# imported modules, so drop any previously loaded repo modules first.
+for name in [n for n in list(sys.modules) if n == 'tools' or n.startswith('tools.')]:
+    del sys.modules[name]
 from tools.colab_vision import run_all, STAGES
 print('loaded — stages:', [s['name'] for s in STAGES])
 """))
