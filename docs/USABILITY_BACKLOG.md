@@ -73,6 +73,15 @@ Caveat: wait for Drive to finish uploading the (large) clip before running Colab
   no on-Colab patch cell. (Bundle rebuilt locally; Drive copy is still the buggy
   pre-fix version — currently patched at runtime as a stopgap.)
 
+## E. Session resume UX (found during Drive auto-sync testing)
+
+Re-picking the same video creates a NEW session (`-3`, `-4`, …) and a full multi-GB
+re-upload; "Or continue a previous setup" exists but resuming currently drops you
+on the Court step with the points blanked — effectively forcing a full re-setup,
+which is why the operator kept creating new sessions. Fix: on session load, unlock
+the step nav from the on-disk state (calibration/roster done → Review/Run
+reachable) and let a fully-configured session jump straight to Run / re-run.
+
 ## D. Nice-to-haves
 
 - Per-stage progress + time estimates on the app run screen.

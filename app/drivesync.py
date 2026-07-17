@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 import string
+import zipfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -61,7 +62,12 @@ class DriveSync:
 
     def push_bundle(self, session_id: str, bundle_path: Path) -> Path:
         """Copy the clip bundle into the synced folder (Drive uploads it), removing
-        any other `*_vision_input.zip` so the notebook auto-detects exactly one."""
+        any other `*_vision_input.zip` so the notebook auto-detects exactly one.
+
+        Writes via a `.part` temp name, VERIFIES the copy (size + zip end record),
+        then renames into place — observed in the wild: DriveFS can drop write data
+        without erroring, leaving a silently truncated file that poisons the cloud
+        copy. A crashed or failed copy can never appear under the real name."""
         assert self.enabled() and self.drive_dir is not None
         keep = f"{session_id}{INPUT_SUFFIX}"
         for stale in self.drive_dir.glob(f"*{INPUT_SUFFIX}"):
@@ -71,12 +77,27 @@ class DriveSync:
                 except OSError:
                     pass
         dest = self.drive_dir / keep
-        # Same bundle already in the synced folder (e.g. a restarted run): skip the
-        # copy so Drive doesn't re-upload multi-GB for nothing.
-        if dest.exists() and dest.stat().st_size == Path(bundle_path).stat().st_size:
+        src_size = Path(bundle_path).stat().st_size
+        # Same complete bundle already synced (e.g. a restarted run): skip the copy
+        # so Drive doesn't re-upload multi-GB for nothing.
+        if dest.exists() and dest.stat().st_size == src_size and zipfile.is_zipfile(str(dest)):
             return dest
-        shutil.copyfile(bundle_path, dest)
-        return dest
+        part = self.drive_dir / (keep + ".part")
+        last = "unknown"
+        try:
+            for _ in range(3):
+                shutil.copyfile(bundle_path, part)
+                if part.stat().st_size == src_size and zipfile.is_zipfile(str(part)):
+                    os.replace(part, dest)
+                    return dest
+                last = f"copy landed truncated/corrupt ({part.stat().st_size}/{src_size} bytes)"
+        finally:
+            if part.exists():
+                try:
+                    part.unlink()
+                except OSError:
+                    pass
+        raise RuntimeError(f"could not write a complete bundle to {dest}: {last}")
 
     def outputs_ready(self, session_id: str) -> bool:
         """True once all REQUIRED outputs are present in the synced outputs dir."""

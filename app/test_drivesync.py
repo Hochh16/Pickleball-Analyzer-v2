@@ -1,8 +1,12 @@
 """Tests for the Drive-for-Desktop auto-sync adapter (pure file logic)."""
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
+import pytest
+
+from app import drivesync as ds_mod
 from app.drivesync import DriveSync, detect_drive_dir, INPUT_SUFFIX
 from app.pipeline import VISION_OUTPUTS
 
@@ -10,6 +14,13 @@ from app.pipeline import VISION_OUTPUTS
 def _touch(p: Path, data: bytes = b"x"):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(data)
+
+
+def _make_zip(p: Path, payload: str = "x") -> Path:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("video.mp4", payload)
+    return p
 
 
 def test_detect_drive_dir_env_override(tmp_path, monkeypatch):
@@ -28,28 +39,47 @@ def test_push_bundle_replaces_stale(tmp_path):
     drive.mkdir()
     # a stale bundle from a prior clip must be removed so the notebook sees exactly one
     _touch(drive / f"oldclip{INPUT_SUFFIX}")
-    bundle = tmp_path / "src" / "new.zip"
-    _touch(bundle, b"ZIP")
+    bundle = _make_zip(tmp_path / "src" / "new.zip")
     ds = DriveSync(drive)
     dest = ds.push_bundle("newclip", bundle)
     assert dest.name == f"newclip{INPUT_SUFFIX}"
     present = sorted(p.name for p in drive.glob(f"*{INPUT_SUFFIX}"))
     assert present == [f"newclip{INPUT_SUFFIX}"]        # stale gone, new present
-    assert dest.read_bytes() == b"ZIP"
+    assert zipfile.is_zipfile(dest)                     # published copy verified
 
 
 def test_push_bundle_skips_when_already_synced(tmp_path):
-    """Re-pushing the same-size bundle must NOT rewrite the synced file (that would
-    make Drive re-upload multi-GB after every app restart)."""
+    """Re-pushing the same complete bundle must NOT rewrite the synced file (that
+    would make Drive re-upload multi-GB after every app restart)."""
+    import time
     drive = tmp_path / "MyDrive"
     drive.mkdir()
-    bundle = tmp_path / "b.zip"
-    bundle.write_bytes(b"ZIPDATA")           # 7 bytes
+    bundle = _make_zip(tmp_path / "b.zip")
     ds = DriveSync(drive)
     dest = ds.push_bundle("clip", bundle)
-    dest.write_bytes(b"AAAAAAA")             # same size sentinel — proves skip below
+    m1 = dest.stat().st_mtime_ns
+    time.sleep(0.05)
     ds.push_bundle("clip", bundle)
-    assert dest.read_bytes() == b"AAAAAAA"   # untouched: push was skipped
+    assert dest.stat().st_mtime_ns == m1     # untouched: push was skipped
+
+
+def test_push_bundle_rejects_truncated_copy(tmp_path, monkeypatch):
+    """DriveFS has been observed to drop write data without erroring — a truncated
+    copy must never be published under the real bundle name."""
+    drive = tmp_path / "MyDrive"
+    drive.mkdir()
+    bundle = _make_zip(tmp_path / "b.zip", payload="full content")
+
+    def truncating_copy(src, dst):
+        data = Path(src).read_bytes()
+        Path(dst).write_bytes(data[: len(data) // 2])   # silently drop half
+
+    monkeypatch.setattr(ds_mod.shutil, "copyfile", truncating_copy)
+    ds = DriveSync(drive)
+    with pytest.raises(RuntimeError, match="truncated|complete"):
+        ds.push_bundle("clip", bundle)
+    assert not (drive / f"clip{INPUT_SUFFIX}").exists()          # nothing published
+    assert not (drive / f"clip{INPUT_SUFFIX}.part").exists()     # temp cleaned up
 
 
 def test_outputs_ready_and_ingest(tmp_path):
