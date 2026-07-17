@@ -129,11 +129,25 @@ def test_drive_autosync_pushes_bundle_and_resumes(store_with_session, tmp_path, 
         time.sleep(0.05)
     assert bundle.exists(), f"bundle not pushed to Drive; log: {list(job.log)}"  # auto-pushed
 
-    # simulate Colab writing the outputs back into the synced folder
+    # simulate Colab backing outputs up STAGE BY STAGE — the watcher should
+    # reflect per-stage progress live while the rest is still pending
     outs = drive / f"{sid}_outputs"
     outs.mkdir()
-    for f in VISION_OUTPUTS:
+    for f in ("players.parquet", "track_roles.json"):
         (outs / f).write_bytes(b"PAR1" if f.endswith(".parquet") else b"{}")
+    t0 = time.time()
+    while time.time() - t0 < 5:
+        st = {s["key"]: s["status"] for s in job.steps}
+        if st["track"] == "done" and st["roles"] == "done":
+            break
+        time.sleep(0.05)
+    st = {s["key"]: s["status"] for s in job.steps}
+    assert st["track"] == "done" and st["roles"] == "done", f"no live progress: {st}"
+    assert st["pose"] == "waiting" and st["ball"] == "waiting"
+
+    for f in VISION_OUTPUTS:
+        if not (outs / f).exists():
+            (outs / f).write_bytes(b"PAR1" if f.endswith(".parquet") else b"{}")
 
     assert _wait(job, ("done",), timeout=15), f"expected done, got {job.phase} ({job.error})"
     for f in VISION_OUTPUTS:

@@ -570,8 +570,13 @@ function applyHandoffMode() {
     'Vision runs on Colab’s GPU. Your clip is synced to Google Drive automatically — run the notebook and the results import themselves.';
   el('handoffSteps').innerHTML =
     '<li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). Your clip is already on Drive — nothing to upload or edit.</li>' +
-    '<li>Leave this page open — when Colab finishes, analysis <b>resumes automatically</b>. (Or upload the outputs yourself below if you prefer.)</li>';
+    '<li>Leave this page open — the steps on the left tick off as Colab works, and analysis <b>resumes automatically</b> when it finishes.</li>';
   el('bundleDownloadBtn').hidden = true;   // bundle is auto-pushed to Drive
+  // manual upload becomes a de-emphasized fallback (auto-ingest is the path)
+  const ub = el('visionUploadBtn');
+  ub.classList.remove('primary');
+  ub.classList.add('ghost');
+  ub.textContent = 'Upload outputs manually (fallback)';
   el('visionNote').textContent = '⏳ Waiting for Colab results (auto-syncing from Google Drive)…';
 }
 

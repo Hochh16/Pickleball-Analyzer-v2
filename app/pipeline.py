@@ -40,6 +40,11 @@ LOG_TAIL = 240  # lines kept per job for the live log
 VISION_OUTPUTS = ("players.parquet", "track_roles.json", "poses.parquet",
                   "ball.parquet", "ball.meta.json")
 
+# Colab backs up each vision stage's output to Drive AS IT FINISHES, so the
+# watcher can reflect per-stage progress live in the UI while Colab runs.
+VISION_FILE_TO_STEP = {"players.parquet": "track", "track_roles.json": "roles",
+                       "poses.parquet": "pose", "ball.parquet": "ball"}
+
 
 class Step:
     def __init__(self, key: str, label: str, module: Optional[str] = None,
@@ -200,6 +205,16 @@ class PipelineRunner:
                        "notebook and Run all — the results import automatically.")
         threading.Thread(target=self._watch_drive_outputs, args=(job,), daemon=True).start()
 
+    def _sync_vision_progress(self, job: Job) -> None:
+        """Flip vision steps to done as Colab's per-stage backups land on Drive —
+        live progress in the UI while the notebook runs."""
+        d = self.drivesync.outputs_dir(job.session_id)
+        for fname, key in VISION_FILE_TO_STEP.items():
+            step = job._step(key)
+            if step["status"] != "done" and (d / fname).exists():
+                self._log(job, f"{step['label']}: finished on Colab.")
+                self._set(job, key, "done")
+
     def _watch_drive_outputs(self, job: Job) -> None:
         ds = self.drivesync
         sid = job.session_id
@@ -207,6 +222,7 @@ class PipelineRunner:
         poll = float(os.environ.get("PB_DRIVE_POLL", "5"))
         settle = float(os.environ.get("PB_DRIVE_SETTLE", "3"))
         while not job._cancel and job.phase == "vision":
+            self._sync_vision_progress(job)
             if ds.outputs_ready(sid):
                 time.sleep(settle)          # let Drive finish syncing every file
                 if not ds.outputs_ready(sid):
