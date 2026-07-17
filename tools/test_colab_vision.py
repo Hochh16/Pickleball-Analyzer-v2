@@ -39,6 +39,20 @@ def test_derive_clip_multiple_errors(tmp_path):
     assert "Multiple" in str(e.value)
 
 
+# ---- upload race (BadZipFile guard) ----
+
+def test_wait_for_complete_zip(tmp_path):
+    import zipfile as zf
+    partial = tmp_path / "partial.zip"
+    partial.write_bytes(b"still uploading, not a zip")
+    with pytest.raises(SystemExit):                       # never completes -> clear error
+        cv.wait_for_complete_zip(partial, tries=2, wait=0)
+    good = tmp_path / "good.zip"
+    with zf.ZipFile(good, "w") as z:
+        z.writestr("video.mp4", "x")
+    cv.wait_for_complete_zip(good, tries=1, wait=0)       # complete -> returns
+
+
 # ---- restore / resume (B4) ----
 
 def test_restore_outputs_copies_present(tmp_path):

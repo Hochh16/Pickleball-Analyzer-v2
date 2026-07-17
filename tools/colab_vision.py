@@ -107,6 +107,25 @@ def free_gpu() -> None:
 
 # ---------------------------------------------------------------- resume / inputs
 
+def wait_for_complete_zip(path, tries: int = 30, wait: float = 20.0) -> None:
+    """Block until `path` is a complete zip archive. A bundle freshly dropped into
+    the synced Drive folder may still be UPLOADING when the notebook starts —
+    reading it too early yields a partial file (`BadZipFile`). The end-of-archive
+    check reads only the file tail, so polling is cheap even over Drive FUSE."""
+    for i in range(tries):
+        try:
+            if zipfile.is_zipfile(str(path)):
+                return
+        except OSError:
+            _remount()
+        print(f"  {Path(path).name} isn't fully uploaded to Drive yet — "
+              f"retrying in {wait:.0f}s ({i + 1}/{tries})", flush=True)
+        time.sleep(wait)
+    raise SystemExit(
+        f"{path} never became a complete zip. Check that Google Drive finished "
+        "uploading it (tray icon), then Run all again — the run will resume.")
+
+
 def restore_outputs(backup_dir, clip_dir) -> List[str]:
     """Copy any already-computed outputs from the Drive backup into the local clip
     dir (the resume mechanism). Returns the names restored."""
@@ -133,11 +152,20 @@ def copy_inputs(drive_dir, clip: str, content="/content") -> Tuple[Path, Path]:
     drive_dir, content = Path(drive_dir), Path(content)
     clip_dir = content / clip
     clip_dir.mkdir(parents=True, exist_ok=True)
+    src = drive_dir / f"{clip}_vision_input.zip"
     zip_local = content / f"{clip}_vision_input.zip"
+    wait_for_complete_zip(src)   # Drive may still be uploading the bundle
     print("copying clip bundle to local disk (may be several GB)...", flush=True)
-    robust_copy(drive_dir / f"{clip}_vision_input.zip", zip_local)
-    with zipfile.ZipFile(zip_local) as z:
-        z.extractall(clip_dir)
+    for attempt in (1, 2):
+        robust_copy(src, zip_local)
+        try:
+            with zipfile.ZipFile(zip_local) as z:
+                z.extractall(clip_dir)
+            break
+        except zipfile.BadZipFile:
+            if attempt == 2:
+                raise
+            print("  copied bundle was incomplete — retrying the copy once...", flush=True)
     if not (clip_dir / "video.mp4").exists():
         raise RuntimeError(f"clip bundle for {clip} has no video.mp4")
     weights = content / "ball_model_v4.pt"
