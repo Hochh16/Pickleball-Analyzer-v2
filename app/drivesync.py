@@ -71,6 +71,10 @@ class DriveSync:
                 except OSError:
                     pass
         dest = self.drive_dir / keep
+        # Same bundle already in the synced folder (e.g. a restarted run): skip the
+        # copy so Drive doesn't re-upload multi-GB for nothing.
+        if dest.exists() and dest.stat().st_size == Path(bundle_path).stat().st_size:
+            return dest
         shutil.copyfile(bundle_path, dest)
         return dest
 

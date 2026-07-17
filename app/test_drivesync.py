@@ -38,6 +38,20 @@ def test_push_bundle_replaces_stale(tmp_path):
     assert dest.read_bytes() == b"ZIP"
 
 
+def test_push_bundle_skips_when_already_synced(tmp_path):
+    """Re-pushing the same-size bundle must NOT rewrite the synced file (that would
+    make Drive re-upload multi-GB after every app restart)."""
+    drive = tmp_path / "MyDrive"
+    drive.mkdir()
+    bundle = tmp_path / "b.zip"
+    bundle.write_bytes(b"ZIPDATA")           # 7 bytes
+    ds = DriveSync(drive)
+    dest = ds.push_bundle("clip", bundle)
+    dest.write_bytes(b"AAAAAAA")             # same size sentinel — proves skip below
+    ds.push_bundle("clip", bundle)
+    assert dest.read_bytes() == b"AAAAAAA"   # untouched: push was skipped
+
+
 def test_outputs_ready_and_ingest(tmp_path):
     drive = tmp_path / "MyDrive"
     ds = DriveSync(drive)
