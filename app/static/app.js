@@ -173,12 +173,32 @@ async function loadExistingSessions() {
   } catch (e) { /* library is best-effort */ }
 }
 
-function onSessionReady(session) {
+async function onSessionReady(session) {
   S.session = session;
-  // hydrate prior court state loosely (we always re-mark for Phase 1 simplicity)
   S.courtConfirmed = !!(session.steps && session.steps.calibration);
   toast(`Loaded “${session.name}”`);
-  goto('court');
+  const configured = !!(session.steps && session.steps.calibration && session.steps.roster);
+  if (!configured) { goto('court'); return; }
+  // Fully configured session: hydrate the wizard from disk, unlock every step,
+  // and jump straight to the run (or review if nothing is running yet) — no
+  // re-marking the court just to get back to your analysis.
+  S.reachedIdx = STEPS.length - 1;
+  try {
+    const sum = await api(`/api/sessions/${session.id}/summary`);
+    if (sum.roster && sum.roster.handedness) {
+      const h = sum.roster.handedness;
+      el('handUser').value = h.user || 'right';
+      el('handPartner').value = h.partner || 'unknown';
+      el('handOppA').value = h.opp_a || 'unknown';
+      el('handOppB').value = h.opp_b || 'unknown';
+    }
+    const ui = sum.calibration && sum.calibration.user_inputs;
+    if (ui && ui.user_starting_corner) S.startingCorner = ui.user_starting_corner;
+  } catch (e) { /* hydration is best-effort */ }
+  try {
+    const run = await api(`/api/sessions/${session.id}/run`);
+    goto(run.phase && run.phase !== 'idle' ? 'run' : 'review');
+  } catch (e) { goto('review'); }
 }
 
 // ================================================================ STEP 2: COURT
