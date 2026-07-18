@@ -69,13 +69,18 @@ Caveat: wait for Drive to finish uploading the (large) clip before running Colab
   median, skeleton overlays track tightly, **rating stable (3.2 vs 3.16, same
   band/confidence)**. **Measured end-to-end on Colab T4: pose = 115 s** (4537
   detections). Dropped the mediapipe dependency.
-- **B6. GPU-decode (NVDEC) — now the top lever.** With pose fast, the T4 run's
-  poles are `classify_tracks` **341 s** (builds appearance color signatures —
-  reads 4K frames) and `track_players` **106 s**, plus the ball step — all
-  dominated by **CPU 4K video decode** (`cv2.VideoCapture` on 3840×2160). A
-  shared GPU/NVDEC decode path (or downscaled decode where full-res isn't needed)
-  cuts every one of these. Bigger cross-frame GPU batches for pose are a
-  secondary ~2× on its inference. — TODO
+- **B6. Decode speed — RESOLVED via classify fix + A100 (NVDEC deprioritized) 2026-07-18.**
+  The T4 poles turned out to be (a) `classify_tracks` **random-seeking** to sampled
+  frames (`cap.set(POS_FRAMES)` re-decodes from a keyframe each time) — fixed with
+  a single sequential pass + one decode for near+far (**341 s → 11 s on A100**,
+  roles byte-identical), and (b) a modest T4. **Measured A100 (Pro+) vs original
+  T4, 20 s clip:** track 106→43 s, classify 341→11 s, pose 115→47 s, ball 389→115 s
+  (batch 8, no OOM) — **~16 min → ~3.6 min of stage time (~4.5×)**. Projected A100
+  compute: 2-min ~25 min, 5-min ~55-60 min, 10-min ~1.9 hr. Notebook now recommends
+  A100 + warns on lesser cards. **NVDEC judged not worth it** (marginal ~20% vs
+  A100, real integration risk). Remaining speed levers if revisited: ball batch
+  16/32 on A100, bundle-size reduction (cuts upload+decode), half-fps for
+  track/pose. **Deferred — speed is "reasonable for now" (David).**
 
 ## C. Code / pipeline robustness (from this run)
 
@@ -86,14 +91,13 @@ Caveat: wait for Drive to finish uploading the (large) clip before running Colab
   no on-Colab patch cell. (Bundle rebuilt locally; Drive copy is still the buggy
   pre-fix version — currently patched at runtime as a stopgap.)
 
-## E. Session resume UX (found during Drive auto-sync testing)
+## E. Session resume UX  ✓ DONE 2026-07-18
 
-Re-picking the same video creates a NEW session (`-3`, `-4`, …) and a full multi-GB
-re-upload; "Or continue a previous setup" exists but resuming currently drops you
-on the Court step with the points blanked — effectively forcing a full re-setup,
-which is why the operator kept creating new sessions. Fix: on session load, unlock
-the step nav from the on-disk state (calibration/roster done → Review/Run
-reachable) and let a fully-configured session jump straight to Run / re-run.
+Re-picking the same video created a NEW session and a full re-upload; resuming
+dropped you on the Court step with points blanked. Fixed: loading a fully-
+configured session hydrates handedness/side from disk, unlocks the whole step
+nav, and jumps straight to the Run screen (or Review). Bundle push also skips if
+the same clip is already synced (no needless re-upload).
 
 ## D. Nice-to-haves
 
