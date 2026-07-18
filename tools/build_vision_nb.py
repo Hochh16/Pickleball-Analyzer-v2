@@ -50,17 +50,25 @@ nothing to edit.** On Drive (`My Drive` root) you only need, per clip:
 - `ball_model_v4.pt`  — the trained ball model (upload once)
 - `<clip>_vision_input.zip`  — the clip bundle, downloaded from the app's run screen
 
-**Runtime -> Change runtime type -> GPU**, then **Runtime -> Run all**. The clip is
-auto-detected from the one `*_vision_input.zip` on Drive. Outputs land in
-`content/<clip>/` and `My Drive/<clip>_outputs/`; upload them on the app run screen
-to finish. Built by `tools/build_vision_nb.py`.
+**Runtime -> Change runtime type -> A100 GPU** (Colab Pro+; ~4-5x faster than a T4
+and no ball OOM fallback — a T4 works too, just slower), then **Runtime -> Run
+all**. The clip is auto-detected from the one `*_vision_input.zip` on Drive.
+Outputs land in `content/<clip>/` and `My Drive/<clip>_outputs/`; upload them on the
+app run screen to finish. Built by `tools/build_vision_nb.py`.
 """))
 
     cells.append(code(
-"""import torch
-print('CUDA:', torch.cuda.is_available(),
-      torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU (SLOW — set Runtime->GPU!)')
-"""))
+'''import torch
+gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+print("GPU:", gpu or "NONE — CPU (very slow)")
+# Measured: the full pass is ~4-5x faster on an A100 than a T4 (and ball runs at
+# full batch instead of the OOM fallback). A100 is included with Colab Pro+.
+if gpu is None:
+    raise SystemExit("No GPU. Set Runtime -> Change runtime type -> A100 GPU, then Run all.")
+if not any(g in gpu for g in ("A100", "H100")):
+    print(f"\\n>>> You are on {gpu}. For a big speedup switch to A100:\\n"
+          ">>>   Runtime -> Change runtime type -> A100 GPU -> Save, then Runtime -> Run all.")
+'''))
 
     cells.append(code(
 """from google.colab import drive
