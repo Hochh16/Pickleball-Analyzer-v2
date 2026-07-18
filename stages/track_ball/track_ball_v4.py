@@ -82,7 +82,7 @@ def detect(model, device, buf3: List[np.ndarray], sx: float, sy: float
     the CENTER frame."""
     stack = np.concatenate(buf3, axis=0)[None]  # (1,9,H,W)
     t = torch.from_numpy(stack).to(device)
-    with torch.no_grad(), torch.cuda.amp.autocast(enabled=str(device).startswith("cuda")):
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[0, 0].float().cpu().numpy()
     iy, ix = np.unravel_index(int(hm.argmax()), hm.shape)
     return ix * sx, iy * sy, float(hm[iy, ix])
@@ -97,7 +97,7 @@ def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
     if not stacks:
         return
     t = torch.from_numpy(np.stack(stacks)).to(device)   # (N,9,H,W)
-    with torch.no_grad(), torch.cuda.amp.autocast(enabled=str(device).startswith("cuda")):
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[:, 0].float().cpu().numpy()        # (N,H,W)
     for k, center in enumerate(centers):
         h = hm[k]
