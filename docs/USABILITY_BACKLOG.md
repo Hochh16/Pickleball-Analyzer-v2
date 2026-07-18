@@ -58,11 +58,24 @@ synced folder is present; the manual upload also accepts a `.zip`. Operator's on
 action is **Run All** on Colab. (`app/drivesync.py`, watcher in `pipeline.py`.)
 Caveat: wait for Drive to finish uploading the (large) clip before running Colab.
 
-**Pass 2 (stage-level performance) — TODO:**
-- **B5. Pose on GPU.** Pose ran 43 min on CPU — the single biggest time sink.
-  Likely a pose-model swap (MediaPipe CPU → a CUDA model), which changes keypoint
-  format and needs Stage 6 validation.
-- **B6. GPU-decode (NVDEC)** for video reads to cut ball/decode time.
+**Pass 2 (stage-level performance):**
+- **B5. Pose on GPU ✓ DONE + GPU-VALIDATED 2026-07-18.** Swapped MediaPipe
+  (CPU-bound, the single slowest stage — ~43 min on the 5-min CPU run) for
+  Ultralytics YOLO-pose (CUDA; already a Stage-2 dep). YOLO's COCO-17 keypoints
+  map onto the existing BlazePose-33 column schema (16 unused points → NaN);
+  every landmark any stage reads is in COCO-17, so it's drop-in (no Stage 5/6/8/
+  render changes). Crops batched per frame. Validated vs the MediaPipe run on
+  pb_5min_test_20s-7: detection 100% (was 96.5%), user keypoint drift 5-9 px
+  median, skeleton overlays track tightly, **rating stable (3.2 vs 3.16, same
+  band/confidence)**. **Measured end-to-end on Colab T4: pose = 115 s** (4537
+  detections). Dropped the mediapipe dependency.
+- **B6. GPU-decode (NVDEC) — now the top lever.** With pose fast, the T4 run's
+  poles are `classify_tracks` **341 s** (builds appearance color signatures —
+  reads 4K frames) and `track_players` **106 s**, plus the ball step — all
+  dominated by **CPU 4K video decode** (`cv2.VideoCapture` on 3840×2160). A
+  shared GPU/NVDEC decode path (or downscaled decode where full-res isn't needed)
+  cuts every one of these. Bigger cross-frame GPU batches for pose are a
+  secondary ~2× on its inference. — TODO
 
 ## C. Code / pipeline robustness (from this run)
 
