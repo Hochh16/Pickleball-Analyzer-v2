@@ -18,8 +18,7 @@ opencv-contrib-python>=4.13.0.92
 opencv-python-headless>=4.13.0.92
 
 # --- Pose & detection ---
-mediapipe>=0.10.35       # Stage 3 (pose)
-ultralytics>=8.4.46      # Stage 2 (player tracking — YOLO + ByteTrack)
+ultralytics>=8.4.46      # Stage 2 (tracking) + Stage 3 (YOLO-pose, GPU)
 ultralytics-thop>=2.0.19
 
 # --- Stage 4 (track_ball) ---

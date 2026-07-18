@@ -19,7 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 ml = [
     "ultralytics>=8.3",
-    "mediapipe>=0.10.14",
     "torch>=2.4",
     "torchvision>=0.19",
 ]

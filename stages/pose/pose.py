@@ -1,9 +1,11 @@
 """Stage 3 — Pose estimation.
 
 CLI tool that takes a per-video folder containing video.mp4, court.json, and
-players.parquet, runs MediaPipe Pose on the bbox crops of in-scope player
-detections, and produces poses.parquet plus pose_summary.json in the same
-folder.
+players.parquet, runs a GPU pose model (Ultralytics YOLO-pose) on the bbox crops
+of in-scope player detections, and produces poses.parquet plus pose_summary.json
+in the same folder. YOLO-pose emits COCO-17 keypoints mapped onto the same
+BlazePose-33 column schema the pipeline already expects (unused points -> NaN),
+so it's a drop-in for every downstream stage.
 
 Usage:
     python -m stages.pose.pose data/match_001/
@@ -27,9 +29,9 @@ In-scope detections (which tracks get posed):
 
 Per-detection processing: for each in-scope detection, the bbox crop is
 masked to grey out the regions of OTHER detections on the same frame
-(including non-in-scope detections like adjacent-court players). This
-prevents MediaPipe (which is single-person) from picking the wrong person
-when multiple people overlap in the crop.
+(including non-in-scope detections like adjacent-court players), then we take
+the highest-confidence person in the crop. This prevents the pose model from
+locking onto the wrong person when multiple people overlap in the crop.
 
 This module has no side effects on import. All work happens in main().
 """
@@ -38,8 +40,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
-import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -51,10 +53,12 @@ logger = logging.getLogger(__name__)
 
 # -- Tunable constants ---------------------------------------------------------
 
-MODEL_COMPLEXITY = 1            # 0=lite, 1=full, 2=heavy
-MIN_DETECTION_CONFIDENCE = 0.5
-MIN_PRESENCE_CONFIDENCE = 0.5
-MIN_TRACKING_CONFIDENCE = 0.5
+# GPU pose: Ultralytics YOLO-pose (COCO-17). The small model keeps good keypoint
+# accuracy on player-sized crops while running fast on GPU; auto-downloads
+# (~20 MB) on first use. Override with PB_POSE_MODEL (e.g. yolo11n-pose.pt for a
+# faster/lighter run, or yolo11m-pose.pt for more accuracy).
+POSE_MODEL = os.environ.get("PB_POSE_MODEL", "yolo11s-pose.pt")
+POSE_MIN_CONFIDENCE = 0.25      # min person-detection confidence per crop
 BBOX_PAD_FRAC = 0.10
 USER_DETECTION_RATE_WARNING = 0.5
 
@@ -80,21 +84,6 @@ OTHER_PERSON_MASK_COLOR = (128, 128, 128)
 OTHER_PERSON_MASK_SHRINK_FRAC = 0.05
 
 POSE_SUMMARY_SCHEMA_VERSION = 1
-
-# MediaPipe Tasks API model files. The model is auto-downloaded on first run
-# and cached at ~/.cache/mediapipe_models/.
-MODEL_URLS = {
-    0: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
-    1: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
-    2: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
-}
-MODEL_FILENAMES = {
-    0: "pose_landmarker_lite.task",
-    1: "pose_landmarker_full.task",
-    2: "pose_landmarker_heavy.task",
-}
-
-MODEL_CACHE_DIR = Path.home() / ".cache" / "mediapipe_models"
 
 
 # -- Landmark order (matches MediaPipe's PoseLandmark enum) --------------------
@@ -135,6 +124,18 @@ PARQUET_COLUMNS = METADATA_COLUMNS + LANDMARK_COLUMNS
 
 assert len(PARQUET_COLUMNS) == 5 + 33 * 4, "Expected 137 columns total"
 
+# YOLO-pose emits COCO-17 keypoints; map them onto the BlazePose-33 column layout
+# by name. The 16 MediaPipe-only points (fine face detail, hands, heel/foot-index)
+# are consumed by NO downstream stage, so they stay NaN — every landmark the
+# pipeline reads (wrists, shoulders, hips, ankles, elbows, knees) is in COCO-17.
+COCO17_TO_LANDMARK = {
+    0: "nose", 1: "left_eye", 2: "right_eye", 3: "left_ear", 4: "right_ear",
+    5: "left_shoulder", 6: "right_shoulder", 7: "left_elbow", 8: "right_elbow",
+    9: "left_wrist", 10: "right_wrist", 11: "left_hip", 12: "right_hip",
+    13: "left_knee", 14: "right_knee", 15: "left_ankle", 16: "right_ankle",
+}
+assert all(n in LANDMARK_NAMES for n in COCO17_TO_LANDMARK.values())
+
 
 # -- Exceptions ----------------------------------------------------------------
 
@@ -147,8 +148,8 @@ class VideoError(RuntimeError):
     """Raised when the video can't be opened or read."""
 
 
-class MediaPipeImportError(RuntimeError):
-    """Raised when MediaPipe is not installed."""
+class PoseImportError(RuntimeError):
+    """Raised when the pose backend (ultralytics) is not installed."""
 
 
 class ModelDownloadError(RuntimeError):
@@ -284,56 +285,28 @@ def filter_to_scope(
 # -- MediaPipe -----------------------------------------------------------------
 
 
-def ensure_model(complexity: int) -> Path:
-    """Return the local path to the .task model file, downloading if needed."""
-    if complexity not in MODEL_URLS:
-        raise ValueError(f"MODEL_COMPLEXITY must be 0, 1, or 2; got {complexity}")
-    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = MODEL_CACHE_DIR / MODEL_FILENAMES[complexity]
-    if model_path.exists() and model_path.stat().st_size > 0:
-        return model_path
-    url = MODEL_URLS[complexity]
-    logger.info(f"Downloading MediaPipe model: {url}")
+def load_pose_model():
+    """Load the YOLO-pose model on GPU if available (else CPU).
+    Returns (model, device_str)."""
     try:
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-        model_path.write_bytes(data)
-        logger.info(
-            f"Wrote model to {model_path} ({len(data) / 1024 / 1024:.1f} MB)"
-        )
-    except Exception as e:
-        raise ModelDownloadError(
-            f"Failed to download MediaPipe model from {url}: {e}\n"
-            f"You can download it manually and place it at: {model_path}"
-        ) from e
-    return model_path
-
-
-def make_pose_detector():
-    """Create a MediaPipe PoseLandmarker via the Tasks API."""
-    try:
-        import mediapipe as mp
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision as mp_vision
+        from ultralytics import YOLO
     except ImportError as e:
-        raise MediaPipeImportError(
-            "MediaPipe not installed or too old. Run: pip install --upgrade mediapipe"
+        raise PoseImportError(
+            "ultralytics not installed. Run: pip install ultralytics"
         ) from e
-
-    model_path = ensure_model(MODEL_COMPLEXITY)
-
-    base_options = mp_python.BaseOptions(model_asset_path=str(model_path))
-    options = mp_vision.PoseLandmarkerOptions(
-        base_options=base_options,
-        running_mode=mp_vision.RunningMode.IMAGE,
-        num_poses=1,
-        min_pose_detection_confidence=MIN_DETECTION_CONFIDENCE,
-        min_pose_presence_confidence=MIN_PRESENCE_CONFIDENCE,
-        min_tracking_confidence=MIN_TRACKING_CONFIDENCE,
-        output_segmentation_masks=False,
-    )
-    detector = mp_vision.PoseLandmarker.create_from_options(options)
-    return detector, mp
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:  # noqa: BLE001
+        device = "cpu"
+    try:
+        model = YOLO(POSE_MODEL)
+        model.to(device)
+    except Exception as e:  # noqa: BLE001  (download or load failure)
+        raise ModelDownloadError(
+            f"Failed to load YOLO-pose model {POSE_MODEL!r}: {e}"
+        ) from e
+    return model, device
 
 
 # -- Bbox padding and cropping -------------------------------------------------
@@ -429,21 +402,29 @@ def empty_landmark_values() -> List[float]:
     return [float("nan")] * (33 * 4)
 
 
-def extract_landmarks_from_result(
-    result, crop_x: int, crop_y: int, crop_w: int, crop_h: int,
-) -> List[float]:
-    if not result.pose_landmarks or len(result.pose_landmarks) == 0:
-        return empty_landmark_values()
-    lms = result.pose_landmarks[0]
-    if len(lms) != 33:
-        return empty_landmark_values()
-    out: List[float] = []
-    for lm in lms:
-        out.append(float(crop_x + lm.x * crop_w))
-        out.append(float(crop_y + lm.y * crop_h))
-        out.append(float(lm.z))
-        out.append(float(lm.visibility))
-    return out
+def landmarks_from_result(result, crop_x: int, crop_y: int) -> Optional[List[float]]:
+    """Map the top-confidence person's COCO-17 keypoints from one YOLO result into
+    the BlazePose-33 flat landmark row (absolute image px; per-keypoint conf ->
+    visibility). Returns None if the crop had no detected person. Non-COCO
+    landmarks and all `_z` columns stay NaN (read by no consumer)."""
+    kps = getattr(result, "keypoints", None)
+    if kps is None or kps.xy is None or len(kps.xy) == 0:
+        return None
+    xy = kps.xy.cpu().numpy()          # (n, 17, 2) in crop-local pixels
+    conf = (kps.conf.cpu().numpy() if kps.conf is not None
+            else np.ones(xy.shape[:2], dtype=float))
+    boxes = getattr(result, "boxes", None)
+    if boxes is not None and boxes.conf is not None and len(boxes.conf) == len(xy):
+        bi = int(boxes.conf.cpu().numpy().argmax())   # the subject = top-conf person
+    else:
+        bi = 0
+    kp_xy, kp_conf = xy[bi], conf[bi]
+    vals = dict.fromkeys(LANDMARK_COLUMNS, float("nan"))
+    for ci, name in COCO17_TO_LANDMARK.items():
+        vals[f"{name}_x_px"] = float(crop_x + kp_xy[ci][0])
+        vals[f"{name}_y_px"] = float(crop_y + kp_xy[ci][1])
+        vals[f"{name}_visibility"] = float(kp_conf[ci])
+    return [vals[c] for c in LANDMARK_COLUMNS]
 
 
 # -- Main processing -----------------------------------------------------------
@@ -457,9 +438,9 @@ def process_video(
     """Walk the video, run pose on each in-scope detection, return rows.
 
     For each in-scope detection, the crop has all OTHER detections on the same
-    frame (in or out of scope) masked out before being passed to MediaPipe.
-    This prevents single-person MediaPipe from picking the wrong person when
-    bboxes overlap.
+    frame (in or out of scope) masked out before pose runs, and the highest-
+    confidence person in the crop is taken. This prevents the pose model from
+    locking onto the wrong person when bboxes overlap.
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -467,7 +448,7 @@ def process_video(
     img_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     img_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    detector, mp = make_pose_detector()
+    detector, device = load_pose_model()
 
     rows: List[Dict] = []
 
@@ -479,14 +460,14 @@ def process_video(
 
     # All detections (not just in-scope) by frame, used for masking. Includes
     # transient and out-of-scope tracks because they still represent real
-    # people whose bodies could confuse MediaPipe.
+    # people whose bodies could confuse the (single-subject-per-crop) pose model.
     by_frame_all: Dict[int, pd.DataFrame] = dict(
         tuple(all_players_df.groupby("frame"))
     )
 
     logger.info(
-        f"Running pose on {len(scope_df)} in-scope detections across "
-        f"{len(by_frame_scope)} frames (max frame {last_frame})..."
+        f"Running YOLO-pose ({POSE_MODEL}, {device}) on {len(scope_df)} in-scope "
+        f"detections across {len(by_frame_scope)} frames (max frame {last_frame})..."
     )
 
     current_frame = -1
@@ -517,6 +498,10 @@ def process_video(
                         float(d["bbox_x2"]), float(d["bbox_y2"]),
                     )
 
+            # Build one masked crop per in-scope detection, then run them as a
+            # single batched GPU call (the real speedup vs per-crop CPU).
+            crops: List[np.ndarray] = []
+            meta: List[Tuple[pd.Series, int, int, Optional[int]]] = []
             for _, det in scope_dets.iterrows():
                 tid = int(det["track_id"])
                 x1, y1, x2, y2 = (
@@ -526,47 +511,40 @@ def process_video(
                 px1, py1, px2, py2 = pad_and_clip_bbox(
                     x1, y1, x2, y2, img_w, img_h, BBOX_PAD_FRAC,
                 )
-                crop_w = px2 - px1
-                crop_h = py2 - py1
-
-                if crop_w <= 0 or crop_h <= 0:
-                    landmarks = empty_landmark_values()
-                    pose_detected = False
-                else:
-                    crop = frame[py1:py2, px1:px2]
-                    other_bboxes = [
-                        bb for other_tid, bb in all_bboxes.items()
-                        if other_tid != tid
-                    ]
-                    if other_bboxes:
-                        crop = mask_other_detections(
-                            crop, (px1, py1),
-                            (x1, y1, x2, y2),
-                            other_bboxes,
-                        )
-                    crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                    mp_image = mp.Image(
-                        image_format=mp.ImageFormat.SRGB,
-                        data=crop_rgb,
+                if px2 - px1 <= 0 or py2 - py1 <= 0:
+                    meta.append((det, px1, py1, None))
+                    continue
+                crop = frame[py1:py2, px1:px2]
+                other_bboxes = [
+                    bb for other_tid, bb in all_bboxes.items() if other_tid != tid
+                ]
+                if other_bboxes:
+                    crop = mask_other_detections(
+                        crop, (px1, py1), (x1, y1, x2, y2), other_bboxes,
                     )
-                    result = detector.detect(mp_image)
-                    if not result.pose_landmarks:
-                        landmarks = empty_landmark_values()
-                        pose_detected = False
-                    else:
-                        landmarks = extract_landmarks_from_result(
-                            result, px1, py1, crop_w, crop_h,
-                        )
-                        pose_detected = not all(
-                            np.isnan(v) for v in landmarks
-                        )
-                        if pose_detected:
-                            pose_detected_count += 1
+                meta.append((det, px1, py1, len(crops)))
+                crops.append(crop)
+
+            results = (
+                detector.predict(crops, device=device, conf=POSE_MIN_CONFIDENCE,
+                                 verbose=False)
+                if crops else []
+            )
+
+            for det, px1, py1, ridx in meta:
+                landmarks = None
+                if ridx is not None:
+                    landmarks = landmarks_from_result(results[ridx], px1, py1)
+                pose_detected = landmarks is not None
+                if pose_detected:
+                    pose_detected_count += 1
+                else:
+                    landmarks = empty_landmark_values()
 
                 row = {
                     "frame":         int(det["frame"]),
                     "t_sec":         float(det["t_sec"]),
-                    "track_id":      tid,
+                    "track_id":      int(det["track_id"]),
                     "is_user":       bool(det["is_user"]),
                     "pose_detected": bool(pose_detected),
                 }
@@ -586,10 +564,6 @@ def process_video(
                 )
     finally:
         cap.release()
-        try:
-            detector.close()
-        except Exception:
-            pass
 
     rate = pose_detected_count / processed_dets if processed_dets else 0.0
     logger.info(
@@ -762,7 +736,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except VideoError as e:
         print(f"Video error: {e}", file=sys.stderr)
         return 1
-    except (MediaPipeImportError, ModelDownloadError) as e:
+    except (PoseImportError, ModelDownloadError) as e:
         print(f"Dependency error: {e}", file=sys.stderr)
         return 2
 

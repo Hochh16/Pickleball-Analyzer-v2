@@ -81,7 +81,7 @@ print('repo ready at', REPO)
 
     cells.append(code(
 """# Deps: Colab has torch/opencv/numpy/pandas; the stages also need these.
-!pip -q install ultralytics mediapipe pyarrow 2>/dev/null | tail -1
+!pip -q install ultralytics pyarrow 2>/dev/null | tail -1
 print('deps ready')
 """))
 
