@@ -179,7 +179,13 @@ def extract_track_appearance(df: pd.DataFrame, track_ids, video_path: Path,
     """Sample frames per track, crop the bbox, and build median upper-/lower-body
     HSV histograms (separate, since teammates often share a top color but differ
     in bottoms). Returns {tid: {"upper": hist, "lower": hist}}; {} if no usable
-    video, which makes the caller fall back to height + continuity."""
+    video, which makes the caller fall back to height + continuity.
+
+    Frames are fetched in a SINGLE SEQUENTIAL PASS rather than random-seeking to
+    each sample: on 4K H.264 a `CAP_PROP_POS_FRAMES` seek re-decodes from the
+    nearest keyframe and costs seconds each (~80 seeks was the dominant cost of
+    this stage). Sequential grab()/retrieve() — decoding only the sampled frames —
+    is ~10x faster and, being exact, avoids OpenCV's imprecise-seek frame drift."""
     try:
         import cv2
     except Exception:
@@ -189,43 +195,65 @@ def extract_track_appearance(df: pd.DataFrame, track_ids, video_path: Path,
         log.warning(f"no {video_path}; appearance re-id disabled "
                     "(falling back to height + continuity)")
         return {}
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        log.warning(f"could not open {video_path}; appearance re-id disabled")
-        return {}
     want = set(int(t) for t in track_ids)
     cols = ["track_id", "frame", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2"]
     sub = df[df["track_id"].isin(want)][cols]
-    feats: Dict[int, dict] = {}
+
+    # Plan which (tid, bbox) crops to grab on each sampled frame — same sample
+    # indices as before, just gathered so we can fetch them in frame order.
+    plan: Dict[int, list] = {}
     for tid, t in sub.groupby("track_id"):
         t = t.sort_values("frame")
         if len(t) == 0:
             continue
         idx = np.unique(np.linspace(0, len(t) - 1,
                                     min(n_samples, len(t))).astype(int))
-        uh, lh = [], []
         for r in t.iloc[idx].itertuples(index=False):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(r.frame))
-            ok, fr = cap.read()
+            plan.setdefault(int(r.frame), []).append(
+                (int(tid), r.bbox_x1, r.bbox_y1, r.bbox_x2, r.bbox_y2))
+    if not plan:
+        return {}
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        log.warning(f"could not open {video_path}; appearance re-id disabled")
+        return {}
+    max_frame = max(plan)
+    hists: Dict[int, dict] = {int(t): {"uh": [], "lh": []} for t in want}
+    fno = -1
+    try:
+        while fno < max_frame:
+            if not cap.grab():         # advance; decode deferred to retrieve()
+                break
+            fno += 1
+            crops = plan.get(fno)
+            if not crops:
+                continue
+            ok, fr = cap.retrieve()    # decode only the sampled frames
             if not ok:
                 continue
             H, W = fr.shape[:2]
-            x1 = max(0, min(W - 1, int(r.bbox_x1)))
-            x2 = max(x1 + 1, min(W, int(r.bbox_x2)))
-            y1 = max(0, min(H - 1, int(r.bbox_y1)))
-            y2 = max(y1 + 1, min(H, int(r.bbox_y2)))
-            crop = fr[y1:y2, x1:x2]
-            if crop.size == 0 or crop.shape[0] < 4:
-                continue
-            mid = crop.shape[0] // 2
-            uh.append(_hsv_hist(crop[:mid]))
-            lh.append(_hsv_hist(crop[mid:]))
-        if uh:
-            feats[int(tid)] = {"upper": np.median(np.stack(uh), axis=0),
-                               "lower": np.median(np.stack(lh), axis=0)}
-    cap.release()
+            for tid, bx1, by1, bx2, by2 in crops:
+                x1 = max(0, min(W - 1, int(bx1)))
+                x2 = max(x1 + 1, min(W, int(bx2)))
+                y1 = max(0, min(H - 1, int(by1)))
+                y2 = max(y1 + 1, min(H, int(by2)))
+                crop = fr[y1:y2, x1:x2]
+                if crop.size == 0 or crop.shape[0] < 4:
+                    continue
+                mid = crop.shape[0] // 2
+                hists[tid]["uh"].append(_hsv_hist(crop[:mid]))
+                hists[tid]["lh"].append(_hsv_hist(crop[mid:]))
+    finally:
+        cap.release()
+
+    feats: Dict[int, dict] = {}
+    for tid, h in hists.items():
+        if h["uh"]:
+            feats[tid] = {"upper": np.median(np.stack(h["uh"]), axis=0),
+                          "lower": np.median(np.stack(h["lh"]), axis=0)}
     log.info(f"appearance: built color signatures for {len(feats)}/{len(want)} "
-             "near-side tracks")
+             "tracks (single sequential pass)")
     return feats
 
 
@@ -387,7 +415,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 | {tr["track_id"] for tr in near_nonseed})
     if partner_anchor:
         feat_ids.add(partner_anchor["track_id"])
-    feats = extract_track_appearance(df, feat_ids, folder / "video.mp4", log)
+    # One sequential decode pass for EVERY track we'll need a signature for (near
+    # for user/partner, far for opponents — disjoint sets) so the video is decoded
+    # once, not twice.
+    all_feats = extract_track_appearance(
+        df, feat_ids | {t["track_id"] for t in far}, folder / "video.mp4", log)
+    feats = all_feats
     user_feat = combine_feats([feats.get(tr["track_id"]) for tr in seed_user])
     partner_feat = feats.get(partner_anchor["track_id"]) if partner_anchor else None
     partner_height = partner_anchor["height_ft"] if partner_anchor else np.nan
@@ -450,8 +483,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             if len(tr["frame_set"] & a_anchor["frame_set"]) / max(1, tr["n"]) > SIMULTANEITY_MAX:
                 b_anchor = tr
                 break
-        opp_feats = extract_track_appearance(
-            df, {t["track_id"] for t in far}, folder / "video.mp4", log)
+        opp_feats = all_feats   # extracted in the single pass above
         a_feat = opp_feats.get(a_anchor["track_id"])
         a_height = a_anchor["height_ft"]
         a_tracks = [a_anchor]
