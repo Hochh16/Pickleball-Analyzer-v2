@@ -55,6 +55,11 @@ SHOT_FRAME_EXCLUSION_WINDOW = 3
 # displacement-based reversal at the refined ground-contact frame (see contract
 # follow-ups), which should recover synthetic recall without a high floor.
 Y_FLIP_MIN_SPEED_PX_PER_FRAME = 2.0
+# A ground bounce is a local MAXIMUM of the ball's pixel_y (it descends to the
+# surface then rebounds); an arc APEX is a pixel_y minimum, so peak-detecting
+# pixel_y ignores apexes. Require this much descent INTO and rebound OUT OF the
+# peak (px @1920, scaled by frame_width/1920) to reject flat mid-air wobble.
+BOUNCE_PROMINENCE_PX = 9.0
 AT_FEET_CONFIDENCE_FACTOR = 0.7
 
 # In-court classification (court is 20 ft wide x 44 ft long).
@@ -304,33 +309,32 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
                           (fy[ff] - fy[i]) / (ff - i)])
         return v_in, v_out
 
-    # --- Impulse candidates: same signal as Stage 5.
-    min_turn = params["min_turn_rate_deg"]
-    min_sr = params["min_speed_change_ratio"]
-    min_speed = params["min_ball_speed_px_per_frame"]
-
+    # --- Bounce candidates: local MAXIMA of the ball's pixel_y (the descent bottom
+    # where a ground contact reverses vertical direction). An arc apex is a pixel_y
+    # MINIMUM, so this primitive ignores apexes -- unlike the generic impulse signal
+    # (single-frame turn/speed), which fired at both and buried the ~10 real bounces
+    # under ~230 noise candidates on a jittery ball. Detect peaks on a gap-
+    # interpolated, lightly-smoothed pixel_y and require real descent INTO and
+    # rebound OUT OF the peak (prominence) to reject flat mid-air wobble; the y-flip
+    # check below then re-confirms the vertical reversal on the raw trajectory.
     n_low_speed = 0
     n_gap_rejected = 0
+    prom = params["bounce_prominence_px"]
+    Wp = params["impact_window_frames"]
+    yi = (np.interp(np.arange(n), known_idx, fy[known_idx])
+          if len(known_idx) >= 2 else fy.copy())     # fill gaps so hidden bounces peak
+    ys = np.convolve(yi, np.ones(3) / 3.0, mode="same")  # tame per-frame jitter
     cand: List[Tuple[int, float]] = []
-    for i in range(1, n - 1):
-        if math.isnan(turn[i]):
-            # Could the impulse signal be missed because of a gap here?
-            if not known[i]:
-                # Bounce inside a ball gap is undetectable — counted only if a
-                # nearby strong signal would have fired.
-                pass
+    for i in range(Wp, n - Wp):
+        if ys[i] < ys[i - Wp:i + Wp + 1].max() - EPS:
+            continue                                   # not the local pixel_y max
+        descent = ys[i] - ys[i - Wp:i].min()           # fell this far into the peak
+        rebound = ys[i] - ys[i + 1:i + Wp + 1].min()   # rose this far back out
+        if descent < prom or rebound < prom:
             continue
-        impulse = (turn[i] >= min_turn) or (sratio[i] >= min_sr)
-        if not impulse:
-            continue
-        v_in = vel(i)
-        v_out = vel(i + 1)
-        s_max = max(np.linalg.norm(v_in), np.linalg.norm(v_out))
-        if s_max < min_speed:
-            n_low_speed += 1
-            continue
-        score = max(turn[i] / 180.0, min(1.0, sratio[i]))
-        cand.append((i, score))
+        if not known[max(0, i - 2):i + 3].any():
+            continue                                   # peak sits deep inside a gap
+        cand.append((i, float(min(descent, rebound))))
     n_candidates = len(cand)
 
     # --- Exclude candidates within SHOT_FRAME_EXCLUSION_WINDOW of any Stage-5
@@ -400,17 +404,21 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
             return None, float("inf"), float("inf")
         return best[1], best[0][0], best[2]
 
+    yflip_floor = 0.3 * params["resolution_scale"]
+
     def y_flipped(i: int) -> Tuple[Optional[bool], Optional[float], Optional[float]]:
         """A real ground bounce reverses vertical direction: descending (v_y > 0,
-        pixel_y increasing) then ascending (v_y < 0). Required for EVERY bounce —
-        an impulse alone (no reversal) is the ball changing direction in the air.
-        NOTE: uses windowed velocity (bool() guards numpy-bool identity)."""
-        v_in, v_out = windowed_velocity(i)
-        if v_in is None or v_out is None:
+        pixel_y increasing) then ascending (v_y < 0). Measured on the SMOOTHED
+        trajectory over the velocity window — the raw per-frame velocity is too
+        jittery and its floor was tuned for sharp impulse hits, but a soft dink
+        bounce rebounds gently (~prominence/window px/frame). A small floor passes
+        real bounces while rejecting flat mid-air wobble."""
+        lo, hi = max(0, i - k), min(n - 1, i + k)
+        if i == lo or i == hi:
             return None, None, None
-        v_y_in = float(v_in[1])
-        v_y_out = float(v_out[1])
-        flipped = bool((v_y_in > +y_flip_floor) and (v_y_out < -y_flip_floor))
+        v_y_in = float((ys[i] - ys[lo]) / (i - lo))
+        v_y_out = float((ys[hi] - ys[i]) / (hi - i))
+        flipped = bool((v_y_in > +yflip_floor) and (v_y_out < -yflip_floor))
         return flipped, v_y_in, v_y_out
 
     n_rejected_no_yflip = 0
@@ -657,6 +665,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "assoc_max_px": assoc_max_px,
         "assoc_max_px_min": ASSOC_MAX_PX_MIN * res_scale,
         "min_ball_speed_px_per_frame": MIN_BALL_SPEED_PX_PER_FRAME * res_scale,
+        "bounce_prominence_px": BOUNCE_PROMINENCE_PX * res_scale,
         "y_flip_min_speed_px_per_frame": y_flip_min,
         "at_feet_confidence_factor": AT_FEET_CONFIDENCE_FACTOR,
         "in_court_tolerance_ft": args.in_court_tolerance_ft,
