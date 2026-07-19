@@ -386,9 +386,17 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         # lands up to ~2 ft past the kitchen line, not only inside the kitchen).
         soft = abs(landing_y - NET_Y_FT) <= KITCHEN_MAX_DIST_FT
         if soft:
-            # dink hit from the kitchen, drop hit from deeper (third-shot drop)
-            return ("dink", 0.75) if zone == "kitchen" else ("drop", 0.75)
-        return "drive", 0.78   # deep landing + not a lob = a flat fast ball
+            # dink is hit from AT/NEAR the net (kitchen or transition — operator:
+            # players dink from a step or two behind the kitchen line); a drop is
+            # the soft shot from DEEP (baseline, the third-shot drop).
+            return ("drop", 0.78) if zone == "baseline" else ("dink", 0.78)
+        # Speed guard: a drive REQUIRES real pace. A slow ball near the net whose
+        # landing read a bit deep (soft-shot depth is noisy for an airborne ball)
+        # is still a dink, not a drive. Baseline stays out of this (could be a drop).
+        if (post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
+                and zone != "baseline"):
+            return "dink", 0.7
+        return "drive", 0.78   # deep landing + real pace = a flat fast ball
 
     # --- Fallback (no landing): arc + depth-corrupted speed, lower confidence ----
     if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
@@ -397,10 +405,10 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
             and post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
             and zone != "baseline"):
         return "reset", 0.55
-    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone == "kitchen":
-        return "dink", 0.5
-    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("transition", "baseline"):
-        return "drop", 0.45
+    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("kitchen", "transition"):
+        return "dink", 0.5   # slow ball hit from at/near the net = dink (a step back still dinks)
+    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone == "baseline":
+        return "drop", 0.45  # slow ball from deep = drop (third-shot drop)
     # Tweener (16-25 ft/s) with no landing: speed is ambiguous + depth-corrupted,
     # so resolve by trajectory SHAPE -- flat => drive, lofted => drop.
     if post_ftps is not None and DINK_MAX_SPEED_FTPS < post_ftps < DRIVE_MIN_SPEED_FTPS:

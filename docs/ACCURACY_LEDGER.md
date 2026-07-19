@@ -24,7 +24,7 @@ transition zone into the kitchen (the rest are the far-side returns).
 | 3 Pose | ✅ good | YOLO-pose 100% detect, 5–9 px median drift vs MediaPipe, skeletons track tightly. |
 | 4 Ball | 🟡 ok / jittery | 87% visible, 37 gaps (mostly 2–6 frames), median jerk 3 px (p90 9.5), a few >800 px teleport outliers. Decent; the jitter only bit shot detection. |
 | **5 Shots** | ✅ **FIXED 2026-07-19** | Was 2/11 (~18% recall). Root cause: the adjacent-court teleport-in gate rejected real shots (ball occluded at the paddle strike → reappears "teleported"). Fix: gate rejects a teleport only if the run is a short BLIP. Now **13 shots, hitter side alternates near/far all rally**, recall ~100% (13 vs 11, +1 pre-rally, ~2 extra). |
-| **6 Shot type** | 🔴 **NEXT** | With shots now correct, types are wrong: labeled drives 5 / drops 4 / dinks 2 / overhead 1 / lob 1 for a clip that was **mostly dinks + 1 drop**. Over-calls drives/drops, under-calls dinks; a dink/drop drill shouldn't yield drives+overhead+lob. Stroke side is fine (5 user shots → 4 BH/1 FH; opponents "unknown" by design). |
+| **6 Shot type** | 🟡 **improved 2026-07-19** | **6/10 rally shots correct** (return✓, drive✓✓, drop✓, 2/5 dinks✓). Fixes: overhead→stroke axis, lob→receiver-at-kitchen, volley rules, dink/drop by distance-from-net + a slow-ball speed guard. Remaining 3 dink misses + serve are UPSTREAM: airborne-ball **speed inflation** (Stage 4 geometry) reads dinks as 20–27 ft/s, and **serve detection** never fires (Stage 5). Stroke side fine (4 BH/1 FH). |
 | 5.5 Bounces | ✅ **FIXED 2026-07-19** | Was 5 (~55% recall), missing soft near-kitchen dink bounces. Root cause: candidates from the generic impulse signal (fired at arc apexes + jitter). Fix: detect candidates as **pixel_y descent-peaks** (an apex is a pixel_y *minimum*, so apexes are ignored) + y-flip re-check on the smoothed trajectory. Now **11 bounces** matching the operator landing map; **9/13 shots get a `landing_y`** (was 0), restoring shot-type's primary signal. |
 | 7 Rally / 8 Metrics | 🟡 improving | 1 rally of 13 (was 1 of 2). Position/heatmaps from tracking are plausible; shot-derived metrics now rest on a correct shot layer. |
 | 9 Rating | 🟡 improving | 3.2 → 3.23, confidence 0.223 → 0.267 after the shot fix. Still rests on imperfect shot-type + bounces. |
@@ -79,8 +79,23 @@ hitter deep/baseline, e.g. the third-shot drop = shot 6). Also: depth-corrupted
 speed (no-landing shots read fast→drive) and the near-side landing under-read
 (a far dink landing near-kitchen reads deep) still hurt 7/8/11.
 
-**Remaining Stage-6 work:** (a) dink/drop split per the decision above; (b) serve
-detection (shot 2, upstream in Stage 5).
+**FIX APPLIED 2026-07-19 (operator chose "distance from net"):** dink = soft/slow +
+hitter at kitchen OR transition (a step behind the line still dinks); drop = soft +
+hitter at baseline (third-shot drop). Plus a **speed guard**: a slow ball
+(post ≤ DINK_MAX) near the net is a dink even if its landing read a bit deep — a
+drive requires real pace. Result on the clip: **6/10 rally shots correct** (was
+~2 before Stage-6 work, 5 after overhead/lob/volley): serve✗, return✓, drive✓✓,
+drop✓, dinks 9✓ 10✓, 7/8/11✗.
+
+**Remaining Stage-6 errors are UPSTREAM, not Stage-6 logic:**
+- **Airborne-ball speed inflation** (shots 7/8/11): a dink reads post ≈ 20–27 ft/s
+  because the ground-homography projects the ball while it's mid-air, inflating its
+  court-speed; can't loosen the drive threshold without flipping real drives (4/5)
+  to dinks. **Fix at Stage 4/geometry** (estimate ball height / use apex-relative
+  speed), not here.
+- **Serve detection** (shot 2 → drive): serve never fires — upstream in Stage 5
+  (dead-time gap + launch at clip start).
+These two are the next foundations for shot accuracy.
 
 ## Stage 6 shot-type — design notes
 
