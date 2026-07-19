@@ -18,7 +18,7 @@ transition zone into the kitchen (the rest are the far-side returns).
 
 | Stage | Verdict | Evidence / notes |
 |---|---|---|
-| 1 Court calibration | 🟡 roughly OK | Far kitchen reads correct (players' median court-y ≈ 30 ft = far kitchen). Near players read *behind* the baseline (y≈−2 to −3 — drill positioning or small offset). Far-side foot-y noisy (up to 57 ft — known homography sensitivity; roles, not geometry, drive far scope). Worth an operator eyeball. |
+| 1 Court calibration | 🔴 near side off | **Confirmed by operator:** near players were AT the kitchen for the dinks, but the pipeline reads them y≈−3 to +13 (behind baseline early). So the near-side homography is offset/compressed — corrupts every near-side zone (kitchen vs transition vs baseline), which flips dink↔drop. Far kitchen reads correct (y≈30); far-side foot-y noisy (up to 60, known sensitivity). |
 | 2 Player tracking | ✅ good | Correct 4 players by role; background/adjacent-court excluded; user = left-near. |
 | 2.5 Roles | ✅ good | Sensible, byte-identical to reference; single-pass decode fix kept output identical. |
 | 3 Pose | ✅ good | YOLO-pose 100% detect, 5–9 px median drift vs MediaPipe, skeletons track tightly. |
@@ -29,11 +29,37 @@ transition zone into the kitchen (the rest are the far-side returns).
 | 7 Rally / 8 Metrics | 🟡 improving | 1 rally of 13 (was 1 of 2). Position/heatmaps from tracking are plausible; shot-derived metrics now rest on a correct shot layer. |
 | 9 Rating | 🟡 improving | 3.2 → 3.23, confidence 0.223 → 0.267 after the shot fix. Still rests on imperfect shot-type + bounces. |
 
-## Fix priority (remaining)
+## Fix priority (remaining) — foundations first
 
-1. **Stage 6 shot-type** — dinks mislabeled as drives/drops. Biggest remaining
-   accuracy gap; drives the dink/third-shot/volley categories of the rating.
-2. **Stage 5.5 bounces** — detecting ball-at-feet, not ground bounces.
-3. **Court calibration** — confirm the near-baseline offset with the operator.
+1. **Stage 5.5 bounces** ← CURRENT FOCUS. Detect real ground landings, not
+   ball-at-feet. Restores shot-type's primary signal (`landing_y`).
+2. **Near-side calibration** — fix the offset so near-side zones are correct.
+3. **Stage 6 shot-type** — after 1 & 2 give it good inputs. Design notes below.
 4. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
    test positioning/rally/shot-mix representatively.
+
+## Stage 6 shot-type — design notes (DEFERRED until bounces + calibration)
+
+Ground truth for the 20 s clip (operator): **1 serve, 1 return, 2 drives (1 hard,
+1 soft), 1 drop, 5 dinks (4 + 1 netted).** Pipeline gave drives 5 / drops 4 /
+dinks 2 / overhead 1 / lob 1, **0 serves**. All 13 shots had `landing_y = None`
+(bounces broken) → classifier ran entirely in its low-confidence speed/arc
+fallback. Fix the inputs first; then:
+
+**Known Stage-6 logic bugs (operator-confirmed):**
+- **Lob** (`classify_type` line ~360) must require the **receiver at the kitchen**
+  — a lob is a soft ball lofted *over a player's head while they're at the net*.
+  Currently a soft high shot to baseline opponents is mislabeled a lob.
+- **"Overhead" is a STROKE, not a shot type.** It belongs on the stroke axis with
+  forehand/backhand (how the ball was struck — above the head), not in
+  `shot_type`. An overhead is tactically usually a drive/put-away. Split the axes.
+- **Serve** was not detected (0 vs 1) — check the serve detector (dead-time gap +
+  launch) at the clip start.
+
+**Volley classification (no bounce → no landing).** Operator rules — decide type
+from **ball speed + receiver location + where it WOULD have landed**:
+- slow ball taken out of the air **at the kitchen** → **dink**
+- fast ball taken out of the air **at the kitchen** → **drive** (speed-up)
+- ball taken out of the air from **transition/baseline** → **drive**
+- if a player started at the baseline, the ball went **over their head**, and they
+  ran back to hit it out of the air from deep → the PRIOR shot was a **lob**.
