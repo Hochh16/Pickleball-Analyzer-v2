@@ -25,22 +25,39 @@ transition zone into the kitchen (the rest are the far-side returns).
 | 4 Ball | 🟡 ok / jittery | 87% visible, 37 gaps (mostly 2–6 frames), median jerk 3 px (p90 9.5), a few >800 px teleport outliers. Decent; the jitter only bit shot detection. |
 | **5 Shots** | ✅ **FIXED 2026-07-19** | Was 2/11 (~18% recall). Root cause: the adjacent-court teleport-in gate rejected real shots (ball occluded at the paddle strike → reappears "teleported"). Fix: gate rejects a teleport only if the run is a short BLIP. Now **13 shots, hitter side alternates near/far all rally**, recall ~100% (13 vs 11, +1 pre-rally, ~2 extra). |
 | **6 Shot type** | 🔴 **NEXT** | With shots now correct, types are wrong: labeled drives 5 / drops 4 / dinks 2 / overhead 1 / lob 1 for a clip that was **mostly dinks + 1 drop**. Over-calls drives/drops, under-calls dinks; a dink/drop drill shouldn't yield drives+overhead+lob. Stroke side is fine (5 user shots → 4 BH/1 FH; opponents "unknown" by design). |
-| 5.5 Bounces | 🔴 wrong kind | All 6 detected are `at_feet` events near the baselines (5/6 "OUT"), not true mid-court ground bounces. Detecting ball-near-feet, missing real bounces. Revisit with the ball-trajectory work. |
+| 5.5 Bounces | ✅ **FIXED 2026-07-19** | Was 5 (~55% recall), missing soft near-kitchen dink bounces. Root cause: candidates from the generic impulse signal (fired at arc apexes + jitter). Fix: detect candidates as **pixel_y descent-peaks** (an apex is a pixel_y *minimum*, so apexes are ignored) + y-flip re-check on the smoothed trajectory. Now **11 bounces** matching the operator landing map; **9/13 shots get a `landing_y`** (was 0), restoring shot-type's primary signal. |
 | 7 Rally / 8 Metrics | 🟡 improving | 1 rally of 13 (was 1 of 2). Position/heatmaps from tracking are plausible; shot-derived metrics now rest on a correct shot layer. |
 | 9 Rating | 🟡 improving | 3.2 → 3.23, confidence 0.223 → 0.267 after the shot fix. Still rests on imperfect shot-type + bounces. |
 
 ## Fix priority (remaining) — foundations first
 
-1. **Stage 5.5 bounces** ← CURRENT FOCUS. Detect real ground landings, not
-   ball-at-feet. Restores shot-type's primary signal (`landing_y`). Diagnosis:
-   234 noisy single-frame candidates (same as shots) → filters → 5, and the
-   in-rally KITCHEN bounces (one per dink) are MISSED; the 5 kept are mostly the
-   2 out-of-rally feed bounces + a couple. Needs cleaner candidate detection +
-   better ground-bounce-vs-apex/at-feet discrimination.
-2. **Stage 6 shot-type** — after bounces give it landings. Design notes below.
-   (Possible minor near-side foot-projection under-read to check — NOT calibration.)
+1. ~~Stage 5.5 bounces~~ ✅ DONE (pixel_y descent-peak detection; 5→11).
+2. **Stage 6 shot-type** ← NEXT. Now has landings; fix the type LOGIC — design
+   notes below (dink/drop zone dependency, lob receiver-position, overhead-as-
+   stroke, serve detection, volley rules). Ground truth still 7 drives / 2 dinks
+   vs 5 dinks. (Possible minor near-side foot-projection under-read to check —
+   NOT calibration — flips borderline kitchen dinks to transition→drop.)
 3. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
    test positioning/rally/shot-mix representatively.
+
+## Stage 5.5 bounces — ground truth (operator, 20 s clip)
+
+**≈ 9–10 real ground bounces** (volleys don't bounce):
+- **A. Out-of-rally, near side, behind the baseline (feeds):** ~2–3.
+- **B. Opponent hit → landed on the NEAR side (in-court):** 4 — 2 dinks in the near
+  **kitchen**, 1 return-serve in near **transition**, 1 drive in near transition.
+- **C. You/partner hit → landed on the FAR side:** 3 — 1 drop far **kitchen**,
+  1 serve far **transition**, 1 dink just outside the far kitchen (~within 2 ft).
+- **Not bounces (volleys, no landing):** opponent air-hit your dink; opponent
+  air-hit your drive at the kitchen line.
+- **Ambiguous:** 1 attempted dink that hit the net.
+
+**Detected 5 of ~9–10 (~55% recall):** f72/f307 = the feed bounces (A ✓),
+f794 = a near-transition (B ✓), f856 = far kitchen (C ✓), f730 = a far one.
+**Systematically MISSING the soft near-KITCHEN dink bounces (B) + some transition
+bounces.** Likely: soft kitchen bounce = small far-ish ball + weak vertical
+rebound (low y-flip) + the same 234-candidate single-frame noise. Fix like shots:
+cleaner (windowed) candidates + a ground-landing test that tolerates soft rebounds.
 
 ## Stage 6 shot-type — design notes (DEFERRED until bounces + calibration)
 
