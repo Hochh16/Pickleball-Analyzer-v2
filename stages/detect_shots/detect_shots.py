@@ -499,11 +499,18 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
 
     # --- Impulse shots (rally hits) ----------------------------------------
     for f in accepted:
-        # Adjacent-court gate: reject an impact whose ball run teleported in
-        # (the rally ball is continuous; a neighbouring-court ball is not).
+        # Adjacent-court gate: reject an impact whose ball run teleported in AND is
+        # only a short blip. A real rally shot is usually occluded at the paddle
+        # strike, so it too reappears "teleported" after the contact gap -- but it
+        # then launches a SUSTAINED run to the next contact, whereas a neighbouring-
+        # court ball flashes in for only a few frames. Requiring the blip length
+        # keeps the contamination defense without eating real (gap-occluded) shots
+        # (teleport-alone rejected ~80% of real shots on a multi-court venue).
         if contam_filter and teleport_in_pxpf(f) > teleport_thresh:
-            n_rejected_teleport += 1
-            continue
+            a_run, z_run = run_bounds(f)
+            if (z_run - a_run + 1) < min_serve_run:
+                n_rejected_teleport += 1
+                continue
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:
