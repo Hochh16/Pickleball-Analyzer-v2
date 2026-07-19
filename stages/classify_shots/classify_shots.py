@@ -348,7 +348,7 @@ def bounced_between(by, bknown, f0: int, f1: int,
 # --- Classification ----------------------------------------------------------
 
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
-                  landing_y=None, receiver_zone=None):
+                  landing_y=None, receiver_zone=None, is_volley=False):
     """Fused rule classifier for the TACTICAL shot type. The airborne ball's
     pixel-speed is depth-corrupted (a drive hit down-court reads slow) and its
     court projection explodes, so when a real bounce LANDING is available
@@ -361,6 +361,17 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     drive/put-away here. Returns (type, confidence)."""
     if is_serve:
         return "serve", 0.95
+    # --- Volley (ball taken out of the air; no bounce, so no landing signal).
+    #     Operator rules: classify from the hitter's zone + speed. At the kitchen a
+    #     slow air-ball is a dink, a fast one a speed-up drive; taken out of the air
+    #     from transition/baseline it's a drive. (A lob is judged on the PRIOR shot
+    #     via the receiver running back — not modeled here yet.)
+    if is_volley:
+        if zone == "kitchen":
+            if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
+                return "drive", 0.6
+            return "dink", 0.6
+        return "drive", 0.6
     # A lob is a high lofted arc AND slow AND goes over a receiver AT THE KITCHEN
     # (a lob only makes sense against a player at the net; a soft high ball to
     # deep opponents is a drop/drive, not a lob). Resolve before the landing split.
@@ -480,21 +491,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             r_pd = players.get((f, r_tid))
             if r_pd is not None:
                 receiver_zone = zone_from_court_y(r_pd["court_y"])
-        shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
-                                             post_ftps, pre_ftps, zone, landing_y,
-                                             receiver_zone)
-
-        # stroke side: forehand/backhand for the user (handedness known); an
-        # above-the-head contact is an 'overhead' stroke regardless of handedness.
-        hand = user_hand if is_user else None
-        side, side_conf = stroke_side(float(impact_x), pose, hand)
-        if contact_h == "high":
-            side, side_conf = "overhead", 0.7
-
         # volley: a shot is a volley iff the ball did NOT bounce since the
         # previous shot. Primary = local trajectory scan (recall-focused);
         # fall back to the Stage 5.5 bounce list only when the ball is too
-        # occluded between the two shots to judge locally.
+        # occluded between the two shots to judge locally. Computed BEFORE the
+        # type so a volley (no landing) uses the volley rules, not the fallback.
         shot_id = int(s["shot_id"])
         if is_serve or prev_shot_id is None or prev_frame is None:
             is_volley, vol_conf = False, 0.9
@@ -509,6 +510,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             else:
                 is_volley = not local  # bounce found -> not a volley
                 vol_conf = 0.85
+
+        shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
+                                             post_ftps, pre_ftps, zone, landing_y,
+                                             receiver_zone, is_volley)
+
+        # stroke side: forehand/backhand for the user (handedness known); an
+        # above-the-head contact is an 'overhead' stroke regardless of handedness.
+        hand = user_hand if is_user else None
+        side, side_conf = stroke_side(float(impact_x), pose, hand)
+        if contact_h == "high":
+            side, side_conf = "overhead", 0.7
 
         out = dict(s)  # carry through all Stage 5 fields
         out.update({
