@@ -61,7 +61,10 @@ BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
 LANDMARK_VIS_FLOOR = 0.5
 NET_Y_FT = 22.0
 
-SHOT_TYPES = {"serve", "drive", "dink", "drop", "lob", "overhead", "reset", "unknown"}
+SHOT_TYPES = {"serve", "drive", "dink", "drop", "lob", "reset", "unknown"}
+# 'overhead' is a STROKE (above-the-head contact), recorded on stroke_side, not a
+# tactical shot type. Stroke axis: forehand / backhand / overhead / unknown.
+STROKE_SIDES = {"forehand", "backhand", "overhead", "unknown"}
 STROKE_SIDES = {"forehand", "backhand", "unknown"}
 EPS = 1e-9
 
@@ -345,20 +348,25 @@ def bounced_between(by, bknown, f0: int, f1: int,
 # --- Classification ----------------------------------------------------------
 
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
-                  landing_y=None):
-    """Fused rule classifier. The airborne ball's pixel-speed is depth-corrupted
-    (a drive hit down-court reads slow) and its court projection explodes, so when
-    a real bounce LANDING is available (`landing_y` = the ball's landing court_y)
-    it drives the drive/drop/dink split — a *sound*, ground-projected signal.
-    Falls back to arc + (corrupted) speed only when there's no landing (volleys,
-    missed bounces), at lower confidence. Returns (type, confidence)."""
+                  landing_y=None, receiver_zone=None):
+    """Fused rule classifier for the TACTICAL shot type. The airborne ball's
+    pixel-speed is depth-corrupted (a drive hit down-court reads slow) and its
+    court projection explodes, so when a real bounce LANDING is available
+    (`landing_y` = the ball's landing court_y) it drives the drive/drop/dink split
+    — a *sound*, ground-projected signal. Falls back to arc + (corrupted) speed
+    when there's no landing (volleys, missed bounces), at lower confidence.
+    `receiver_zone` = the zone of the player about to receive (needed for a lob).
+    NOTE: 'overhead' is a STROKE (above-the-head contact), not a tactical type —
+    it's set on stroke_side by the caller; a high-contact ball is tactically a
+    drive/put-away here. Returns (type, confidence)."""
     if is_serve:
         return "serve", 0.95
-    # A lob is a high lofted arc AND slow. It lands deep but is a lob, so resolve
-    # it before the landing-zone split. The speed gate keeps a fast flat drive
-    # with a noisy-high measured arc from being mislabeled a lob.
+    # A lob is a high lofted arc AND slow AND goes over a receiver AT THE KITCHEN
+    # (a lob only makes sense against a player at the net; a soft high ball to
+    # deep opponents is a drop/drive, not a lob). Resolve before the landing split.
     if (arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC
-            and (post_ftps is None or post_ftps < DRIVE_MIN_SPEED_FTPS)):
+            and (post_ftps is None or post_ftps < DRIVE_MIN_SPEED_FTPS)
+            and receiver_zone == "kitchen"):
         return "lob", min(1.0, max(0.6, arc_frac))
 
     # --- Landing-aware path: the SOUND signal (bounces project reliably) ---------
@@ -369,14 +377,9 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         if soft:
             # dink hit from the kitchen, drop hit from deeper (third-shot drop)
             return ("dink", 0.75) if zone == "kitchen" else ("drop", 0.75)
-        # deep landing + not a lob = a flat fast ball -> drive (overhead if struck high)
-        if contact_h == "high":
-            return "overhead", 0.7
-        return "drive", 0.78
+        return "drive", 0.78   # deep landing + not a lob = a flat fast ball
 
     # --- Fallback (no landing): arc + depth-corrupted speed, lower confidence ----
-    if contact_h == "high" and post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
-        return "overhead", 0.6
     if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
         return "drive", 0.6
     if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
@@ -469,12 +472,24 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
         # landing court_y from the first bounce after this shot (sound signal)
         landing_y = landing_index.get(int(s["shot_id"]))
+        # receiver = the player about to hit next; their zone WHEN THIS SHOT is
+        # struck decides whether a high slow ball is a lob (only vs a net player).
+        receiver_zone = None
+        if i + 1 < len(shots):
+            r_tid = int(shots[i + 1]["track_id"])
+            r_pd = players.get((f, r_tid))
+            if r_pd is not None:
+                receiver_zone = zone_from_court_y(r_pd["court_y"])
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
-                                             post_ftps, pre_ftps, zone, landing_y)
+                                             post_ftps, pre_ftps, zone, landing_y,
+                                             receiver_zone)
 
-        # stroke side: real only for the user (handedness known + mapped)
+        # stroke side: forehand/backhand for the user (handedness known); an
+        # above-the-head contact is an 'overhead' stroke regardless of handedness.
         hand = user_hand if is_user else None
         side, side_conf = stroke_side(float(impact_x), pose, hand)
+        if contact_h == "high":
+            side, side_conf = "overhead", 0.7
 
         # volley: a shot is a volley iff the ball did NOT bounce since the
         # previous shot. Primary = local trajectory scan (recall-focused);
