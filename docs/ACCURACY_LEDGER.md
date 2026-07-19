@@ -18,7 +18,7 @@ transition zone into the kitchen (the rest are the far-side returns).
 
 | Stage | Verdict | Evidence / notes |
 |---|---|---|
-| 1 Court calibration | 🔴 near side off | **Confirmed by operator:** near players were AT the kitchen for the dinks, but the pipeline reads them y≈−3 to +13 (behind baseline early). So the near-side homography is offset/compressed — corrupts every near-side zone (kitchen vs transition vs baseline), which flips dink↔drop. Far kitchen reads correct (y≈30); far-side foot-y noisy (up to 60, known sensitivity). |
+| 1 Court calibration | ✅ good (corrected) | Homography RMSE ~0; 4 corners map exactly to the court rectangle; kitchen lines project to y=15.5 / 28.5 (≈15/29 ✓). Earlier "near side off" was WRONG — the near players read behind the baseline early because they genuinely **feed from deep then move up** (drill; late dinks read y≈13 = kitchen edge). Possible *minor* ~2 ft near-side foot-projection under-read makes some kitchen dinks borderline (zone needs y≥13), but not a calibration bug. |
 | 2 Player tracking | ✅ good | Correct 4 players by role; background/adjacent-court excluded; user = left-near. |
 | 2.5 Roles | ✅ good | Sensible, byte-identical to reference; single-pass decode fix kept output identical. |
 | 3 Pose | ✅ good | YOLO-pose 100% detect, 5–9 px median drift vs MediaPipe, skeletons track tightly. |
@@ -32,10 +32,14 @@ transition zone into the kitchen (the rest are the far-side returns).
 ## Fix priority (remaining) — foundations first
 
 1. **Stage 5.5 bounces** ← CURRENT FOCUS. Detect real ground landings, not
-   ball-at-feet. Restores shot-type's primary signal (`landing_y`).
-2. **Near-side calibration** — fix the offset so near-side zones are correct.
-3. **Stage 6 shot-type** — after 1 & 2 give it good inputs. Design notes below.
-4. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
+   ball-at-feet. Restores shot-type's primary signal (`landing_y`). Diagnosis:
+   234 noisy single-frame candidates (same as shots) → filters → 5, and the
+   in-rally KITCHEN bounces (one per dink) are MISSED; the 5 kept are mostly the
+   2 out-of-rally feed bounces + a couple. Needs cleaner candidate detection +
+   better ground-bounce-vs-apex/at-feet discrimination.
+2. **Stage 6 shot-type** — after bounces give it landings. Design notes below.
+   (Possible minor near-side foot-projection under-read to check — NOT calibration.)
+3. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
    test positioning/rally/shot-mix representatively.
 
 ## Stage 6 shot-type — design notes (DEFERRED until bounces + calibration)
