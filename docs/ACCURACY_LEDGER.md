@@ -59,7 +59,30 @@ bounces.** Likely: soft kitchen bounce = small far-ish ball + weak vertical
 rebound (low y-flip) + the same 234-candidate single-frame noise. Fix like shots:
 cleaner (windowed) candidates + a ground-landing test that tolerates soft rebounds.
 
-## Stage 6 shot-type — design notes (DEFERRED until bounces + calibration)
+## Stage 6 shot-type — per-shot ground truth + dink finding (2026-07-19)
+
+Operator per-shot truth (aligned to detected shots by side-alternation + ~1 s
+offset; my shots 0–1 = the 2 pre-rally feeds): 2=serve, 3=return, 4/5=drive,
+**6=drop**, **7/8/9/10/11=dink** (11 netted), 12=post-net.
+After the overhead/lob/volley fixes: 4/5 drive ✓, **6 drop ✓**, serve✗(not
+detected→drive), dinks only 9 ✓ (a volley) — 7/8/10/11 → drive.
+
+**KEY FINDING (verified, NOT a bug):** the near players dink from ~2–7 ft BEHIND
+the kitchen line (their feet project to court_y ≈ 8–13 = transition; the homography
+is correct — kitchen line projects to 15.5). So requiring the hitter *at* the
+kitchen (`zone=="kitchen"`, y≥13) for a dink is too strict — real dinks come from a
+step back. **DEFINITIONAL DECISION NEEDED (operator):** should a soft shot from the
+near transition (a step behind the kitchen line) be a **dink** (operator labeled
+7–11 as dinks) or a **drop**? That decides the dink/drop split (likely: dink =
+soft + hitter in kitchen OR near-transition + part of a net exchange; drop = soft +
+hitter deep/baseline, e.g. the third-shot drop = shot 6). Also: depth-corrupted
+speed (no-landing shots read fast→drive) and the near-side landing under-read
+(a far dink landing near-kitchen reads deep) still hurt 7/8/11.
+
+**Remaining Stage-6 work:** (a) dink/drop split per the decision above; (b) serve
+detection (shot 2, upstream in Stage 5).
+
+## Stage 6 shot-type — design notes
 
 Ground truth for the 20 s clip (operator): **1 serve, 1 return, 2 drives (1 hard,
 1 soft), 1 drop, 5 dinks (4 + 1 netted).** Pipeline gave drives 5 / drops 4 /
