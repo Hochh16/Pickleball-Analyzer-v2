@@ -68,6 +68,33 @@ y-flip re-check runs on the smoothed trajectory with `yflip_floor=0.3*res_scale`
 3. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
    test positioning/rally/shot-mix representatively.
 
+## Match-clip validation — `pb_5_minute_outdoor-2` rally 10 (2026-07-19)
+
+First validation on a REAL doubles match (11 rallies, 10 serves; not a drill).
+Operator gave per-shot ground truth for rally 10 (12 shots, a full point: serve →
+baseline drives → kitchen dink exchange). Rendered annotated video
+(`tools/render_rally.py`, `_rally_10_check.mp4`). **Score: types 7/12, sides 9/12,
+volleys 2/8.**
+
+**Errors all trace to ONE root — unreliable ball trajectory/bounce/height:**
+1. **Soft-shot → drive (all 5 type errors):** #2 drop, #3/#5/#6 dink, #11 reset all
+   mis-typed; driven by airborne-ball **speed inflation**, which on match data
+   produces GARBAGE values (#5 post = 261 ft/s, #1 = 117 ft/s — physically
+   impossible). Confirms the Stage-4 speed finding below, and worse than the drill.
+2. **Volley detection BROKEN on match play (2/8).** Barely mattered in the drill (4
+   volleys); a real kitchen exchange has many (operator: 5/12 shots were volleys).
+   Pipeline MISSES real volleys #4/#5/#6/#10 (phantom bounce → "not volley") and
+   FALSE-flags #2/#3 (missed a real bounce → "volley"). Volley = "did it bounce
+   since the last shot," so these are **bounce-detection errors**.
+3. **Sides** perfect #4–#11 (settled dink rally) but scrambled #1–#3
+   (serve/return/third-shot), where ball speeds are garbage (unreliable track).
+
+**Re-prioritisation:** the deferred **3-D projectile-trajectory fit** now addresses
+the THREE biggest error sources at once — soft-vs-drive, volley (bounce) detection,
+AND garbage speeds. Match data justifies building it next. What's already SOLID:
+serve detection, settled-rally sides, and dinks that bounce & land in the kitchen
+(#4/#7/#8/#9 all correct).
+
 ## Stage 4 geometry / ball SPEED — investigation (2026-07-19)
 
 **Goal:** fix the "airborne-ball speed inflation" that made dinks 7/8/11 read as
