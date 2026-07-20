@@ -29,6 +29,34 @@ transition zone into the kitchen (the rest are the far-side returns).
 | 7 Rally / 8 Metrics | 🟡 improving | 1 rally of 13 (was 1 of 2). Position/heatmaps from tracking are plausible; shot-derived metrics now rest on a correct shot layer. |
 | 9 Rating | 🟡 improving | 3.2 → 3.23, confidence 0.223 → 0.267 after the shot fix. Still rests on imperfect shot-type + bounces. |
 
+## Stage 5 shots — FIX RECORD (do not regress) — commit 734afe1, 2026-07-19
+
+**Symptom:** recall 2/11 (~18%). **Root cause:** the adjacent-court "teleport-in
+contamination gate" rejected REAL shots — the ball is occluded at the paddle strike
+and reappears a few frames later, which looks like a teleport-in. **Fix:** the gate
+rejects a teleport only when the reappearance run is a short BLIP (< `min_serve_run`
+frames); a sustained run is a real shot, kept. In `detect_shots.py`:
+```python
+if contam_filter and teleport_in_pxpf(f) > teleport_thresh:
+    a_run, z_run = run_bounds(f)
+    if (z_run - a_run + 1) < min_serve_run:
+        n_rejected_teleport += 1
+        continue
+```
+Thresholds (×`res_scale`=2.0 @4K): MIN_TURN_RATE_DEG=45, MIN_DIRECTION_CHANGE_DEG=45,
+ASSOC_MAX_PX=120, TELEPORT_IN_PX_PER_FRAME=40. **Result:** 13 shots, hitter side
+alternates near/far all rally, ~100% recall (13 vs operator 11 = +1 pre-rally feed,
+~1 extra). **Still open (upstream):** serve never fires (shot 2) — dead-time+launch
+detector at clip start.
+
+## Stage 5.5 bounces — FIX RECORD (do not regress) — commit 67c6ecf, 2026-07-19
+
+Recall 5→11. Candidates are now pixel_y **descent-peaks** (an arc apex is a pixel_y
+*minimum* so apexes are correctly ignored) with `BOUNCE_PROMINENCE_PX=9.0*res_scale`;
+y-flip re-check runs on the smoothed trajectory with `yflip_floor=0.3*res_scale`
+(the old 4px floor rejected soft dink rebounds ~0.75px/f). Restored `landing_y` on
+9/13 shots (was 0), which is shot-type's primary signal.
+
 ## Fix priority (remaining) — foundations first
 
 1. ~~Stage 5.5 bounces~~ ✅ DONE (pixel_y descent-peak detection; 5→11).
@@ -86,6 +114,17 @@ hitter at baseline (third-shot drop). Plus a **speed guard**: a slow ball
 drive requires real pace. Result on the clip: **6/10 rally shots correct** (was
 ~2 before Stage-6 work, 5 after overhead/lob/volley): serve✗, return✓, drive✓✓,
 drop✓, dinks 9✓ 10✓, 7/8/11✗.
+
+**FRONT-FOOT rule (operator, 2026-07-19):** a dink is called by the **front foot**
+(the ankle nearest the net) being within ~2 ft of the kitchen line — NOT the rear
+foot. The bbox-bottom foot point is, on the NEAR side, the REAR foot (nearer the
+camera) and reads several feet too deep, mis-reading a kitchen dink as
+transition/drop. Fix (`front_foot_court_y`, `classify_shots.py`): project both pose
+ankles to court_y and take whichever of {bbox foot, ankle projections} is CLOSEST to
+the net (seeded with the bbox foot so it can never read DEEPER — protects the FAR
+side, where the bbox-bottom is already the front foot and a noisy far ankle would
+otherwise push it deeper; that regression cost shot 9 before the seed was added).
+Near dinks now read front foot ≈ 13–16 ft (kitchen) vs rear 10–13.
 
 **Remaining Stage-6 errors are UPSTREAM, not Stage-6 logic:**
 - **Airborne-ball speed inflation** (shots 7/8/11): a dink reads post ≈ 20–27 ft/s

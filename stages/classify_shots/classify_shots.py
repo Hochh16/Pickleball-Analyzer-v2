@@ -99,7 +99,49 @@ def load_court(path: Path) -> dict:
     near = derived.get("pixels_per_foot_at_near_baseline")
     far = derived.get("pixels_per_foot_at_far_baseline")
     video = c.get("video", {}) or {}
-    return {"ppf_near": near, "ppf_far": far, "fps": video.get("fps")}
+    homo = c.get("homography", {}) or {}
+    i2c = homo.get("image_to_court")
+    img2court = np.array(i2c, dtype=float) if i2c is not None else None
+    return {"ppf_near": near, "ppf_far": far, "fps": video.get("fps"),
+            "image_to_court": img2court}
+
+
+def project_court_y(court: dict, px: float, py: float) -> Optional[float]:
+    """Project an image point to its court_y (feet). Ground-plane homography."""
+    M = court.get("image_to_court")
+    if M is None:
+        return None
+    v = M @ np.array([px, py, 1.0])
+    if abs(v[2]) < 1e-9:
+        return None
+    return float(v[1] / v[2])
+
+
+def front_foot_court_y(court: dict, pose: Optional[dict],
+                       fallback: float) -> float:
+    """Court_y of the player's FRONT foot = the ankle projecting CLOSEST to the
+    net. A dinker leans in, so the front foot is within ~2 ft of the kitchen line
+    while the bbox-bottom (the REAR foot, nearer the camera) reads several feet
+    deeper -- using the rear foot mis-reads a kitchen dink as a transition/drop.
+    Falls back to the bbox-foot court_y when pose/ankles/homography are missing."""
+    if pose is None or court.get("image_to_court") is None:
+        return fallback
+    VIS = 0.3
+    # Seed with the bbox foot so the result is NEVER deeper than it: the true
+    # front foot is at least as close to the net as the bbox-bottom point. On the
+    # NEAR side the bbox-bottom is the rear foot (reads too deep) and a front
+    # ankle pulls it toward the net; on the FAR side the bbox-bottom is already
+    # the front foot, so a noisy/occluded rear ankle can't push the read deeper.
+    cands = [fallback]
+    for xk, yk, vk in (("lax", "lay", "lav"), ("rax", "ray", "rav")):
+        px, py, v = pose.get(xk), pose.get(yk), pose.get(vk)
+        if px is None or py is None or (v is not None and v < VIS):
+            continue
+        cy = project_court_y(court, float(px), float(py))
+        if cy is not None:
+            cands.append(cy)
+    # front foot = the foot nearest the net line (works on both court halves)
+    return min(cands, key=lambda cy: abs(cy - NET_Y_FT))
 
 
 def load_roster(path: Path, log: logging.Logger) -> Dict[str, str]:
@@ -136,7 +178,9 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
             "left_shoulder_x_px", "left_shoulder_y_px", "left_shoulder_visibility",
             "right_shoulder_x_px", "right_shoulder_y_px", "right_shoulder_visibility",
             "left_hip_y_px", "left_hip_visibility",
-            "right_hip_y_px", "right_hip_visibility"]
+            "right_hip_y_px", "right_hip_visibility",
+            "left_ankle_x_px", "left_ankle_y_px", "left_ankle_visibility",
+            "right_ankle_x_px", "right_ankle_y_px", "right_ankle_visibility"]
     df = pd.read_parquet(path, columns=cols)
     df = df[df["pose_detected"]]
     out: Dict[Tuple[int, int], dict] = {}
@@ -148,6 +192,10 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
             "rsv": r.right_shoulder_visibility,
             "lhy": r.left_hip_y_px, "lhv": r.left_hip_visibility,
             "rhy": r.right_hip_y_px, "rhv": r.right_hip_visibility,
+            "lax": r.left_ankle_x_px, "lay": r.left_ankle_y_px,
+            "lav": r.left_ankle_visibility,
+            "rax": r.right_ankle_x_px, "ray": r.right_ankle_y_px,
+            "rav": r.right_ankle_visibility,
         }
     return out
 
@@ -482,7 +530,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         pdata = players.get((f, tid))
         pose = poses.get((f, tid))
         court_y = pdata["court_y"] if pdata else NET_Y_FT
-        zone = zone_from_court_y(court_y)
+        # zone uses the FRONT foot (ankle nearest the net): a dinker's front foot
+        # is within ~2 ft of the kitchen line while the bbox-bottom is the rear
+        # foot (nearer the camera) and reads several feet deeper. Speed still uses
+        # court_y (player depth) for its pixels-per-foot scaling.
+        zone_court_y = front_foot_court_y(court, pose, court_y)
+        zone = zone_from_court_y(zone_court_y)
 
         post_ftps = speed_ftps(s.get("speed_post_px_per_frame"), court, court_y, fps)
         pre_ftps = speed_ftps(s.get("speed_pre_px_per_frame"), court, court_y, fps)
@@ -498,7 +551,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             r_tid = int(shots[i + 1]["track_id"])
             r_pd = players.get((f, r_tid))
             if r_pd is not None:
-                receiver_zone = zone_from_court_y(r_pd["court_y"])
+                r_cy = front_foot_court_y(court, poses.get((f, r_tid)),
+                                          r_pd["court_y"])
+                receiver_zone = zone_from_court_y(r_cy)
         # volley: a shot is a volley iff the ball did NOT bounce since the
         # previous shot. Primary = local trajectory scan (recall-focused);
         # fall back to the Stage 5.5 bounce list only when the ball is too
@@ -540,6 +595,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "is_volley_confidence": round(vol_conf, 3),
             "features": {
                 "contact_zone": zone,
+                "contact_front_foot_y": round(zone_court_y, 2),
+                "contact_bbox_foot_y": round(court_y, 2),
                 "post_speed_ftps": round(post_ftps, 2) if post_ftps is not None else None,
                 "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
                 "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
