@@ -68,6 +68,31 @@ y-flip re-check runs on the smoothed trajectory with `yflip_floor=0.3*res_scale`
 3. **Validate on a real MATCH clip** — this is a drill; a real doubles match would
    test positioning/rally/shot-mix representatively.
 
+## Stage 4 geometry / ball SPEED — investigation (2026-07-19)
+
+**Goal:** fix the "airborne-ball speed inflation" that made dinks 7/8/11 read as
+drives. **Finding: instantaneous ball speed has NO robust monocular fix.** The ball
+is airborne, its height is unknown, and every candidate method was tested and fails:
+
+| method | result |
+|---|---|
+| project ball px → court via ground homography, court-distance/time | **explodes** — airborne ball near the image horizon projects to court_y = 75–150 ft (off-court), shot 1 gave 1.2e7 ft/s. The ground plane is meaningless for a raised point. |
+| ppf at the **ball's pixel row** (local optical scale) | **inflates** — an airborne ball sits high in the image where px/ft is small, so px/ppf blows up (dinks → 12–44 ft/s). |
+| contact→landing **travel distance** (ground points) | contact point is ALSO airborne (paddle height) → same explosion (contact court_xy = 120k / 149 / 58 ft for several shots). Only the LANDING (a real ground bounce) projects reliably. |
+| current: ppf at **hitter's ground court_y** | least-bad, but conflates: **shot 5 (real DRIVE) reads 18.6 ft/s while shot 8 (real DINK) reads 26.9** — the drive reads SLOWER than the dink. No threshold separates them. |
+
+**Conclusion:** the only reliable court measurement for an airborne ball is its
+**landing** (ground bounce) — already used. The remaining misses (8, 11) have NO
+landing (volleyed away / netted) so they fall back to the unreliable speed; shot 7's
+landing reads deep (a genuinely deepish far-side dink, or a near-side bounce
+under-read). **Speed is a weak discriminator by physics, not by a fixable bug.**
+
+**Real fix (a feature, not a patch):** fit the ball's 3-D **projectile trajectory**
+(parabola under gravity, anchored by the detected ground bounces + apex) between
+consecutive contacts to recover true launch speed AND height. That would also fix
+the deep-landing reads. Significant effort; deferred pending operator direction.
+**Short-term:** lean on landing + arc + rally-context; treat speed as low-weight.
+
 ## Stage 5.5 bounces — ground truth (operator, 20 s clip)
 
 **≈ 9–10 real ground bounces** (volleys don't bounce):
