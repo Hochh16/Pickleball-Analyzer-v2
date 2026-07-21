@@ -43,6 +43,15 @@ USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 # limiter materially bites (confidence < OPERATOR_CONF_FLOOR). The operator (who
 # records/configures the capture) may be a different person than the player.
 OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter bites
+# Minimum detected primary events before we will state a RATE and coach off it.
+# A proportion from a handful of events has a confidence interval far too wide to
+# act on: the 5-min match clip detected only 4 user serves, 2 of which were called
+# faults, and the report told the player "about 50% of your serves are faults ...
+# you're giving away free points" — harsh, prescriptive advice from n=4 (a 50% rate
+# from 4 events carries roughly +/-35 points of uncertainty). Below this bar a
+# category is routed to developing_capability ("not enough seen yet") instead of
+# being presented as a weakness to fix or a strength to celebrate.
+MIN_EVENTS_FOR_COACHING = 10
 ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
                                  # coaching signal -> routed to developing_capability
 UNMEASURED_REASON = {
@@ -411,12 +420,14 @@ def compute_plan(rating: dict, metrics: Optional[dict],
         # either as a weakness to fix OR a strength to celebrate would coach off
         # missing data, so route to developing_capability and skip focus/strength.
         n_events = _category_events(name, drivers)
-        if data_source == "real" and (dconf < ASSESS_CONF_FLOOR or n_events == 0):
+        too_few = n_events is not None and n_events < MIN_EVENTS_FOR_COACHING
+        if data_source == "real" and (dconf < ASSESS_CONF_FLOOR or too_few):
             reason = UNMEASURED_REASON.get(name)
-            if reason is None:
-                reason = (f"We didn't see enough of your {name.replace('_', ' ')} "
-                          f"shots to assess it yet ({n_events} detected)."
-                          if n_events == 0 else
+            if reason is None or too_few:
+                reason = (f"Only {n_events} {name.replace('_', '/')} shots were seen in "
+                          f"this clip — too few to judge a rate, so we're not coaching "
+                          f"it yet. A longer clip will fill this in."
+                          if too_few else
                           f"{name} not reliably measured yet (limited_by {limited_by}).")
             unmeasured.append({
                 "dimension": name,

@@ -72,6 +72,16 @@ FB_RESET = 0.35      # was 0.55
 FB_DROP = 0.30       # was 0.45
 FB_TWEENER = 0.25    # was 0.40 -- speed ambiguous, resolved only by arc shape
 FB_UNKNOWN = 0.20    # was 0.30
+
+# is_volley confidence, likewise CALIBRATED. Measured against operator volley truth
+# on match rally 10 (clean ball track): 5/10 correct = ~50%, while the local-scan
+# path reported 0.85. Bounce-vs-volley is the monocular precision floor (three
+# independent height-free signals tested and defeated -- see docs/ACCURACY_LEDGER.md),
+# so this must be reported as a SOFT signal. A shot that IS a serve genuinely cannot
+# be a volley, so that structural case keeps its high confidence.
+VOL_CONF_SCAN = 0.55     # was 0.85 -- local trajectory scan concluded
+VOL_CONF_FALLBACK = 0.40  # was 0.50 -- fell back to the bounce list (occluded)
+VOL_CONF_STRUCTURAL = 0.9  # serve / first shot of a rally: cannot be a volley
 POST_TRAJ_FRAMES = 15
 MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
 REFERENCE_FPS = 30.0         # frame-count windows tuned at 30fps; scale by fps/this for 60fps real footage
@@ -599,7 +609,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # type so a volley (no landing) uses the volley rules, not the fallback.
         shot_id = int(s["shot_id"])
         if is_serve or prev_shot_id is None or prev_frame is None:
-            is_volley, vol_conf = False, 0.9
+            is_volley, vol_conf = False, VOL_CONF_STRUCTURAL
         else:
             local = bounced_between(by, bknown, prev_frame, f,
                                     volley_rebound_px, volley_descent_px)
@@ -607,10 +617,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 # inconclusive (occluded) -> fall back to the precision bounce list
                 n_b = bounces_between.get((prev_shot_id, shot_id), 0)
                 is_volley = (n_b == 0)
-                vol_conf = 0.5
+                vol_conf = VOL_CONF_FALLBACK
             else:
                 is_volley = not local  # bounce found -> not a volley
-                vol_conf = 0.85
+                vol_conf = VOL_CONF_SCAN
 
         # Prefer the Stage 5.7 ground-anchored horizontal speed when confident: it's
         # physical (the ppf speed explodes on airborne balls). Different scale ->
