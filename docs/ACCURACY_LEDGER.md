@@ -168,6 +168,32 @@ the reasons are now fixed or known — build it with these guards:
 frames 16200-18861, excerpt f == source f+16200, rally 10 = excerpt f1684-2544, full
 vision pass ~2 min. Operator per-shot truth for rally 10 is in this ledger.
 
+### TESTED ON CLEAN DATA (2026-07-21) — do NOT retry these
+
+Volley detection improved **2/8 → 5/10 from the Stage-4 ball fix alone**. Two further
+signals were then tested directly against operator rally-10 volley truth, on the clean
+track. **Both fail; the cause is the camera angle, not the implementation.**
+
+1. **py direction-reversal (the reversal idea as a bounce test): CONFOUNDED.** For this
+   camera (behind the near baseline) image-y mixes ball HEIGHT with COURT TRAVEL, so
+   the signature is direction-dependent:
+   - a real VOLLEY interval (shot 4→5) showed a strong interior py-max, prominence
+     **+90 px** — looks exactly like a bounce (checked: nearest player 139 px away, so
+     not a missed contact);
+   - a real BOUNCE interval (shot 1→2) showed **−48 px** (no interior max) — because
+     the ball was travelling AWAY from camera, and falling py from travel cancels the
+     bounce's rise.
+   Toward-camera travel amplifies noise into false bounces; away-camera travel erases
+   real ones.
+2. **Energy loss at the bounce (speed drop): NO SEPARATION.** Mid-interval speed ratio,
+   volley intervals `[0.50, 0.53, 0.72, 1.17, 1.30]` vs bounced `[0.27, 0.71, 0.72,
+   0.79, 2.24]` — **identical medians (0.72)**, fully overlapping.
+
+Together with the earlier height-reconstruction result (precision-floored), that is
+**three independent height-free attempts at bounce-vs-volley, all defeated by the same
+monocular limit.** Treat volley as a ~50%-reliable SOFT signal, not a per-shot fact.
+Revisit only if the camera angle changes (operator: possible higher mount in future).
+
 ## Stage 4 geometry / ball SPEED — investigation (2026-07-19)
 
 **Goal:** fix the "airborne-ball speed inflation" that made dinks 7/8/11 read as
