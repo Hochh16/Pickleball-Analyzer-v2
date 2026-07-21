@@ -96,6 +96,53 @@ AND garbage speeds. Match data justifies building it next. What's already SOLID:
 serve detection, settled-rally sides, and dinks that bounce & land in the kitchen
 (#4/#7/#8/#9 all correct).
 
+## Landing-depth investigation + OPERATOR DEFINITION (2026-07-20)
+
+**OPERATOR DECISION: shot type is decided by WHERE THE BALL LANDED, not by how it
+was struck.** A softly-hit ball that lands well past the kitchen line is NOT a dink —
+it's "a dink that got away", typed by outcome. This confirms the existing
+landing-first logic is the intended behaviour, and makes the LANDING POSITION the
+authoritative signal (so its accuracy now matters most).
+
+Findings (drill shot 7, the canonical "deep landing" case):
+- **The bounce PROJECTION is correct** — the bounce pixel (py 1494) sits clearly past
+  the kitchen-line pixel (py 1396) at that x. Not a projection bug.
+- **That ball genuinely landed ~6 ft past the kitchen line** (far court → there in
+  0.4 s = firm). Under the operator definition it is correctly NOT a dink, so drill
+  shot 7 is **not an error** — drill effectively **8/10**.
+- **Bounce positions are real, not interpolated:** bounces land on a genuinely
+  visible frame 99–100% of the time (drill 0% interpolated, match 1%).
+- **BUT ball occlusion around bounces is common on match play:** 24% of match bounces
+  have a ≥3-frame occlusion within ±5 frames (match ball visibility 71.5% vs drill
+  87.3%). Shot 7 showed 6 consecutive interpolated frames through the landing window
+  (a perfectly linear +42.87 px/frame ramp).
+- **Residual real gap: missed SOFT near-kitchen bounces.** Operator truth says 2 dinks
+  landed in the near kitchen; the whole drill yielded only ONE near-kitchen bounce. A
+  missed soft bounce leaves a shot with no landing, or lets it grab a later, deeper
+  bounce → mis-typed.
+
+**Planned fix:** do NOT globally lower the bounce prominence (that worsens the already
+high match false-positive rate). Instead use the operator's volley idea (below) to
+learn which shots were volleyed; every NON-volleyed shot MUST have a bounce, so search
+harder for one only where a bounce is required. Targeted recall, no global precision cost.
+
+## OPERATOR IDEA — positive volley detection by across-court REVERSAL (2026-07-20)
+
+Detect a volley DIRECTLY from a direction change at a player with no bounce, instead
+of inferring it from the ABSENCE of a detected bounce (fragile — bounce detection is
+noisy). **Height-independent, which matters because height is the monocular precision
+floor we hit.** The discriminator:
+- **Bounce:** the ball's VERTICAL direction reverses (falling → rising) but it
+  **continues across the court** in the same direction.
+- **Volley / paddle contact:** the ball **REVERSES across the court** (heads back over
+  the net the way it came).
+A "bounce" candidate showing an across-court reversal is really a paddle contact →
+kills the phantom bounces. Implementation caveat: an airborne ball's raw pixel
+direction is confounded by its arc, so compare NET DISPLACEMENT over a short window
+before vs after the event and test whether the across-court component flips sign.
+Speed then comes from bounce→volley or volley→volley — exactly the Stage 5.7 anchor
+model, so the two fixes compound.
+
 ## Stage 4 geometry / ball SPEED — investigation (2026-07-19)
 
 **Goal:** fix the "airborne-ball speed inflation" that made dinks 7/8/11 read as
