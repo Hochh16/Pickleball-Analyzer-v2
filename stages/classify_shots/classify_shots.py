@@ -55,6 +55,23 @@ RESET_MIN_INCOMING_FTPS = 25.0
 DRIVE_MIN_SPEED_HORIZ_FTPS = 26.0
 DINK_MAX_SPEED_HORIZ_FTPS = 23.0
 TRAJ_SPEED_CONF_MIN = 0.6
+
+# --- Fallback-path confidences: CALIBRATED against operator ground truth ------
+# Measured on 21 operator-labelled shots (20 s drill + match rally 10), 2026-07-21:
+#   landing-based path   : 73% accurate, reported 75%  -> honest, left alone
+#   fallback (no landing): 33% accurate, reported 58%  -> OVERCONFIDENT by +24 pts
+# The fallback fires exactly where we are blind (volleys / missed bounces). Stage 8
+# averages these per-shot confidences (mv_sourced) into the metrics that drive the
+# USAPA rating, so the overconfidence made a noisy read look precise. These values
+# put the fallback's mean confidence near its measured accuracy, so a clip with many
+# no-landing shots now yields LOWER confidence and a WIDER rating range instead of a
+# falsely tight number. Re-measure if the classifier changes.
+FB_DRIVE = 0.40      # was 0.60
+FB_DINK = 0.35       # was 0.50 (0.60 on the volley branch)
+FB_RESET = 0.35      # was 0.55
+FB_DROP = 0.30       # was 0.45
+FB_TWEENER = 0.25    # was 0.40 -- speed ambiguous, resolved only by arc shape
+FB_UNKNOWN = 0.20    # was 0.30
 POST_TRAJ_FRAMES = 15
 MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
 REFERENCE_FPS = 30.0         # frame-count windows tuned at 30fps; scale by fps/this for 60fps real footage
@@ -429,9 +446,9 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     if is_volley:
         if zone == "kitchen":
             if post_ftps is not None and post_ftps >= drive_min:
-                return "drive", 0.6
-            return "dink", 0.6
-        return "drive", 0.6
+                return "drive", FB_DRIVE
+            return "dink", FB_DINK
+        return "drive", FB_DRIVE
     # A lob is a high lofted arc AND slow AND goes over a receiver AT THE KITCHEN
     # (a lob only makes sense against a player at the net; a soft high ball to
     # deep opponents is a drop/drive, not a lob). Resolve before the landing split.
@@ -460,22 +477,22 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
 
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
     if post_ftps is not None and post_ftps >= drive_min:
-        return "drive", 0.6
+        return "drive", FB_DRIVE
     if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
             and post_ftps is not None and post_ftps <= dink_max
             and zone != "baseline"):
-        return "reset", 0.55
+        return "reset", FB_RESET
     if post_ftps is not None and post_ftps <= dink_max and zone in ("kitchen", "transition"):
-        return "dink", 0.5   # slow ball hit from at/near the net = dink (a step back still dinks)
+        return "dink", FB_DINK   # slow ball hit from at/near the net = dink
     if post_ftps is not None and post_ftps <= dink_max and zone == "baseline":
-        return "drop", 0.45  # slow ball from deep = drop (third-shot drop)
+        return "drop", FB_DROP   # slow ball from deep = drop (third-shot drop)
     # Tweener (dink_max..drive_min) with no landing: speed is ambiguous, so resolve
     # by trajectory SHAPE -- flat => drive, lofted => drop.
     if post_ftps is not None and dink_max < post_ftps < drive_min:
         if arc_frac is not None and arc_frac >= DRIVE_DROP_ARC_SPLIT:
-            return "drop", 0.4
-        return "drive", 0.4
-    return "unknown", 0.3
+            return "drop", FB_TWEENER
+        return "drive", FB_TWEENER
+    return "unknown", FB_UNKNOWN
 
 
 def run(folder: Path, args, log: logging.Logger) -> dict:
