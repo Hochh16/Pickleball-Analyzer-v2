@@ -174,6 +174,32 @@ over-triggering on match play.** Phase 2 (physics-based bounce PREDICTION from t
 arc) also directly attacks this — a predicted bounce time/place validates or rejects
 each detected bounce, which is exactly what would kill the phantom far-side bounces.
 
+## Phase 2 (height) — investigation result (2026-07-20): MARGINAL, precision-floored
+
+Validated the height-reconstruction hypothesis before building the stage (estimate
+z(t) from the ball's pixel gap above its linear ground track ÷ a player-derived
+vertical scale). **Outcome: viable but at the monocular precision floor — not a clean
+fix.** Evidence on match rally 10 (operator volley/bounce truth):
+- **Apex height is robustly recoverable** (3–7 ft, whole-arc scale) — a good lob
+  signal. KEEP this as a feature.
+- **Bounce-vs-volley is at the noise floor.** A real ground bounce is z≈0; a low
+  volley is z≈1–2 ft — a ~0.5 ft gap, but the method's precision is ~±0.5–1 ft
+  (nominal height, linear-track assumption, occlusion at the fast bounce moment).
+  RAW nominal-height min-height + a 0.8 ft threshold got 7/9 in the settled rally
+  (the 2 misses are the messy serve/return region), BUT **per-clip self-calibration
+  (assert clean bounces = z=0, median offset 0.83 ft) OVER-corrected and collapsed it
+  to 3/9.** The signal is real but too fragile to trust as a hard bounce/volley gate.
+- Fails wherever the INPUTS are bad — the serve/return region (288-frame shot gap →
+  bad linear track, garbage ball speed) breaks the height estimate there.
+
+**Conclusion (recorded for durability):** the fine z=0-vs-z=1.5 distinction that
+bounce/volley needs is monocular-precision-limited on this low camera angle. Coarse /
+whole-arc signals (apex, ground-anchor speed on clean shots, sides, serve, rally
+structure, landing zone) are robust; the fine per-shot distinctions are not. Highest
+real leverage is likely (a) better INPUTS (ball-track occlusion at bounces, shot
+recall in fast sequences) and/or (b) an OPERATOR camera-angle change (higher/side
+view gives height directly) — not more trajectory math. Pending operator direction.
+
 ## Validation plan
 Smoke test on `data/test_clip/` (schema + no crash + sane ranges). Then re-derive on
 `pb_5_minute_outdoor-2` rally 10 and the 20 s drill and compare `horizontal_speed`
