@@ -48,6 +48,13 @@ DRIVE_DROP_ARC_SPLIT = 0.15  # tweener (16-25 ft/s) tiebreak: flatter=drive, lof
 DRIVE_MIN_SPEED_FTPS = 25.0
 DINK_MAX_SPEED_FTPS = 16.0
 RESET_MIN_INCOMING_FTPS = 25.0
+# Stage 5.7 ground-anchored HORIZONTAL speed (range/airtime) is an AVERAGE, so it
+# runs lower than the instantaneous ppf speed; calibrated on operator ground truth
+# (drill + match rally 10): clean dinks 11-23, drives 23-32 ft/s. Used only when the
+# trajectory confidence clears TRAJ_SPEED_CONF_MIN, else the ppf speed + old thresholds.
+DRIVE_MIN_SPEED_HORIZ_FTPS = 26.0
+DINK_MAX_SPEED_HORIZ_FTPS = 23.0
+TRAJ_SPEED_CONF_MIN = 0.6
 POST_TRAJ_FRAMES = 15
 MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
 REFERENCE_FPS = 30.0         # frame-count windows tuned at 30fps; scale by fps/this for 60fps real footage
@@ -396,13 +403,18 @@ def bounced_between(by, bknown, f0: int, f1: int,
 # --- Classification ----------------------------------------------------------
 
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
-                  landing_y=None, receiver_zone=None, is_volley=False):
+                  landing_y=None, receiver_zone=None, is_volley=False,
+                  drive_min=DRIVE_MIN_SPEED_FTPS, dink_max=DINK_MAX_SPEED_FTPS):
     """Fused rule classifier for the TACTICAL shot type. The airborne ball's
     pixel-speed is depth-corrupted (a drive hit down-court reads slow) and its
     court projection explodes, so when a real bounce LANDING is available
     (`landing_y` = the ball's landing court_y) it drives the drive/drop/dink split
-    — a *sound*, ground-projected signal. Falls back to arc + (corrupted) speed
-    when there's no landing (volleys, missed bounces), at lower confidence.
+    — a *sound*, ground-projected signal. Falls back to arc + speed when there's no
+    landing (volleys, missed bounces), at lower confidence.
+    `post_ftps` is the outgoing shot speed; `drive_min`/`dink_max` are its
+    thresholds. When Stage 5.7 supplies a confident GROUND-ANCHORED horizontal
+    speed the caller passes it here with the horizontal-calibrated thresholds
+    (~26/23); otherwise it's the depth-corrupted ppf speed with the old ~25/16.
     `receiver_zone` = the zone of the player about to receive (needed for a lob).
     NOTE: 'overhead' is a STROKE (above-the-head contact), not a tactical type —
     it's set on stroke_side by the caller; a high-contact ball is tactically a
@@ -416,7 +428,7 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     #     via the receiver running back — not modeled here yet.)
     if is_volley:
         if zone == "kitchen":
-            if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
+            if post_ftps is not None and post_ftps >= drive_min:
                 return "drive", 0.6
             return "dink", 0.6
         return "drive", 0.6
@@ -424,7 +436,7 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     # (a lob only makes sense against a player at the net; a soft high ball to
     # deep opponents is a drop/drive, not a lob). Resolve before the landing split.
     if (arc_frac is not None and arc_frac >= LOB_MIN_ARC_FRAC
-            and (post_ftps is None or post_ftps < DRIVE_MIN_SPEED_FTPS)
+            and (post_ftps is None or post_ftps < drive_min)
             and receiver_zone == "kitchen"):
         return "lob", min(1.0, max(0.6, arc_frac))
 
@@ -441,25 +453,25 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         # Speed guard: a drive REQUIRES real pace. A slow ball near the net whose
         # landing read a bit deep (soft-shot depth is noisy for an airborne ball)
         # is still a dink, not a drive. Baseline stays out of this (could be a drop).
-        if (post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
+        if (post_ftps is not None and post_ftps <= dink_max
                 and zone != "baseline"):
             return "dink", 0.7
         return "drive", 0.78   # deep landing + real pace = a flat fast ball
 
-    # --- Fallback (no landing): arc + depth-corrupted speed, lower confidence ----
-    if post_ftps is not None and post_ftps >= DRIVE_MIN_SPEED_FTPS:
+    # --- Fallback (no landing): arc + speed, lower confidence --------------------
+    if post_ftps is not None and post_ftps >= drive_min:
         return "drive", 0.6
     if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
-            and post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS
+            and post_ftps is not None and post_ftps <= dink_max
             and zone != "baseline"):
         return "reset", 0.55
-    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone in ("kitchen", "transition"):
+    if post_ftps is not None and post_ftps <= dink_max and zone in ("kitchen", "transition"):
         return "dink", 0.5   # slow ball hit from at/near the net = dink (a step back still dinks)
-    if post_ftps is not None and post_ftps <= DINK_MAX_SPEED_FTPS and zone == "baseline":
+    if post_ftps is not None and post_ftps <= dink_max and zone == "baseline":
         return "drop", 0.45  # slow ball from deep = drop (third-shot drop)
-    # Tweener (16-25 ft/s) with no landing: speed is ambiguous + depth-corrupted,
-    # so resolve by trajectory SHAPE -- flat => drive, lofted => drop.
-    if post_ftps is not None and DINK_MAX_SPEED_FTPS < post_ftps < DRIVE_MIN_SPEED_FTPS:
+    # Tweener (dink_max..drive_min) with no landing: speed is ambiguous, so resolve
+    # by trajectory SHAPE -- flat => drive, lofted => drop.
+    if post_ftps is not None and dink_max < post_ftps < drive_min:
         if arc_frac is not None and arc_frac >= DRIVE_DROP_ARC_SPLIT:
             return "drop", 0.4
         return "drive", 0.4
@@ -507,6 +519,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     bounces_between = build_bounces_between_index(bounces_doc)
     # shot_id -> landing court_y (sound, ground-projected signal for shot type)
     landing_index = build_landing_index(bounces_doc)
+    # shot_id -> Stage 5.7 ground-anchored horizontal speed (physical; replaces the
+    # depth-corrupted ppf speed for dink/drive when confident). Optional input:
+    # older bundles / pipelines without Stage 5.7 fall back to the ppf speed.
+    traj_index: Dict[int, dict] = {}
+    traj_path = folder / "trajectory.json"
+    if traj_path.exists():
+        for t in load_json(traj_path).get("shots", []):
+            traj_index[int(t["shot_id"])] = t
+        log.info(f"loaded Stage 5.7 trajectory speeds for {len(traj_index)} shots")
 
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
     out_shots = []
@@ -574,9 +595,30 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 is_volley = not local  # bounce found -> not a volley
                 vol_conf = 0.85
 
+        # Prefer the Stage 5.7 ground-anchored horizontal speed when confident: it's
+        # physical (the ppf speed explodes on airborne balls). Different scale ->
+        # horizontal-calibrated thresholds; otherwise the ppf speed + old thresholds.
+        tj = traj_index.get(shot_id)
+        # Consistency guard: if the ball was VOLLEYED (no bounce), a trajectory
+        # "bounce" anchor is a phantom (a far-side false bounce) — its long range
+        # reads as a confident-but-wrong drive. Distrust it and fall back.
+        traj_phantom = (tj is not None and is_volley
+                        and tj.get("anchor_type") == "bounce")
+        if (tj is not None and not traj_phantom
+                and tj.get("horizontal_speed_ftps") is not None
+                and tj.get("confidence", 0.0) >= TRAJ_SPEED_CONF_MIN):
+            speed_for_type = tj["horizontal_speed_ftps"]
+            d_min, d_max = DRIVE_MIN_SPEED_HORIZ_FTPS, DINK_MAX_SPEED_HORIZ_FTPS
+            speed_source = "trajectory_horizontal"
+        else:
+            speed_for_type = post_ftps
+            d_min, d_max = DRIVE_MIN_SPEED_FTPS, DINK_MAX_SPEED_FTPS
+            speed_source = "ppf_instantaneous"
+
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
-                                             post_ftps, pre_ftps, zone, landing_y,
-                                             receiver_zone, is_volley)
+                                             speed_for_type, pre_ftps, zone, landing_y,
+                                             receiver_zone, is_volley,
+                                             drive_min=d_min, dink_max=d_max)
 
         # stroke side: forehand/backhand for the user (handedness known); an
         # above-the-head contact is an 'overhead' stroke regardless of handedness.
@@ -598,6 +640,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "contact_front_foot_y": round(zone_court_y, 2),
                 "contact_bbox_foot_y": round(court_y, 2),
                 "post_speed_ftps": round(post_ftps, 2) if post_ftps is not None else None,
+                "speed_used_ftps": round(speed_for_type, 2) if speed_for_type is not None else None,
+                "speed_source": speed_source,
                 "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
                 "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
                 "contact_height": contact_h,

@@ -200,6 +200,23 @@ real leverage is likely (a) better INPUTS (ball-track occlusion at bounces, shot
 recall in fast sequences) and/or (b) an OPERATOR camera-angle change (higher/side
 view gives height directly) — not more trajectory math. Pending operator direction.
 
+## Phase 3 (wired into Stage 6) — result (2026-07-20)
+
+`classify_shots` now consumes `trajectory.json`: when a shot's ground-anchored
+horizontal speed clears `TRAJ_SPEED_CONF_MIN` (0.6) it becomes the dink/drive
+discriminator with horizontal-calibrated thresholds (`DINK_MAX_HORIZ=23`,
+`DRIVE_MIN_HORIZ=26`, from operator ground truth); otherwise the old ppf speed +
+old thresholds. **Consistency guard:** if the volley detector says a shot had NO
+bounce, a trajectory *bounce* anchor is a phantom (far-side false bounce) whose long
+range reads as a confident-but-wrong drive — distrust it and fall back. Optional
+input (older bundles without Stage 5.7 keep the ppf path).
+
+**Result vs operator ground truth:** drill **6 → 7/10**; match rally 10 **7/12 (no
+regression)**, and speeds feeding downstream are now PHYSICAL (no 261/117 ft/s).
+Residual errors are the camera-limited volley cases (phantom bounces the volley
+detector missed, `is_volley=False` so the guard can't catch them) + upstream messy
+serve/return region (zone reads baseline) + serve detection — not the speed itself.
+
 ## Validation plan
 Smoke test on `data/test_clip/` (schema + no crash + sane ranges). Then re-derive on
 `pb_5_minute_outdoor-2` rally 10 and the 20 s drill and compare `horizontal_speed`
