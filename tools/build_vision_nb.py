@@ -109,10 +109,15 @@ print('loaded — stages:', [s['name'] for s in STAGES])
 """## Run
 
 `CLIP = None` auto-detects the single clip on Drive. Only set it to a name if you
-have more than one `*_vision_input.zip` uploaded."""))
+have more than one `*_vision_input.zip` uploaded.
+
+`RERUN = None` normally. Set it to a stage name (e.g. `'ball'`) to FORCE that one
+stage to run again after a code change — the other, slow stages (players / classify /
+pose) are still skipped, so it only costs that stage's GPU time."""))
     cells.append(code(
-"""CLIP = None   # None = auto-detect the one uploaded clip; or set e.g. 'pb_5_minute_outdoor'
-run_all(REPO, clip=CLIP)
+"""CLIP  = None   # None = auto-detect the one uploaded clip; or set e.g. 'pb_5_minute_outdoor'
+RERUN = None   # None = normal resume; or 'ball' to redo just the ball stage
+run_all(REPO, clip=CLIP, rerun=RERUN)
 """))
 
     cells.append(md(
