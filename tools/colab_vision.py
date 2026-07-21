@@ -245,10 +245,16 @@ def _backup_stage(stage, clip_dir, backup_dir) -> None:
 
 # ---------------------------------------------------------------- entry point
 
-def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/content"):
+def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/content",
+            rerun=None):
     """Full reset-proof vision pass. `repo_dir` is the cloned repo (stages run with
     it as cwd). Auto-detects the clip, resumes from the Drive backup, runs only the
-    outstanding stages, and backs each up as it finishes."""
+    outstanding stages, and backs each up as it finishes.
+
+    `rerun`: stage name(s) to FORCE re-running even though their outputs already
+    exist, e.g. rerun="ball" after a detector change. Their outputs are cleared
+    locally first (the Drive backup is overwritten when the stage finishes), so the
+    other, expensive stages are still skipped."""
     clip = derive_clip(drive_dir, clip)
     print(f"CLIP = {clip}\n", flush=True)
 
@@ -257,6 +263,20 @@ def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/c
     restored = restore_outputs(backup_dir, clip_dir)
     if restored:
         print("resumed from Drive backup:", ", ".join(restored), flush=True)
+
+    force = {rerun} if isinstance(rerun, str) else set(rerun or ())
+    if force:
+        unknown = force - {s["name"] for s in STAGES}
+        if unknown:
+            raise ValueError(f"unknown stage(s) to rerun: {sorted(unknown)}; "
+                             f"valid: {[s['name'] for s in STAGES]}")
+        for stage in STAGES:
+            if stage["name"] in force:
+                for out in stage["outputs"]:
+                    p = clip_dir / out
+                    if p.exists():
+                        p.unlink()
+                print(f"[rerun] {stage['name']}: cleared {stage['outputs']}", flush=True)
 
     if have_all_required(clip_dir):
         print("all outputs already computed — nothing to run.", flush=True)
