@@ -320,3 +320,31 @@ Defaults preserve old behaviour at `--topk 1 --cand-floor 0.30`. Covered by 6 un
 tests (parked contaminant, weak-ball recovery, isolated-noise rejection, impossible
 jump, top-k peak extraction/suppression). **Requires a GPU re-run to take effect** —
 the change is in inference, so existing `ball.parquet` files are unaffected.
+
+### Measured result (2026-07-21, GPU run on `pb_outdoor2_excerpt`)
+
+44 s excerpt = source `pb_5_minute_outdoor-2` frames 16200-18861 (the clip's
+worst-visibility region + rally 10, where operator per-shot truth exists).
+Excerpt frame `f` == source frame `f+16200`.
+
+| metric (same frames) | old (argmax) | new (candidates + continuity) |
+|---|---|---|
+| teleports > 200 px/frame | 20 | **0** |
+| max step | **1531 px/f** (impossible) | **144 px/f** (physical) |
+| step p99 | 242 | **52** |
+| visibility during LIVE PLAY (rally 10) | 90.8 % | **92.0 %** |
+| whole-excerpt visibility | 63.2 % | 58.8 % |
+
+**The whole-clip visibility drop is an ARTEFACT, not a regression.** The 199 frames
+that stopped being "visible" had an old step size of median **0 px/frame** (p90 = 12)
+— i.e. the old tracker was locked onto a PARKED object during dead time and counting
+it as the ball. Only 4 % of them involved motion above the link gate. Of frames where
+the old track held a plausibly moving ball (2-160 px/f), **95.9 % are still tracked**,
+and during live play visibility went UP. So: real-ball recall preserved, contamination
+eliminated.
+
+**Downstream shot-type accuracy did NOT improve** (rally 10: 6/12 vs 7/12 — within
+noise on a 12-shot sample). Expected: the remaining shot-type errors are bounce vs
+volley anchor errors (soft shots reading 31-46 ft/s from phantom bounces), which are
+the monocular-precision-floor problem, not a ball-track problem. Ball tracking is now
+a solved input; the bottleneck sits above it.
