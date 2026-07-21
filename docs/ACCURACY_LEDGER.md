@@ -143,6 +143,31 @@ before vs after the event and test whether the across-court component flips sign
 Speed then comes from bounce→volley or volley→volley — exactly the Stage 5.7 anchor
 model, so the two fixes compound.
 
+**Refined design (ready to build, 2026-07-21).** A first prototype fired on junk, and
+the reasons are now fixed or known — build it with these guards:
+1. **Windowed, not per-frame.** Compare NET DISPLACEMENT over ~5 frames before vs
+   after the event. Per-frame turn rate reads exactly 0.0 through interpolated
+   stretches (measured), so a contact hidden by occlusion is invisible to it while
+   the windowed measure still sees the reversal (112-177°).
+2. **Require REAL detections on both sides** (not interpolated) and a minimum ball
+   speed — the prototype's false positives were interpolated fill and slow drift
+   (~3 px/frame), not contacts.
+3. **Track jumps are no longer a source of false positives** — the Stage 4
+   candidate+continuity fix (2026-07-21) eliminated them (teleports 20→0, max step
+   1531→144 px/f). The prototype's 207/360 px "reversals" cannot occur now.
+4. **Discriminator:** bounce = vertical reverses but the ball CONTINUES across the
+   court; volley/paddle contact = the ball REVERSES across the court. Beware: for this
+   camera (behind the near baseline) the across-court axis maps mostly to image Y,
+   which the ball's ARC also moves — so judge direction over a horizon long enough
+   that court travel dominates the arc, not frame-to-frame.
+5. **Then:** every NON-volleyed shot MUST have a bounce → search harder for a missed
+   bounce only where one is required (targeted recall, no global precision cost), and
+   reject "bounces" that show an across-court reversal (they are paddle contacts).
+
+**Fast test rig:** `data/pb_outdoor2_excerpt` (bundle already on Drive) = source
+frames 16200-18861, excerpt f == source f+16200, rally 10 = excerpt f1684-2544, full
+vision pass ~2 min. Operator per-shot truth for rally 10 is in this ledger.
+
 ## Stage 4 geometry / ball SPEED — investigation (2026-07-19)
 
 **Goal:** fix the "airborne-ball speed inflation" that made dinks 7/8/11 read as
