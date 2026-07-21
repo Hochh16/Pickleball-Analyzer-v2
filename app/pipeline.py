@@ -13,8 +13,8 @@ hours per 5-min clip). So the run:
               vision pass on Colab (stages/infer_vision.ipynb) and uploads the
               outputs (players/track_roles/poses/ball + metas) back, which
               AUTO-RESUMES the run (same decouple mechanism the ball step used).
-  - post    : 5 detect_shots -> 5.5 detect_bounces -> 6 classify_shots ->
-              7 segment_rallies -> 8 compute_metrics -> 9 rate ->
+  - post    : 5 detect_shots -> 5.5 detect_bounces -> 5.7 ball_trajectory ->
+              6 classify_shots -> 7 segment_rallies -> 8 compute_metrics -> 9 rate ->
               10 plan_improvement -> build_report (all light/local). The Stage-11
               annotated-overlay render is intentionally skipped: the box overlay
               added little value, so the report links the original clip instead.
@@ -72,6 +72,7 @@ VISION_STEPS = [
 POST_STEPS = [
     Step("shots", "Detect shots", module="stages.detect_shots.detect_shots", args=["--force"]),
     Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces", args=["--force"]),
+    Step("trajectory", "Ball trajectory", module="stages.ball_trajectory.ball_trajectory", args=["--force"]),
     Step("classify", "Classify shots", module="stages.classify_shots.classify_shots", args=["--force"]),
     Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies", args=["--force"]),
     Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics", args=["--force"]),
