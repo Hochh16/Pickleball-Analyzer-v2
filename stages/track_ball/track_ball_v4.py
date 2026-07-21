@@ -24,6 +24,7 @@ import argparse
 import datetime as dt
 import json
 import logging
+import math
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -41,6 +42,27 @@ PROC_H, PROC_W = 720, 1280
 CONF_THRESH = 0.30          # heatmap peak >= this -> a detection (matches training eval)
 MAX_GAP_FRAMES = 8          # interpolate confirmed-detection gaps up to this many frames
 OUTLIER_MAX_STEP_PX = 250.0  # source px/frame; a det this far from BOTH neighbors is dropped
+
+# --- candidate + continuity tracking (fixes adjacent-court flip-flop) ---------
+# The model is a heatmap net; taking only its global argmax per frame meant a
+# stronger peak on a NEIGHBOURING court silently stole the track, and a real but
+# weak ball below CONF_THRESH was discarded with no alternative recorded. We now
+# keep the top-k peaks down to CAND_CONF_FLOOR and let select_track() pick the
+# path that actually moves like a ball.
+CAND_TOPK = 3               # candidate peaks kept per frame
+CAND_CONF_FLOOR = 0.15      # keep candidates down to here (accept gate stays CONF_THRESH)
+PEAK_SUPPRESS_RADIUS = 6    # proc px zeroed around a peak before taking the next
+TRACK_MAX_STEP_PX = 160.0   # source px/frame the ball may plausibly move (4K, fast drive ~55)
+TRACK_LINK_GAP = 8          # frames a link may span (matches MAX_GAP_FRAMES)
+TRACK_RESTART_COST = 2.5    # cost to re-acquire after losing the ball (~2.5 frames of conf)
+TRACK_MOTION_W = 1.0        # weight on the normalised motion penalty
+TRACK_GAP_PENALTY = 0.05    # small penalty per skipped frame (prefer continuous)
+# A ball IN PLAY is never parked (measured median motion ~6.7 src px/frame). Without
+# this, a stationary high-confidence object on a neighbouring court is the "smoothest"
+# possible track and wins outright — the exact failure this rewrite targets.
+TRACK_MIN_STEP_PX = 2.0     # below this src px/frame a link looks stationary, not ball-like
+TRACK_STILL_W = 0.8         # penalty weight for a stationary link
+WEAK_SUPPORT_GAP = 2        # a sub-threshold pick adjacent (<= this) to an accepted one is kept
 
 
 def fail(msg: str, exc=RuntimeError):
@@ -88,24 +110,138 @@ def detect(model, device, buf3: List[np.ndarray], sx: float, sy: float
     return ix * sx, iy * sy, float(hm[iy, ix])
 
 
+def topk_peaks(h: np.ndarray, k: int, min_conf: float, radius: int):
+    """Top-k LOCAL maxima of the heatmap (peak, then suppress its neighbourhood,
+    repeat). The old code took only the single global argmax, so whenever an
+    ADJACENT COURT's ball produced a stronger peak the track jumped to it — with
+    no way to recover our ball, because the alternative was never recorded.
+    Returns [(ix, iy, conf), ...] strongest first."""
+    h = h.copy()
+    out = []
+    for _ in range(k):
+        iy, ix = np.unravel_index(int(h.argmax()), h.shape)
+        c = float(h[iy, ix])
+        if c < min_conf:
+            break
+        out.append((int(ix), int(iy), c))
+        y0, y1 = max(0, iy - radius), min(h.shape[0], iy + radius + 1)
+        x0, x1 = max(0, ix - radius), min(h.shape[1], ix + radius + 1)
+        h[y0:y1, x0:x1] = -1.0
+    return out
+
+
 def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
                  sx: float, sy: float, conf_thresh: float,
-                 dets: dict, raw_conf: list) -> None:
-    """Run the model on a BATCH of (9,H,W) stacks and record a detection for each
-    window's center frame. Batching is the real GPU speedup (per-window inference
-    leaves the GPU mostly idle); results are identical to per-frame `detect()`."""
+                 cands: dict, raw_conf: list, topk: int = CAND_TOPK,
+                 cand_floor: Optional[float] = None) -> None:
+    """Run the model on a BATCH of (9,H,W) stacks and record CANDIDATE peaks for
+    each window's center frame. Batching is the real GPU speedup (per-window
+    inference leaves the GPU mostly idle).
+
+    Records up to `topk` peaks down to `cand_floor` (BELOW the accept threshold):
+    the winning detection is chosen later by `select_track`, which uses temporal
+    continuity. That recovers (a) weak-but-real balls the single-argmax +
+    conf_thresh path dropped, and (b) our ball on frames where a competing
+    adjacent-court ball had the stronger peak."""
     if not stacks:
         return
+    floor = conf_thresh if cand_floor is None else min(cand_floor, conf_thresh)
     t = torch.from_numpy(np.stack(stacks)).to(device)   # (N,9,H,W)
     with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[:, 0].float().cpu().numpy()        # (N,H,W)
     for k, center in enumerate(centers):
         h = hm[k]
-        iy, ix = np.unravel_index(int(h.argmax()), h.shape)
-        c = float(h[iy, ix])
-        raw_conf.append(c)
-        if c >= conf_thresh:
-            dets[center] = (ix * sx, iy * sy, c)
+        peaks = topk_peaks(h, topk, floor, PEAK_SUPPRESS_RADIUS)
+        raw_conf.append(peaks[0][2] if peaks else 0.0)
+        if peaks:
+            cands[center] = [(ix * sx, iy * sy, c) for ix, iy, c in peaks]
+
+
+def select_track(cands: dict, max_step_px: float, link_gap: int,
+                 restart_cost: float, motion_w: float, gap_pen: float,
+                 accept_conf: float) -> dict:
+    """Choose ONE candidate per frame so the whole sequence forms the most
+    plausible single trajectory (Viterbi-style DP over candidates).
+
+    Score = summed candidate confidence, minus a motion penalty for how fast the
+    ball would have to move between consecutive picks (hard-gated at
+    `max_step_px` per frame), minus a small penalty for skipped frames. A
+    "restart" (re-acquiring after a long gap) is allowed but costs `restart_cost`
+    — enough that flip-flopping onto an adjacent court's ball never pays, while a
+    genuine re-appearance still does.
+
+    Returns {frame: (x, y, conf)} for the frames on the winning path."""
+    frames = sorted(cands)
+    nodes = []                      # (frame, x, y, conf)
+    by_frame = {}
+    for f in frames:
+        by_frame[f] = []
+        for (x, y, c) in cands[f]:
+            by_frame[f].append(len(nodes))
+            nodes.append((f, x, y, c))
+    n = len(nodes)
+    if n == 0:
+        return {}
+    score = [0.0] * n
+    prev = [-1] * n
+    run_best, run_arg = 0.0, -1     # best score among nodes at EARLIER frames
+
+    for f in frames:
+        cur = by_frame[f]
+        # snapshot the running best BEFORE this frame (restart source)
+        rb, ra = run_best, run_arg
+        for ni in cur:
+            _, x, y, c = nodes[ni]
+            best = rb - restart_cost + c        # re-acquire from the best prior state
+            bp = ra
+            for pf in range(f - 1, max(frames[0] - 1, f - link_gap - 1), -1):
+                if pf not in by_frame:
+                    continue
+                gap = f - pf
+                lim = max_step_px * gap
+                for pj in by_frame[pf]:
+                    _, px, py, _ = nodes[pj]
+                    d = math.hypot(x - px, y - py)
+                    if d > lim:
+                        continue
+                    speed = d / gap
+                    # penalise BOTH implausible speed and implausible stillness:
+                    # a parked object would otherwise be the perfect "smooth track".
+                    still = max(0.0, 1.0 - speed / TRACK_MIN_STEP_PX)
+                    s = (score[pj] + c - motion_w * (d / lim)
+                         - TRACK_STILL_W * still - gap_pen * (gap - 1))
+                    if s > best:
+                        best, bp = s, pj
+            score[ni], prev[ni] = best, bp
+        for ni in cur:                          # now they can serve as restart sources
+            if score[ni] > run_best:
+                run_best, run_arg = score[ni], ni
+
+    path = {}
+    i = max(range(n), key=lambda j: score[j])
+    while i != -1:
+        f, x, y, c = nodes[i]
+        path[f] = (x, y, c)
+        i = prev[i]
+
+    # Acceptance. A pick clearing `accept_conf` is trusted outright. A WEAKER pick
+    # is kept only when it sits on the track right next to an accepted one — that
+    # temporal support is exactly what a single-frame threshold cannot see, and it
+    # is what recovers the real-but-faint ball the old argmax+threshold discarded.
+    pf_sorted = sorted(path)
+    accepted = {f for f in pf_sorted if path[f][2] >= accept_conf}
+    grew = True
+    while grew:
+        grew = False
+        for f in pf_sorted:
+            if f in accepted:
+                continue
+            for g in accepted:
+                if abs(g - f) <= WEAK_SUPPORT_GAP:
+                    accepted.add(f)
+                    grew = True
+                    break
+    return {f: path[f] for f in pf_sorted if f in accepted}
 
 
 def _batch_size(device, args) -> int:
@@ -204,7 +340,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     bsz = _batch_size(device, args)
     log.info(f"batch size {bsz}")
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-    buf, dets, raw_conf = [], {}, []
+    buf, cands, raw_conf = [], {}, []
     b_stacks, b_centers = [], []
     src_cache = {} if args.overlay else None
     fidx = start
@@ -221,13 +357,22 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             b_stacks.append(np.concatenate(buf, axis=0))   # (9,H,W)
             b_centers.append(fidx - 1)
             if len(b_stacks) >= bsz:
-                detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, dets, raw_conf)
+                detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
+                             raw_conf, args.topk, args.cand_floor)
                 b_stacks, b_centers = [], []
         fidx += 1
         if (fidx - start) % 200 == 0 and fidx > start:
             log.info(f"  {fidx-start}/{len(frames)} frames")
-    detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, dets, raw_conf)  # flush
+    detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
+                             raw_conf, args.topk, args.cand_floor)  # flush
     cap.release()
+
+    n_cand_frames = len(cands)
+    dets = select_track(cands, args.max_step_px, TRACK_LINK_GAP,
+                        args.restart_cost, TRACK_MOTION_W, TRACK_GAP_PENALTY,
+                        args.conf)
+    log.info(f"candidates on {n_cand_frames} frames -> continuity track kept "
+             f"{len(dets)} detections (topk={args.topk}, floor={args.cand_floor})")
 
     rows = postprocess(dets, frames)
     df = pd.DataFrame(rows)
@@ -250,7 +395,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "video_height": sh,
         "detector": {"tool": "stages/track_ball/track_ball_v4.py",
                      "weights": str(args.weights), "proc_hw": [PROC_H, PROC_W],
-                     "conf_thresh": args.conf, "max_gap_frames": MAX_GAP_FRAMES},
+                     "conf_thresh": args.conf, "max_gap_frames": MAX_GAP_FRAMES,
+                     "topk": args.topk, "cand_floor": args.cand_floor,
+                     "max_step_px": args.max_step_px,
+                     "restart_cost": args.restart_cost,
+                     "selection": "continuity_dp"},
         "range": [start, end],
         "stats": {"frames": n_frames, "frames_visible": n_vis,
                   "frames_interpolated": n_interp,
@@ -289,7 +438,21 @@ def parse_args(argv=None):
     p.add_argument("--weights", default="data/models/ball_model_v4.pt")
     p.add_argument("--start-frame", type=int, default=0, dest="start_frame")
     p.add_argument("--max-frames", type=int, default=None, dest="max_frames")
-    p.add_argument("--conf", type=float, default=CONF_THRESH)
+    p.add_argument("--conf", type=float, default=CONF_THRESH,
+                   help="accept threshold: a picked candidate must clear this to be VISIBLE")
+    p.add_argument("--topk", type=int, default=CAND_TOPK,
+                   help="candidate heatmap peaks kept per frame (1 = old argmax behaviour)")
+    p.add_argument("--cand-floor", type=float, default=CAND_CONF_FLOOR,
+                   dest="cand_floor",
+                   help="keep candidates down to this confidence (below --conf); the "
+                        "continuity tracker decides which is the ball")
+    p.add_argument("--max-step-px", type=float, default=TRACK_MAX_STEP_PX,
+                   dest="max_step_px",
+                   help="max plausible ball motion in SOURCE px per frame (link gate)")
+    p.add_argument("--restart-cost", type=float, default=TRACK_RESTART_COST,
+                   dest="restart_cost",
+                   help="cost to re-acquire the ball after losing it; higher = less "
+                        "willing to jump to a neighbouring court's ball")
     p.add_argument("--batch", type=int, default=None,
                    help="frames per GPU forward pass (default: auto from GPU memory; CPU=1)")
     p.add_argument("--overlay", default=None, help="write a debug overlay mp4 of the range")

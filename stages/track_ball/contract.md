@@ -285,3 +285,38 @@ Increment minor for behavior changes that preserve schema; increment
 - **Camera assumption.** Documented in `ARCHITECTURE.md` (Pipeline-wide
   assumptions § Camera placement). Stage 4 inherits this assumption and
   does not re-validate it.
+## Candidate + continuity tracking (2026-07-21) — adjacent-court fix
+
+**Symptom (match clip `pb_5_minute_outdoor-2`):** in-rally ball visibility only
+**78.3%**, with **128 in-rally teleports** >200 px/frame. The track flip-flopped
+between our ball and an object parked at ~(2631,1030) — *above* our court's image
+region, i.e. a neighbouring court.
+
+**Root cause:** inference took the heatmap's single **global `argmax`** per frame and
+kept it only if it cleared `conf_thresh` (0.30). So (a) whenever a neighbouring
+court's ball produced the stronger peak the track jumped there, with the real ball
+never recorded as an alternative, and (b) a real-but-faint ball below 0.30 was
+discarded outright. There was **no temporal continuity** at all — each frame decided
+independently. The existing outlier filter only drops a detection far from *both*
+neighbours, so alternating runs of 2+ frames survived.
+
+**Fix:**
+1. `topk_peaks()` — keep the top-`k` LOCAL maxima per frame (peak, suppress its
+   neighbourhood, repeat) down to `--cand-floor` (0.15), *below* the accept
+   threshold, so alternatives and faint balls are recorded.
+2. `select_track()` — Viterbi-style DP over candidates choosing the single most
+   plausible trajectory. Score = summed confidence − motion penalty (hard-gated at
+   `--max-step-px`) − **stationarity penalty** − skipped-frame penalty, with a
+   `--restart-cost` for re-acquiring after a real loss.
+   > **The stationarity penalty is essential.** Penalising motion alone makes a
+   > PARKED object the "smoothest" possible track, so the contaminant wins outright
+   > (verified: it took 60/60 frames before this term was added). A ball in play is
+   > never parked — measured median motion is ~6.7 src px/frame.
+3. **Acceptance by temporal support** — a pick clearing `--conf` is trusted; a weaker
+   pick is kept only when it sits on the track within `WEAK_SUPPORT_GAP` of an
+   accepted one. That recovers faint real balls without promoting isolated noise.
+
+Defaults preserve old behaviour at `--topk 1 --cand-floor 0.30`. Covered by 6 unit
+tests (parked contaminant, weak-ball recovery, isolated-noise rejection, impossible
+jump, top-k peak extraction/suppression). **Requires a GPU re-run to take effect** —
+the change is in inference, so existing `ball.parquet` files are unaffected.

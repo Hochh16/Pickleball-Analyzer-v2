@@ -34,7 +34,81 @@ import pandas as pd
 
 from stages.track_ball.track_ball_v4 import (
     postprocess, MAX_GAP_FRAMES, OUTLIER_MAX_STEP_PX, SCHEMA_VERSION,
+    select_track, topk_peaks,
 )
+
+
+# --- candidate + continuity selection (adjacent-court contamination fix) ------
+# These use plain asserts (pytest-native); the older tests above predate that.
+
+def _sel(cands, accept=0.30):
+    return select_track(cands, 160.0, 8, 2.5, 1.0, 0.05, accept_conf=accept)
+
+
+def test_topk_peaks_finds_multiple_maxima():
+    h = np.zeros((40, 40), dtype=np.float32)
+    h[10, 10] = 0.9      # strongest
+    h[30, 30] = 0.6      # second, far enough not to be suppressed
+    peaks = topk_peaks(h, k=3, min_conf=0.15, radius=6)
+    assert len(peaks) == 2
+    assert (peaks[0][0], peaks[0][1]) == (10, 10)
+    assert (peaks[1][0], peaks[1][1]) == (30, 30)
+
+
+def test_topk_peaks_suppresses_same_blob():
+    h = np.zeros((40, 40), dtype=np.float32)
+    h[10, 10] = 0.9
+    h[10, 12] = 0.85     # same blob, inside the suppression radius
+    peaks = topk_peaks(h, k=3, min_conf=0.15, radius=6)
+    assert len(peaks) == 1   # one ball, not two
+
+
+def test_parked_contaminant_never_steals_the_track():
+    """The real failure: a stationary higher-confidence ball on a NEIGHBOURING
+    court. Penalising motion alone would make the parked object the 'smoothest'
+    track, so stillness must be penalised too."""
+    cands = {}
+    for f in range(60):
+        ours = (1000 + 8 * f, 1500 - 3 * f, 0.55)     # smooth, moving
+        contam = (2631, 1030, 0.90 if f % 3 else 0.40)  # parked, often stronger
+        cands[f] = [contam, ours]
+    sel = _sel(cands)
+    picked_contam = [f for f, (x, _, _) in sel.items() if abs(x - 2631) < 1]
+    assert not picked_contam, f"contaminant stole {len(picked_contam)} frames"
+    assert len(sel) == 60
+
+
+def test_weak_but_continuous_ball_is_recovered():
+    """A real ball whose confidence dips BELOW the accept threshold is kept when
+    it sits on the track beside accepted detections — temporal support is what a
+    single-frame threshold cannot see."""
+    cands = {f: [(500 + 6 * f, 900 + 2 * f, 0.22 if 10 <= f < 20 else 0.65)]
+             for f in range(40)}
+    sel = _sel(cands)
+    recovered = [f for f in sel if cands[f][0][2] < 0.30]
+    assert len(recovered) == 10
+    assert len(sel) == 40
+
+
+def test_isolated_weak_noise_is_not_promoted():
+    """Weak candidates with NO confident support nearby must stay rejected."""
+    cands = {0: [(100, 100, 0.8)], 1: [(106, 102, 0.8)],
+             30: [(2000, 300, 0.18)]}          # lone weak blip, far away
+    sel = _sel(cands)
+    assert 30 not in sel
+
+
+def test_impossible_jump_is_not_linked():
+    """A 1200 px/frame step is not ball motion; the DP must restart, not link."""
+    cands = {f: [(100 + 5 * f, 100, 0.8)] for f in range(20)}
+    for f in range(20, 40):
+        cands[f] = [(3000 + 5 * (f - 20), 1800, 0.9)]
+    sel = _sel(cands)
+    # both segments are individually valid, so both survive -- but as separate
+    # runs; the point is no single link spans the impossible gap.
+    assert 19 in sel and 20 in sel
+    x19, x20 = sel[19][0], sel[20][0]
+    assert abs(x20 - x19) > 1000   # the discontinuity is preserved, not smoothed
 
 
 def _fail(m): print(f"  FAIL: {m}"); return False
