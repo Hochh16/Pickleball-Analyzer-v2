@@ -1,4 +1,95 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-12)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-22)
+
+## 2026-07-22 — ACCURACY DRIVEN BY OPERATOR COUNTS → next = dinks, volleys, rallies — READ FIRST
+
+### THE ONE THING TO KNOW
+
+**The operator's counts are the acceptance test. Validate every change against THEM,
+never against the previous run.** Full detail in `docs/ACCURACY_LEDGER.md` (top).
+
+`pb_5_minute_outdoor-2` operator truth: **98 shots · 13 serves = 13 rallies · 18 dinks
+· 17 volleys · 81 bounces**, and the identity **`shots = volleys + bounces`** (98 = 17
++ 81) must hold.
+
+> **Why this matters.** Per-shot shot-TYPE accuracy was tuned on a single rally for
+> several days while nobody checked the whole-clip COUNTS — which is all the operator
+> sees in the report. He supplied one count and a 25 % adjacent-court contamination bug
+> fell out in minutes. Do not optimise a stage in isolation of the report's objectives.
+
+### Scorecard now (start of session → now, vs truth)
+
+| item | truth | start | now |
+|---|---|---|---|
+| Shots | 98 | 155 | **108** |
+| Bounces | 81 | 146 | **75** |
+| Serves | 13 | 4 | **11** |
+| Volleys | 17 | 51 | **27** |
+| Dinks | 18 | 8 | **35** |
+| Rallies | 13 | 19 | 18 |
+| Forehand+backhand | — | 26 shots | **76 shots** |
+
+### Fixed this session (commits `ad83df5`, `e1d9518`, and earlier)
+
+1. **Adjacent-court contamination** — `detect_shots`/`detect_bounces` never excluded
+   `role='noise'` tracks, so people on NEIGHBOURING courts generated shots/bounces
+   (38 of 155 shots = 25 %). Both now restrict association to the four participants.
+2. **Serves detected then thrown away** — the serve test `continue`d when the frame was
+   already an impulse shot, leaving `is_serve=False`; 11 of 18 rallies had no serve.
+   Now promotes that shot to a serve.
+3. **Handedness discarded** — `roster.json` has all four players' handedness and
+   `stroke_side()` derives facing from pose, but only the user's was used (74 of 108
+   shots "unknown"). Now per-player.
+4. **Bounce physics** — capped at ONE landing per shot (intervals had up to 12).
+5. Rally model: **a serve STARTS a rally; a stall/gap/dead ball ENDS it** (does not
+   start a new one); a non-serve shot may open a rally only if struck from DEEP.
+6. Earlier in session: Stage 4 candidate+continuity ball tracking (teleports 20→0),
+   confidence calibration (fallback + volley) to measured accuracy.
+
+### NEXT — in this order, each validated against the counts above
+
+1. **Dinks 35 vs 18** — over-calling. Recalibrate thresholds against the operator's 18.
+2. **Volleys 27 vs 17** — should follow once bounces are exact (use the identity).
+3. **Rallies 18 vs 13** — 11 serve-starts + 7 deep-shot restarts. **Sweeping the
+   stall / gap / dead-ball thresholds does NOT move the count** (verified), so the
+   current theory is wrong — trace the 7 actual restart frames instead of tuning.
+4. **Then** rebuild the report.
+
+### Operator directives (do not lose)
+
+- **Report chart:** keep EVERY USA-Pickleball-rated item listed under "what's behind
+  each category" — do not delete rows. The filled/unfilled circles must honestly show
+  measured / partial / not-yet.
+- **Camera stays as-is** (one camera, ~6 ft, corner). A side mount was tried before and
+  caused other problems; a higher mount may be possible later, not now.
+- Everything must be driven off what USA Pickleball rates; no stage work in isolation.
+
+### Capability verdict (full matrix in the ledger)
+
+- **ACHIEVABLE:** shot/serve/rally/return counts, dink VOLUME, third-shot
+  drop-vs-drive CHOICE, forehand/backhand per player, positioning/kitchen time, and
+  volley COUNT via the identity (`volleys = shots − bounces`).
+- **BLOCKED by the single low camera** (needs ball HEIGHT — three independent
+  height-free methods tested and defeated): dink QUALITY, true shot speed, direct
+  bounce-vs-volley at the feet, spin.
+- So the report can honestly do VOLUME / CHOICE / POSITIONING, **not stroke quality**.
+
+### Fast test rig (use this, not the 4.7 GB clip)
+
+`data/pb_outdoor2_excerpt` — 44 s, source frames 16200-18861 (**excerpt frame f ==
+source f + 16200**; rally 10 = excerpt f1684-2544). Bundle already on Drive as
+`pb_outdoor2_excerpt_vision_input.zip`. Full vision pass ≈ 2 min on A100.
+Colab notebook has `CLIP` / `RERUN` knobs — `RERUN='ball'` redoes ONE stage.
+⚠ The notebook run cell needs all three lines including `run_all(REPO, clip=CLIP,
+rerun=RERUN)`; pasting only the two assignments does nothing (runs in 0.006 s).
+
+### Repo state
+
+All work committed and pushed to `main` (HEAD `e1d9518`). 20/20 stage tests pass.
+Pipeline order: shots → bounces → **trajectory (5.7)** → classify → rallies → metrics
+→ rate → plan → report.
+
+---
+
 
 ## 2026-07-12 — SETUP UI PHASE 1 DONE (setup wizard) → next = UI Phase 2 (run & progress) — READ FIRST
 

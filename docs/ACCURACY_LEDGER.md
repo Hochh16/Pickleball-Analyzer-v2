@@ -1,5 +1,89 @@
 # Accuracy ledger — real-clip validation
 
+## ACCEPTANCE TEST — operator ground truth (`pb_5_minute_outdoor-2`, 2026-07-22)
+
+**These counts are the acceptance test. Validate every change against THEM, never
+against the previous run.** (Lesson learned the hard way: per-shot type accuracy was
+tuned on one rally for days while the whole-clip COUNTS — what the operator actually
+sees in the report — were never checked. A single operator count exposed a 25%
+adjacent-court contamination bug in minutes.)
+
+| item | operator truth |
+|---|---|
+| Shots | **98** |
+| Serves = rallies = returns | **13** |
+| Dinks | **18** |
+| Volleys | **17** |
+| Bounces | **81** |
+
+**Identity that must hold: `shots = volleys + bounces`** (98 = 17 + 81). Every shot is
+either volleyed out of the air or lands exactly once. This is the single best
+self-check in the system — enforce it in code, not just in review.
+
+### Scorecard (2026-07-22, after the ground-truth-driven fixes)
+
+| item | truth | session start | now | error |
+|---|---|---|---|---|
+| Shots | 98 | 155 | **108** | +10% |
+| Bounces | 81 | 146 | **75** | −7% |
+| Serves | 13 | 4 | **11** | −15% |
+| Volleys | 17 | 51 | **27** | +59% |
+| Dinks | 18 | 8 | **35** | +94% |
+| Rallies | 13 | 19 | 18 | +38% |
+| Forehand+backhand | — | 26 shots | **76 shots** | — |
+
+### CAPABILITY ASSESSMENT — what this camera can and cannot deliver
+
+Camera: ONE camera, ~6 ft, corner mount. Operator will not change it now (a side
+mount was tried before and caused other problems; a higher mount is possible later).
+
+**ACHIEVABLE (errors here are bugs, not physics — proven 2026-07-22):**
+- shot counts, serve counts, rally counts, return counts
+- dink/drive/drop VOLUME and the third-shot drop-vs-drive CHOICE
+- forehand / backhand per player (roster already carries all four players' handedness)
+- court positioning, kitchen-line time, team movement, court coverage
+- volley COUNT — not by seeing height, but **derived from the identity**
+  (`volleys = shots − bounces`), which sidesteps the height problem entirely
+
+**BLOCKED by the single low camera (needs ball HEIGHT; three independent height-free
+methods tested and defeated — see "TESTED ON CLEAN DATA" below):**
+- dink QUALITY (pop-up height, height/depth control)
+- true shot speed
+- direct bounce-vs-volley discrimination at a player's feet
+- spin (not feasible at this resolution)
+
+**Product consequence:** the report can honestly cover the USAPA rubric on VOLUME,
+CHOICE and POSITIONING, but not STROKE QUALITY. **Operator directive (2026-07-22):
+keep every USA-Pickleball-rated item listed in the "what's behind each category"
+chart — do not delete rows — and let the filled/unfilled circles tell the truth about
+what is measured, partial, or not yet available.**
+
+### Bugs found from the operator counts (all fixed 2026-07-22)
+
+1. **Adjacent-court contamination.** `detect_shots` loaded `track_roles.json` but used
+   it ONLY to set `is_user`; it never excluded `role='noise'`. On a multi-court venue a
+   ball wobble near someone on the NEXT court became a shot — **38 of 155 shots (25%)**.
+   `detect_bounces` had the same hole in its at-feet test. Both now restrict
+   association to the four participants.
+2. **Serves detected then discarded.** When the serve-appearance test fired at a frame
+   already captured as an impulse shot, the code `continue`d — leaving `is_serve=False`.
+   11 of 18 rallies had NO serve. Now it PROMOTES that shot to a serve.
+3. **Handedness thrown away.** `roster.json` carries handedness for all four players
+   and `stroke_side()` derives facing from the pose, but the code passed handedness
+   only for the user, leaving 74 of 108 shots "unknown".
+4. **No physical bounce constraint.** Intervals held up to 12 bounces. Now capped at
+   ONE landing per shot, per the identity above.
+
+### Remaining work (priority order, validate each against the counts above)
+
+1. **Dinks 35 vs 18** — over-calling; recalibrate thresholds against the operator's 18.
+2. **Volleys 27 vs 17** — should fall out once bounces are exact (identity).
+3. **Rallies 18 vs 13** — 11 serve-starts + 7 deep-shot restarts. NOTE: sweeping the
+   stall / gap / dead-ball thresholds does NOT move the count, so the current theory is
+   wrong — trace the 7 actual restart points rather than tuning blind.
+4. **Then** rebuild the report.
+
+
 Foundations-first accuracy tracking: validate each stage by RENDERING its output
 against reality, not by smoke tests. Confidence ≠ correctness. Started 2026-07-18
 on `pb_5min_test_20s-7`.
