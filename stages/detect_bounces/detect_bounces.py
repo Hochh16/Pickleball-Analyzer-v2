@@ -48,10 +48,13 @@ BALL_COVERAGE_WARN_FRAC = 0.30
 # candidates this close to a shot are treated as duplicates of that shot.
 SHOT_FRAME_EXCLUSION_WINDOW = 3
 
-# Rules cap: between two consecutive paddle strikes the ball can bounce at most
-# twice (the landing, plus a second bounce that ends the rally). A third is
-# physically impossible, so it is a detection artifact.
-MAX_BOUNCES_PER_INTERVAL = 2
+# Rules cap, from the operator's identity check: SHOTS = VOLLEYS + BOUNCES. Every
+# shot either gets volleyed out of the air (no bounce) or lands exactly ONCE before
+# the next strike, so an interval may hold at most one LANDING. (A dead-ball second
+# bounce happens after the rally is already over.) Operator ground truth on
+# pb_5_minute_outdoor-2: 98 shots = 17 volleys + 81 bounces, exactly. Anything beyond
+# one bounce per interval is a detection artifact.
+MAX_BOUNCES_PER_INTERVAL = 1
 
 # Y-velocity-flip floor. A real ground bounce reverses vertical direction
 # (descending -> ascending); requiring this for every bounce (not just at-feet

@@ -592,8 +592,21 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         if contam_filter and (run_bounds(f)[1] - f + 1) < min_serve_run:
             n_rejected_serve_blip += 1
             continue
-        if any(abs(f - sf) <= W for sf in impulse_frames):
-            continue  # already captured as an impulse shot
+        # Already captured as an impulse shot? Then PROMOTE that shot to a serve
+        # rather than discarding the serve evidence. Skipping here left the shot
+        # with is_serve=False, so real serves went unflagged: 11 of 18 rallies had
+        # no serve at all, which starves rally segmentation and makes the third
+        # shot (a core USAPA item) unidentifiable.
+        near_impulse = [sf for sf in impulse_frames if abs(f - sf) <= W]
+        if near_impulse:
+            target = min(near_impulse, key=lambda sf: abs(f - sf))
+            for sh in shots:
+                if sh["frame"] == target and not sh["is_serve"]:
+                    sh["is_serve"] = True
+                    sh["detection_method"] = "impulse+serve_appearance"
+                    n_serves += 1
+                    break
+            continue
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:

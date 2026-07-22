@@ -517,6 +517,16 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     bounces_doc = load_json(folder / "bounces.json")  # required: Stage 5.5 output
     court = load_court(folder / "court.json")
     roster = load_roster(folder / "roster.json", log)
+    # track_id -> Stage 2.5 role, so every player's handedness (the app collects it
+    # for all four) can drive forehand/backhand -- not just the user's.
+    roles_by_tid: Dict[int, str] = {}
+    _tr = folder / "track_roles.json"
+    if _tr.exists():
+        for t, info in (load_json(_tr).get("track_roles", {}) or {}).items():
+            try:
+                roles_by_tid[int(t)] = info.get("role")
+            except (TypeError, ValueError):
+                continue
     players, players_by_frame = index_players(folder / "players.parquet")
     poses = index_poses(folder / "poses.parquet")
     bx, by, bknown = load_ball(folder / "ball.parquet")
@@ -649,7 +659,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
         # stroke side: forehand/backhand for the user (handedness known); an
         # above-the-head contact is an 'overhead' stroke regardless of handedness.
-        hand = user_hand if is_user else None
+        # Forehand/backhand for EVERY player: the roster carries handedness for
+        # user/partner/opp_a/opp_b and stroke_side() derives facing from the pose,
+        # so restricting this to the user threw away data we already collect (it
+        # left 74 of 108 shots' stroke side "unknown").
+        hand = user_hand if is_user else roster.get(roles_by_tid.get(tid) or "")
         side, side_conf = stroke_side(float(impact_x), pose, hand)
         if contact_h == "high":
             side, side_conf = "overhead", 0.7

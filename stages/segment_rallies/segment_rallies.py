@@ -54,13 +54,13 @@ BALL_DEAD_RUN_SEC = 1.5
 # visible and moving while a player bounces it before serving (measured: 3.6 s at 90 %
 # visibility, 12 px/frame, four same-side contacts). A SHORT same-side gap is left
 # alone: that is a missed opponent shot mid-rally, which must NOT split the rally.
-SAME_SIDE_STALL_SEC = 2.0
+SAME_SIDE_STALL_SEC = 3.0
 # Absolute ceiling on the time between consecutive contacts WITHIN one rally,
 # regardless of side. In real play contacts are 0.5-2 s apart (a high lob ~3 s at
 # most); even one missed shot only doubles that. Gaps beyond this are dead time
 # between points that the out-of-play rule can miss whenever the ball stays visible
 # (a player bouncing/holding it). Observed pre-fix: rallies carrying 5-15 s gaps.
-MAX_INTRA_RALLY_GAP_SEC = 4.0
+MAX_INTRA_RALLY_GAP_SEC = 5.0
 
 # Minimum-rally filter (real ball). A real point is a sustained exchange; between
 # points / after the game players stand at the net and tap the ball a couple times
@@ -170,6 +170,18 @@ def bounce_in_receivers_kitchen(bounce_court_y: Optional[float],
 
 # --- Boundary segmentation ---------------------------------------------------
 
+def _starts_from_deep(shot: dict) -> bool:
+    """Could this shot be the start of a point whose serve we failed to flag? A
+    serve is struck from behind the baseline, so only a DEEP contact can open a
+    rally; a shot taken at the kitchen while no rally is live is between-point
+    ball-handling."""
+    if shot.get("is_serve"):
+        return True
+    zone = (shot.get("features") or {}).get("contact_zone")
+    return zone == "baseline"
+
+
+
 def longest_dead_run(a: int, b: int, ball_known) -> int:
     """Longest run of consecutive NOT-known (ball out of play) frames strictly
     between frames a and b. The key rally-boundary signal: during a point the
@@ -228,6 +240,7 @@ def segment_rallies(shots: List[dict],
 
     # Real-ball: split on a sustained ball-out-of-play run OR a flagged serve.
     segments: List[List[dict]] = []
+    between_points: List[dict] = []   # shots while no rally is live (handling/dead time)
     cur = None
     prev_frame: Optional[int] = None
     prev_side: Optional[str] = None
@@ -247,26 +260,46 @@ def segment_rallies(shots: List[dict],
         # Absolute ceiling: no rally has consecutive contacts this far apart.
         too_long = bool(max_gap_frames is not None and prev_frame is not None
                         and (f - prev_frame) >= max_gap_frames)
-        starts_new = bool(s.get("is_serve")) or same_side_stall or too_long or (
+        # A SERVE starts a rally. A stall / long gap / dead ball ENDS the current
+        # rally but does NOT start a new one -- play has stopped, and what follows is
+        # between-point handling until the next serve. Treating those breaks as rally
+        # STARTS over-counted rallies (20 detected vs the operator's 13) because every
+        # dead-time fragment became its own "rally"; operator truth is 1 rally per
+        # serve (13 serves = 13 rallies).
+        play_stopped = same_side_stall or too_long or (
             ball_dead_run_frames is not None and dead >= ball_dead_run_frames)
-        if cur is None:
+        if s.get("is_serve"):
+            if cur is not None:
+                segments.append(cur)
             cur = [s]
-        elif starts_new:
+        elif cur is not None and play_stopped:
             segments.append(cur)
-            cur = [s]
-        else:
+            # Play stopped. This shot either STARTS the next point (its serve was
+            # missed -- serve detection is ~11/13) or is between-point handling. A
+            # point is started from DEEP: you serve from behind the baseline. Handling
+            # happens anywhere, typically at the net. Use that to decide instead of
+            # dropping everything (which stranded 67 of 108 real shots).
+            cur = [s] if _starts_from_deep(s) else None
+            if cur is None:
+                between_points.append(s)
+        elif cur is not None:
             cur.append(s)
+        else:
+            cur = [s] if _starts_from_deep(s) else None
+            if cur is None:
+                between_points.append(s)
         prev_frame = f
         prev_side = side
     if cur is not None:
         segments.append(cur)
 
-    rallies, dropped = [], []
+    rallies, dropped = [], list(between_points)
     for seg in segments:
         if len(seg) == 1 and not seg[0].get("is_serve"):
             dropped.extend(seg)  # courtesy feed / isolated non-serve hit
         else:
             rallies.append(seg)
+    dropped.sort(key=lambda s: int(s["frame"]))
     return rallies, dropped
 
 
