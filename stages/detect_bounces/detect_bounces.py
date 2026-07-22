@@ -48,6 +48,11 @@ BALL_COVERAGE_WARN_FRAC = 0.30
 # candidates this close to a shot are treated as duplicates of that shot.
 SHOT_FRAME_EXCLUSION_WINDOW = 3
 
+# Rules cap: between two consecutive paddle strikes the ball can bounce at most
+# twice (the landing, plus a second bounce that ends the rally). A third is
+# physically impossible, so it is a detection artifact.
+MAX_BOUNCES_PER_INTERVAL = 2
+
 # Y-velocity-flip floor. A real ground bounce reverses vertical direction
 # (descending -> ascending); requiring this for every bounce (not just at-feet
 # ones) rejects mid-air noise wobbles. NOTE: the flip currently uses WINDOWED
@@ -167,7 +172,23 @@ def load_shots(path: Path) -> dict:
         return json.load(f)
 
 
-def index_players(path: Path) -> Tuple[Dict[int, List[dict]], int]:
+def load_participant_tids(path: Path):
+    """Stage 2.5 track ids that are actual match participants (role != 'noise').
+    On a multi-court venue the frame is full of people on ADJACENT courts; letting
+    them anchor the at-feet bounce test manufactures phantom bounces. Returns None
+    if track_roles.json is absent (no filtering)."""
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            d = json.load(f)
+        return {int(t) for t, info in d.get("track_roles", {}).items()
+                if info.get("role") != "noise"}
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def index_players(path: Path, participant_tids=None) -> Tuple[Dict[int, List[dict]], int]:
     if not path.exists():
         fail(f"players.parquet not found: {path}", FileNotFoundError)
     df = pd.read_parquet(path)
@@ -177,6 +198,8 @@ def index_players(path: Path) -> Tuple[Dict[int, List[dict]], int]:
     if missing:
         fail(f"players.parquet missing columns: {sorted(missing)}", ValueError)
     df = df[~df["transient"]]
+    if participant_tids is not None:
+        df = df[df["track_id"].isin(list(participant_tids))]
     by_frame: Dict[int, List[dict]] = {}
     for r in df.itertuples(index=False):
         by_frame.setdefault(int(r.frame), []).append({
@@ -575,6 +598,32 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
             n_at_feet += 1
 
     bounces.sort(key=lambda b: b["frame"])
+
+    # --- Physical cap: at most TWO bounces between consecutive shots -----------
+    # The rules make this hard: the ball may bounce once (the landing) and, if the
+    # receiver fails to return it, a second time — after which the rally is DEAD, so
+    # a third bounce before the next paddle strike is impossible. Anything beyond two
+    # is a false positive (measured on pb_5_minute_outdoor-2: intervals carrying 5, 6,
+    # 7, 9 and even 12 "bounces"; 47 detections in excess of the physical maximum).
+    # Keep the two most confident in each interval, in frame order.
+    by_interval: Dict[Tuple, List[dict]] = {}
+    for b in bounces:
+        bs = b.get("between_shots") or [None, None]
+        by_interval.setdefault((bs[0], bs[1]), []).append(b)
+    n_over_cap = 0
+    keep_ids = set()
+    for key, group in by_interval.items():
+        if len(group) <= MAX_BOUNCES_PER_INTERVAL:
+            keep_ids.update(id(b) for b in group)
+            continue
+        ranked = sorted(group, key=lambda b: -float(b.get("confidence") or 0.0))
+        keep = ranked[:MAX_BOUNCES_PER_INTERVAL]
+        n_over_cap += len(group) - len(keep)
+        keep_ids.update(id(b) for b in keep)
+    if n_over_cap:
+        bounces = [b for b in bounces if id(b) in keep_ids]
+        for i, b in enumerate(bounces):
+            b["bounce_id"] = i
     for i, b in enumerate(bounces):
         b["bounce_id"] = i
 
@@ -619,7 +668,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     court = load_court(court_path)
     ball_meta = load_ball_meta(ball_meta_path)
     df_ball = load_ball(ball_path)
-    players_by_frame, n_player_rows = index_players(players_path)
+    participant_tids = load_participant_tids(folder / "track_roles.json")
+    if participant_tids is not None:
+        log.info(f"excluding adjacent-court (noise) tracks from the at-feet test; "
+                 f"{len(participant_tids)} participant track(s)")
+    players_by_frame, n_player_rows = index_players(players_path, participant_tids)
     shots_doc = load_shots(shots_path)
 
     fps = court["fps"] or ball_meta.get("video_fps")

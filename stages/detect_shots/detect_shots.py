@@ -151,7 +151,8 @@ def load_ball(path: Path, log: logging.Logger) -> pd.DataFrame:
 
 
 def index_players(path: Path, net_y_ft: float,
-                  user_tids: Optional[set] = None
+                  user_tids: Optional[set] = None,
+                  participant_tids: Optional[set] = None
                   ) -> Tuple[Dict[int, List[dict]], int, Dict[int, str]]:
     """Index non-transient players by frame. `is_user` comes from `user_tids`
     (the Stage 2.5 role 'user') when provided, else from players.parquet's
@@ -167,6 +168,13 @@ def index_players(path: Path, net_y_ft: float,
     if missing:
         fail(f"players.parquet missing columns: {sorted(missing)}", ValueError)
     df = df[~df["transient"]]
+    # Keep ONLY the four match participants. On a multi-court venue the frame is
+    # full of people on ADJACENT courts (Stage 2.5 role 'noise'); associating a
+    # ball impulse with one of them manufactures a phantom shot. Measured on
+    # pb_5_minute_outdoor-2: 38 of 155 detected shots (25%) were attributed to
+    # noise tracks. Roles come from Stage 2.5, which runs before this stage.
+    if participant_tids is not None:
+        df = df[df["track_id"].isin(list(participant_tids))]
     side_by_track: Dict[int, str] = {}
     for tid, med_y in df.groupby("track_id")["court_y_ft"].median().items():
         if not np.isnan(med_y):
@@ -685,11 +693,18 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     df_ball = load_ball(ball_path, log)
     roles = load_track_roles(folder / "track_roles.json")
     user_tids = None
+    participant_tids = None
     if roles is not None:
         user_tids = {tid for tid, r in roles.items() if r == "user"}
-        log.info(f"using track_roles.json: is_user from {len(user_tids)} user track(s)")
+        # Only the four match participants may be credited with a shot; everyone
+        # else in frame is on an adjacent court (role 'noise').
+        participant_tids = {tid for tid, r in roles.items() if r != "noise"}
+        n_noise = sum(1 for r in roles.values() if r == "noise")
+        log.info(f"using track_roles.json: is_user from {len(user_tids)} user track(s); "
+                 f"{len(participant_tids)} participant track(s), excluding {n_noise} "
+                 f"noise (adjacent-court) track(s) from shot association")
     players_by_frame, n_player_rows, side_by_track = index_players(
-        players_path, court["net_y_ft"], user_tids)
+        players_path, court["net_y_ft"], user_tids, participant_tids)
     poses = index_poses(poses_path)
 
     # fps consistency
