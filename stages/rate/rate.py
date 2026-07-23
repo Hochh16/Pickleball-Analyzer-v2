@@ -57,6 +57,11 @@ LEVEL_MIN, LEVEL_MAX = 1.0, 5.5
 REAL_DIMS = {"strategy"}
 # Categories we can currently only COUNT (no quality metric) -> confidence capped.
 COUNT_ONLY_DIMS = {"forehand", "backhand"}
+# Category -> its count driver. A non-zero count makes the category at least
+# 'partial' coverage (we can show volume even when quality is unmeasured).
+COUNT_DRIVER = {"forehand": "forehand_count", "backhand": "backhand_count",
+                "dink": "dink_count", "volley": "n_volley",
+                "serve_return": "n_serves"}
 SOFT_SHOT_TYPES = {"dink", "drop", "reset"}
 VARIETY_SHOT_TYPES = {"dink", "drop", "reset", "drive", "lob", "overhead"}
 
@@ -389,6 +394,17 @@ def compute_rating(metrics: dict, ball_source: str,
         if name in COUNT_ONLY_DIMS:
             conf = min(conf, QUALITY_UNMEASURED_CONF)
         conf = round(conf, 4)
+        # Coverage vs the RATING is quality-driven (a count-only category can't move
+        # the number confidently). But the report's coverage BADGE should tell the
+        # truth about what we can show: a category with a reliable COUNT is at least
+        # 'partial' (we know how MUCH, just not how WELL). Only a category with no
+        # count stays 'not_assessable'. This keeps the headline honest while the
+        # chart reflects the validated volumes (dink/serve/volley counts checked
+        # against operator truth 2026-07-22).
+        cov = coverage_status(conf)
+        cdk = COUNT_DRIVER.get(name)
+        if cov == "not_assessable" and cdk and (drivers.get(cdk) or 0) > 0:
+            cov = "partial"
         dimensions.append({
             "name": name,
             "subscore_level": round(subscore, 3),
@@ -396,7 +412,7 @@ def compute_rating(metrics: dict, ball_source: str,
             "confidence": conf,
             "limited_by": binding_lim,
             "data_source": "real" if is_real_source else "synthetic",
-            "coverage_status": coverage_status(conf),
+            "coverage_status": cov,
             "driver_metrics": drivers,
         })
 

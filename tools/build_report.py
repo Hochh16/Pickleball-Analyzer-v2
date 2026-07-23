@@ -302,6 +302,20 @@ def build_html(folder: Path) -> str:
     timeline = load_json(folder, "timeline.json") or {}
     classified = load_json(folder, "classified.json") or {}
     rallies_doc = load_json(folder, "rallies.json") or {}
+    metrics = load_json(folder, "metrics.json") or {}
+    # Match-level totals (all four players) for the count drivers, so each count row
+    # can show BOTH the match total and the user's share ("22 in the match, 6 by
+    # you") — operator directive: it puts the user's numbers in perspective.
+    _mm = (metrics.get("match", {}) or {}).get("shot_mix", {}) or {}
+    _bt = ((_mm.get("by_shot_type", {}) or {}).get("value", {}) or {})
+    _bs = ((_mm.get("by_stroke_side", {}) or {}).get("value", {}) or {})
+    match_counts = {
+        "dink_count": _bt.get("dink"),
+        "n_volley": ((_mm.get("volley", {}) or {}).get("value", {}) or {}).get("n_volley"),
+        "n_serves": _bt.get("serve"),
+        "forehand_count": _bs.get("forehand"),
+        "backhand_count": _bs.get("backhand"),
+    }
 
     rt = rating.get("rating", {}) or {}
     dims = {d["name"]: d for d in rating.get("dimensions", [])}
@@ -310,9 +324,13 @@ def build_html(folder: Path) -> str:
                       (plan.get("developing_capability", {}) or {}).get("not_assessable_now", [])}
 
     def cov_of(c):
-        # reconcile: plan's zero-event guard overrides the rating's confidence status
-        return "not_assessable" if c in not_assessable else dims.get(c, {}).get(
-            "coverage_status", "not_assessable")
+        # The coverage BADGE reflects MEASUREMENT (what we can show), which is the
+        # rating's coverage_status. It is decoupled from the plan's COACHING gate
+        # (`not_assessable`): a category can have a validated count we display as
+        # 'partial' while still not being coached off a tiny sample. Only fall back
+        # to the coaching gate when the rating has no status at all.
+        return dims.get(c, {}).get(
+            "coverage_status", "not_assessable" if c in not_assessable else "not_assessable")
 
     O = []
     A = O.append
@@ -390,8 +408,17 @@ def build_html(folder: Path) -> str:
         for k, (label, fmt) in METRIC_DISPLAY.items():
             if k in drivers:
                 s = fmt_metric(fmt, drivers[k])
-                if s is not None:
-                    ref = fn(5) if k == "distance_ft_per_min" else ""
+                if s is None:
+                    continue
+                ref = fn(5) if k == "distance_ft_per_min" else ""
+                # Count drivers: show the match total AND the user's share, so the
+                # user's numbers sit in perspective (a 5-min clip has ~4 players).
+                mt = match_counts.get(k)
+                if k in match_counts and mt is not None:
+                    nums.append(f'<div class="metric">{esc(label)}: '
+                                f'<b>{esc(str(mt))}</b> in the match, '
+                                f'<b>{esc(s)}</b> by you{ref}</div>')
+                else:
                     nums.append(f'<div class="metric">{esc(label)}: '
                                 f'<b>{esc(s)}</b>{ref}</div>')
         numhtml = "".join(nums) if nums else '<span class="muted small">—</span>'

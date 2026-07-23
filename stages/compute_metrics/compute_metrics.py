@@ -691,10 +691,18 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         log.warning("ball_source is SYNTHETIC: all ball-derived metrics are "
                     "PLACEHOLDER (see reliability.synthetic_gated).")
 
-    shots = classified.get("shots", [])
-    shot_by_id = {int(s["shot_id"]): s for s in shots}
+    all_shots = classified.get("shots", [])
     bounces = (bounces_doc or {}).get("bounces", [])
     rallies = (rallies_doc or {}).get("rallies", [])
+    # Count only shots that belong to a rally (real points). Shots outside every
+    # rally are between-point ball-handling / stray detections the operator does
+    # not count, and they inflate the totals (e.g. 2 phantom user drives). When
+    # rally boundaries are available, scope the shot mix to them; otherwise fall
+    # back to all shots (synthetic / no-rally path).
+    rally_shot_ids = {int(i) for r in rallies for i in r.get("shot_ids", [])}
+    shots = ([s for s in all_shots if int(s["shot_id"]) in rally_shot_ids]
+             if rally_shot_ids else all_shots)
+    shot_by_id = {int(s["shot_id"]): s for s in shots}
 
     warnings: List[str] = []
 
