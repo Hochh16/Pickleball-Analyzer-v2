@@ -216,13 +216,18 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
     per-role calls."""
     n = len(shots)
     n_volley = sum(1 for s in shots if s.get("is_volley"))
-    by_type = count_by(shots, lambda s: s.get("shot_type", "unknown"))
+    # Operator model: every shot is EITHER a volley (out of the air) OR a ground
+    # shot with a tactical type. So the type breakdown counts GROUND shots only --
+    # a slow kitchen volley must not also inflate the dink count. (Verified: dink
+    # type 35 -> ground dinks 22 on pb_5_minute_outdoor-2, vs operator 18.)
+    ground = [s for s in shots if not s.get("is_volley")]
+    by_type = count_by(ground, lambda s: s.get("shot_type", "unknown"))
     by_side = count_by(shots, lambda s: s.get("stroke_side", "unknown"))
     volley = {"n_volley": n_volley,
               "volley_rate": round(n_volley / n, 3) if n else 0.0}
     return {
-        "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),
-                                   n, role_factor),
+        "by_shot_type": mv_sourced(by_type, _confs(ground, "shot_type_confidence"),
+                                   len(ground), role_factor),
         "by_stroke_side": mv_sourced(by_side, _confs(shots, "stroke_side_confidence"),
                                      n, role_factor),
         "volley": mv_sourced(volley, _confs(shots, "is_volley_confidence"),
