@@ -52,6 +52,7 @@ HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window =
 # Adjacent-court contamination gates (real ball only). On a multi-court venue the
 # single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
 # producing phantom shots/serves. Two trajectory-coherence gates reject them:
+RALLY_GAP_S = 6.0  # same-player repeats within this window = ball-handling in one point
 MIN_SERVE_RUN_S = 0.13  # a real serve launches a SUSTAINED run; a blip serve
                         # (other-court ball appearing briefly) does not. (8f @60fps)
 TELEPORT_IN_PX_PER_FRAME = 40.0  # ref px/frame @1920 (scaled by frame_width/1920):
@@ -238,6 +239,40 @@ def project_to_court(M: np.ndarray, px: float, py: float) -> Tuple[float, float]
 
 
 # --- Core detection ----------------------------------------------------------
+
+def reject_same_track_repeats(shots: List[dict], gap_frames: int
+                              ) -> Tuple[List[dict], int]:
+    """Collapse consecutive shots by the SAME player within a point. A player
+    physically cannot strike the ball twice in a row in a rally (the ball must go
+    to an opponent first), so two consecutive same-track impacts are ball-handling
+    — the near player (nearest the corner camera, hence most visible) tapping /
+    bouncing the ball between points. Keep the LAST (the real strike follows the
+    handling). Only collapses within `gap_frames` (a genuinely new point, after
+    ball retrieval, legitimately re-starts with the same server). Measured on
+    pb_5_minute_outdoor-2: 108 → 99 shots (operator truth 98), near/far 63/45 →
+    54/45. This complements the net-side filter, which splits runs at a short reset
+    and so misses same-track repeats spaced further apart."""
+    shots_sorted = sorted(shots, key=lambda x: x["frame"])
+    kept: List[dict] = []
+    n_dropped = 0
+    for s in shots_sorted:
+        if (kept and kept[-1]["track_id"] == s["track_id"]
+                and (s["frame"] - kept[-1]["frame"]) < gap_frames):
+            # Same player again within a point = ball-handling. Keep ONE, but never
+            # discard a SERVE (it is the rally start): if either impact is the serve,
+            # the survivor is the serve; otherwise keep the LAST (handling precedes
+            # the real strike).
+            if kept[-1].get("is_serve"):
+                pass                       # keep the serve already held
+            elif s.get("is_serve"):
+                kept[-1] = s               # promote to the serve
+            else:
+                kept[-1] = s               # keep the last of a handling run
+            n_dropped += 1
+        else:
+            kept.append(s)
+    return kept, n_dropped
+
 
 def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
                           reset_frames: int) -> Tuple[List[dict], int]:
@@ -660,6 +695,14 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             n_serve_dedup = len(drop_frames)
 
     shots.sort(key=lambda s: s["frame"])
+    # FINAL pass: collapse same-PLAYER repeats within a point (ball-handling). Runs
+    # here, after serves are merged in, so it catches every same-track adjacency
+    # (the mid-stream net-side filter splits runs at a short reset and misses those
+    # spaced further apart). A player cannot strike twice in a row in a rally.
+    n_same_track = 0
+    if params.get("handling_filter"):
+        shots, n_same_track = reject_same_track_repeats(shots, params["rally_gap_frames"])
+    shots.sort(key=lambda s: s["frame"])
     for i, s in enumerate(shots):
         s["shot_id"] = i
 
@@ -778,6 +821,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "max_ball_speed_px_per_frame": max_ball_speed,
         "ball_coverage_warn_frac": BALL_COVERAGE_WARN_FRAC,
         "serve_gap_frames": int(round(MIN_SERVE_GAP_S * float(fps))),
+        "rally_gap_frames": int(round(RALLY_GAP_S * float(fps))),
         "handling_reset_frames": int(round(HANDLING_RESET_S * float(fps))),
         "handling_filter": ball_source == "real",
         "contamination_filter": ball_source == "real",

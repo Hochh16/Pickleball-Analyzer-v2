@@ -55,12 +55,12 @@ BALL_DEAD_RUN_SEC = 1.5
 # visibility, 12 px/frame, four same-side contacts). A SHORT same-side gap is left
 # alone: that is a missed opponent shot mid-rally, which must NOT split the rally.
 SAME_SIDE_STALL_SEC = 3.0
-# Absolute ceiling on the time between consecutive contacts WITHIN one rally,
+# Inter-shot TIME GAP that separates rallies (primary boundary). Within one rally
 # regardless of side. In real play contacts are 0.5-2 s apart (a high lob ~3 s at
 # most); even one missed shot only doubles that. Gaps beyond this are dead time
 # between points that the out-of-play rule can miss whenever the ball stays visible
 # (a player bouncing/holding it). Observed pre-fix: rallies carrying 5-15 s gaps.
-MAX_INTRA_RALLY_GAP_SEC = 5.0
+MAX_INTRA_RALLY_GAP_SEC = 6.0
 
 # Minimum-rally filter (real ball). A real point is a sustained exchange; between
 # points / after the game players stand at the net and tap the ball a couple times
@@ -71,6 +71,12 @@ MAX_INTRA_RALLY_GAP_SEC = 5.0
 # never treated as a micro-rally (guarded), so real serves put into play survive.
 MIN_RALLY_SEC = 2.0
 MIN_RALLY_SHOTS = 3
+# Resplit: a segment longer than LONG_RALLY_SHOTS is implausible for rec doubles
+# (two+ points merged by a short between-point break). Re-split it at internal gaps
+# >= RESPLIT_GAP_SEC. Only applied to over-long segments, so a normal rally is never
+# cut. Values chosen on pb_5_minute_outdoor-2 (merged 28- and 27-shot mega-rallies).
+LONG_RALLY_SHOTS = 18
+RESPLIT_GAP_SEC = 5.0
 
 END_REASONS = {"serve-fault", "double-bounce", "ball-out", "net-or-short",
                "ball-not-returned", "ball-off-frame", "unknown"}
@@ -203,7 +209,9 @@ def segment_rallies(shots: List[dict],
                     ball_dead_run_frames: Optional[int] = None,
                     gap_split: bool = False,
                     same_side_stall_frames: Optional[int] = None,
-                    max_gap_frames: Optional[int] = None
+                    max_gap_frames: Optional[int] = None,
+                    resplit_gap_frames: Optional[int] = None,
+                    long_rally_shots: Optional[int] = None
                     ) -> Tuple[List[List[dict]], List[dict]]:
     """Split the shot stream into rallies. Returns (rally_shot_lists,
     dropped_shots). Each rally is a list of shot dicts.
@@ -238,62 +246,63 @@ def segment_rallies(shots: List[dict],
             rallies.append(cur)
         return rallies, pre_rally
 
-    # Real-ball: split on a sustained ball-out-of-play run OR a flagged serve.
+    # Real-ball: a rally is a BURST of shots. The single robust boundary is a large
+    # inter-shot TIME GAP -- within a point, contacts are 0.5-2 s apart (a high lob
+    # ~3 s at most); between points there is a multi-second break to retrieve/serve.
+    # `rally_gap_frames` (~6 s) sits well above any mid-rally gap and below real
+    # dead time, so it separates points without cutting rallies. This replaces an
+    # earlier serve-start / deep-start / same-side-stall model that was fragile
+    # (it split a serve off from its own rally, and over-counted 18 vs 13). Verified
+    # on pb_5_minute_outdoor-2: matches the operator's 13 rallies within +/-1 and
+    # keeps rally 10 intact. The ball-out-of-play run stays as a SECONDARY signal
+    # (a clean, physical break even when the gap is borderline).
+    gap_frames = (max_gap_frames if max_gap_frames is not None
+                  else (ball_dead_run_frames or 0))
     segments: List[List[dict]] = []
-    between_points: List[dict] = []   # shots while no rally is live (handling/dead time)
-    cur = None
+    cur: List[dict] = []
     prev_frame: Optional[int] = None
-    prev_side: Optional[str] = None
     for s in shots:
         f = int(s["frame"])
         dead = (longest_dead_run(prev_frame, f, ball_known)
                 if (prev_frame is not None and ball_known is not None
                     and ball_dead_run_frames is not None) else 0)
-        # Same-side stall: consecutive shots on the SAME side of the net, far apart
-        # in time = the ball never crossed = ball-handling between points, not one
-        # rally. (A short same-side gap is a missed opponent shot; do not split.)
-        side = s.get("hitter_side")
-        same_side_stall = bool(
-            same_side_stall_frames is not None and prev_side is not None
-            and side is not None and side == prev_side and prev_frame is not None
-            and (f - prev_frame) >= same_side_stall_frames)
-        # Absolute ceiling: no rally has consecutive contacts this far apart.
-        too_long = bool(max_gap_frames is not None and prev_frame is not None
-                        and (f - prev_frame) >= max_gap_frames)
-        # A SERVE starts a rally. A stall / long gap / dead ball ENDS the current
-        # rally but does NOT start a new one -- play has stopped, and what follows is
-        # between-point handling until the next serve. Treating those breaks as rally
-        # STARTS over-counted rallies (20 detected vs the operator's 13) because every
-        # dead-time fragment became its own "rally"; operator truth is 1 rally per
-        # serve (13 serves = 13 rallies).
-        play_stopped = same_side_stall or too_long or (
-            ball_dead_run_frames is not None and dead >= ball_dead_run_frames)
-        if s.get("is_serve"):
-            if cur is not None:
-                segments.append(cur)
-            cur = [s]
-        elif cur is not None and play_stopped:
+        big_gap = bool(prev_frame is not None and gap_frames
+                       and (f - prev_frame) >= gap_frames)
+        # Dead-ball break only as a SECONDARY confirmation, and only when the ball
+        # was gone for the full rally-gap duration -- a mid-rally occlusion (seen up
+        # to ~4 s on this footage) must not split a point.
+        dead_break = bool(gap_frames and dead >= gap_frames)
+        if cur and (big_gap or dead_break):
             segments.append(cur)
-            # Play stopped. This shot either STARTS the next point (its serve was
-            # missed -- serve detection is ~11/13) or is between-point handling. A
-            # point is started from DEEP: you serve from behind the baseline. Handling
-            # happens anywhere, typically at the net. Use that to decide instead of
-            # dropping everything (which stranded 67 of 108 real shots).
-            cur = [s] if _starts_from_deep(s) else None
-            if cur is None:
-                between_points.append(s)
-        elif cur is not None:
-            cur.append(s)
+            cur = [s]
         else:
-            cur = [s] if _starts_from_deep(s) else None
-            if cur is None:
-                between_points.append(s)
+            cur.append(s)
         prev_frame = f
-        prev_side = side
-    if cur is not None:
+    if cur:
         segments.append(cur)
 
-    rallies, dropped = [], list(between_points)
+    # Second pass: a few points are separated by a break SHORTER than the primary
+    # gap (4-5.6 s here), which merges them into one implausibly long "rally". Only
+    # for such over-long segments, re-split at the largest internal gaps (>= the
+    # resplit threshold). This never touches a normal-length rally, so it can't
+    # falsely cut a real point -- it only recovers points that were merged.
+    if resplit_gap_frames and long_rally_shots:
+        expanded: List[List[dict]] = []
+        for seg in segments:
+            if len(seg) <= long_rally_shots:
+                expanded.append(seg)
+                continue
+            sub = [seg[0]]
+            for a, b in zip(seg, seg[1:]):
+                if (int(b["frame"]) - int(a["frame"])) >= resplit_gap_frames:
+                    expanded.append(sub)
+                    sub = [b]
+                else:
+                    sub.append(b)
+            expanded.append(sub)
+        segments = expanded
+
+    rallies, dropped = [], []
     for seg in segments:
         if len(seg) == 1 and not seg[0].get("is_serve"):
             dropped.extend(seg)  # courtesy feed / isolated non-serve hit
@@ -512,7 +521,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         shots, ball_known=ball_known,
         ball_dead_run_frames=ball_dead_run_frames, gap_split=gap_split,
         same_side_stall_frames=same_side_stall_frames,
-        max_gap_frames=max_intra_gap_frames)
+        max_gap_frames=max_intra_gap_frames,
+        resplit_gap_frames=max(1, int(round(RESPLIT_GAP_SEC * float(fps)))),
+        long_rally_shots=LONG_RALLY_SHOTS)
 
     # Minimum-rally filter (real ball only, like the other real-world-phenomenon
     # gates): drop between-point/after-game net-tapping bursts. Synthetic keeps
