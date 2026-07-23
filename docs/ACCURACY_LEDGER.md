@@ -180,6 +180,36 @@ AND garbage speeds. Match data justifies building it next. What's already SOLID:
 serve detection, settled-rally sides, and dinks that bounce & land in the kitchen
 (#4/#7/#8/#9 all correct).
 
+## USER-LEVEL acceptance test (operator, `pb_5_minute_outdoor-2`, 2026-07-22)
+
+The USAPA rating is PER-USER, so the user's counts are the real acceptance test.
+User = near-left player. Operator counted, for the user only:
+
+| type | op | pipeline | | stroke | op | pipeline |
+|---|---|---|---|---|---|---|
+| drive | 12 | 16 | | forehand | 15 | 14 |
+| serve | 4 | **4** | | backhand | 9 | 11 |
+| dink | 6 | **6** | | (unknown) | 0 | 3 |
+| drop | 2 | 1 | | | | |
+| lob | 0 | 1 | | volleys | 6 | **6** |
+| **total** | **24** | 28 | | | | |
+
+**Operator identities (must hold, per user):** drive+serve+dink+drop = FH+BH = total
+(24). Every shot is a forehand or backhand (serves are forehands); a dink is soft +
+at the kitchen whether it bounced OR was volleyed (dink & volley overlap); volley vs
+bounce is the exclusive axis (shots = volleys + bounces).
+
+**KEY RESULT: the user-level classification is GOOD** — dink 6=6, serve 4=4, volley
+6=6 EXACT; drive/drop/stroke within ~1-4. The earlier MATCH dink over-count (35 vs
+18) is entirely the OPPONENTS (far side, seen poorly by the corner camera), NOT the
+user. **So the per-user rating is trustworthy.** Remaining user gaps: +4 total (2 are
+between-point drives not in any rally = droppable; ~2 drive/drop confusion), 1 false
+lob, unknown strokes 3.
+
+**Report directives (operator):** show BOTH match total and the user's share per row
+("Dinks: 22 in the match, 6 by you"); keep every USAPA item in the chart with
+filled/unfilled circles; the USAPA rating is for the selected user only.
+
 ## Landing-depth investigation + OPERATOR DEFINITION (2026-07-20)
 
 **OPERATOR DECISION: shot type is decided by WHERE THE BALL LANDED, not by how it
