@@ -88,7 +88,7 @@ REFERENCE_FPS = 30.0         # frame-count windows tuned at 30fps; scale by fps/
 REFERENCE_WIDTH_PX = 1920.0  # px thresholds tuned at 1920-wide; scale by frame_width/this (4K = 2x)
 VOLLEY_REBOUND_MIN_PX = 20.0  # min upward rebound after the low point to call a ground bounce (volley test)
 VOLLEY_DESCENT_MIN_PX = 14.0  # min descent into the low point (ball clearly came down)
-SIDE_CONF_FLOOR = 0.5
+SIDE_CONF_FLOOR = 0.35
 KITCHEN_MAX_DIST_FT = 9.0   # effective kitchen depth from net (court_zones)
 BASELINE_MIN_DIST_FT = 17.0  # within ~5ft of the 22ft baseline
 BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
@@ -665,13 +665,21 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # left 74 of 108 shots' stroke side "unknown").
         hand = user_hand if is_user else roster.get(roles_by_tid.get(tid) or "")
         side, side_conf = stroke_side(float(impact_x), pose, hand)
-        if contact_h == "high":
-            side, side_conf = "overhead", 0.7
+        # Operator model: EVERY shot is a forehand or a backhand (serves are
+        # forehands). An overhead is still struck with a FH or BH grip, so it is
+        # NOT its own stroke category -- record it as a separate flag and keep the
+        # FH/BH so the stroke counts satisfy the identity FH + BH = total shots.
+        is_overhead = (contact_h == "high")
+        # Operator: serves are forehands. A serve struck low often reads "unknown"
+        # from shoulder geometry, so default a serve's stroke to forehand.
+        if is_serve and side == "unknown" and hand in ("left", "right"):
+            side, side_conf = "forehand", max(side_conf, 0.6)
 
         out = dict(s)  # carry through all Stage 5 fields
         out.update({
             "stroke_side": side,
             "stroke_side_confidence": side_conf,
+            "is_overhead": bool(is_overhead),
             "shot_type": shot_type,
             "shot_type_confidence": round(type_conf, 3),
             "is_volley": bool(is_volley),
