@@ -245,19 +245,26 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
 def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
     """Soft game at the kitchen: how much of the shot mix is dinks + rally
     sustain (proxy). Low confidence on a small detected-shot sample."""
+    sm = user.get("shot_mix", {}) or {}
     n_shots = user.get("n_shots", 0) or 0
-    by_type = (user.get("shot_mix", {}) or {}).get("by_shot_type", {}) or {}
+    by_type = sm.get("by_shot_type", {}) or {}
     dink_n = by_type.get("dink", 0)
     dink_frac = (dink_n / n_shots) if n_shots > 0 else None
     mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
+    knee = (sm.get("technique", {}) or {}).get("knee_bend_dink")   # {n, mean_deg, pct_athletic}
     drivers = {"dink_count": dink_n,
                "dink_frac": round(dink_frac, 4) if dink_frac is not None else None,
-               "mean_rally_length": mean_len}
+               "mean_rally_length": mean_len,
+               "dink_knee_bend": knee}
     if dink_frac is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     base = lin(dink_frac, 0.0, 2.8, 0.4, 4.3)          # more dinking -> softer game
     sustain = lin(mean_len, 3.0, 0.0, 10.0, 0.3) or 0.0
-    return clamp_level(base + sustain), drivers
+    # staying low on dinks (athletic knee bend) is a quality bump
+    stance = 0.0
+    if knee and knee.get("n", 0) >= 3 and knee.get("mean_deg") is not None:
+        stance = lin(knee["mean_deg"], 170.0, 0.2, 140.0, 0.5) or 0.0   # lower angle -> more
+    return clamp_level(base + sustain + stance), drivers
 
 
 def score_volley(user: dict) -> Tuple[float, dict]:

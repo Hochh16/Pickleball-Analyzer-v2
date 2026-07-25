@@ -200,6 +200,32 @@ def contact_point_frontness(court: dict, pose: Optional[dict], hand: Optional[st
     return float(wrist_off @ netward / shoulder_w)
 
 
+def knee_bend_angle(pose: Optional[dict]) -> Optional[float]:
+    """Technique metric: athletic stance = how bent the knees are at contact. Returns
+    the mean knee angle in degrees (hip-knee-ankle) over both legs with a visible
+    chain: ~180 deg = straight/standing tall (a lower-level tell), smaller = loaded
+    and ready to move. Pure angle in the image plane (no projection needed). None if
+    no leg chain is visible."""
+    if pose is None:
+        return None
+    VIS = 0.3
+    angles = []
+    for h, k, a in (("l", "l", "l"), ("r", "r", "r")):
+        hip = (pose.get(f"{h}hx"), pose.get(f"{h}hy"), pose.get(f"{h}hv"))
+        knee = (pose.get(f"{k}kx"), pose.get(f"{k}ky"), pose.get(f"{k}kv"))
+        ank = (pose.get(f"{a}ax"), pose.get(f"{a}ay"), pose.get(f"{a}av"))
+        if any(p[0] is None or p[1] is None or (p[2] is not None and p[2] < VIS)
+               for p in (hip, knee, ank)):
+            continue
+        kh = np.array([hip[0] - knee[0], hip[1] - knee[1]], dtype=float)
+        ka = np.array([ank[0] - knee[0], ank[1] - knee[1]], dtype=float)
+        nn = np.linalg.norm(kh) * np.linalg.norm(ka)
+        if nn < EPS:
+            continue
+        angles.append(float(np.degrees(np.arccos(np.clip(kh @ ka / nn, -1.0, 1.0)))))
+    return round(sum(angles) / len(angles), 1) if angles else None
+
+
 def front_foot_court_y(court: dict, pose: Optional[dict],
                        fallback: float) -> float:
     """Court_y of the player's FRONT foot = the ankle projecting CLOSEST to the
@@ -264,6 +290,8 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
             "right_hip_x_px", "right_hip_y_px", "right_hip_visibility",
             "left_wrist_x_px", "left_wrist_y_px", "left_wrist_visibility",
             "right_wrist_x_px", "right_wrist_y_px", "right_wrist_visibility",
+            "left_knee_x_px", "left_knee_y_px", "left_knee_visibility",
+            "right_knee_x_px", "right_knee_y_px", "right_knee_visibility",
             "left_ankle_x_px", "left_ankle_y_px", "left_ankle_visibility",
             "right_ankle_x_px", "right_ankle_y_px", "right_ankle_visibility"]
     df = pd.read_parquet(path, columns=cols)
@@ -279,6 +307,8 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
             "rhx": r.right_hip_x_px, "rhy": r.right_hip_y_px, "rhv": r.right_hip_visibility,
             "lwx": r.left_wrist_x_px, "lwy": r.left_wrist_y_px, "lwv": r.left_wrist_visibility,
             "rwx": r.right_wrist_x_px, "rwy": r.right_wrist_y_px, "rwv": r.right_wrist_visibility,
+            "lkx": r.left_knee_x_px, "lky": r.left_knee_y_px, "lkv": r.left_knee_visibility,
+            "rkx": r.right_knee_x_px, "rky": r.right_knee_y_px, "rkv": r.right_knee_visibility,
             "lax": r.left_ankle_x_px, "lay": r.left_ankle_y_px,
             "lav": r.left_ankle_visibility,
             "rax": r.right_ankle_x_px, "ray": r.right_ankle_y_px,
@@ -652,6 +682,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         hand = user_hand if is_user else roster.get(roles_by_tid.get(tid) or "")
         # technique: contact point front-vs-late (paddle wrist net-ward of body).
         contact_front = contact_point_frontness(court, pose, hand, court_y)
+        knee_deg = knee_bend_angle(pose)   # athletic stance: lower = more bent
 
         post_ftps = speed_ftps(s.get("speed_post_px_per_frame"), court, court_y, fps)
         pre_ftps = speed_ftps(s.get("speed_pre_px_per_frame"), court, court_y, fps)
@@ -754,6 +785,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 # technique: paddle-wrist net-ward of body at contact (+ in front,
                 # - late), normalised by shoulder width. Interpreted per shot type.
                 "contact_front": round(contact_front, 3) if contact_front is not None else None,
+                # technique: mean knee angle (hip-knee-ankle) at contact; ~180 =
+                # standing tall, lower = athletic/loaded.
+                "knee_angle_deg": knee_deg,
                 # landing court_y (sound shot-type signal) + whether the type came
                 # from the landing path (reliable) vs the speed/arc fallback.
                 "landing_court_y": round(landing_y, 2) if landing_y is not None else None,

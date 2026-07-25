@@ -43,6 +43,7 @@ CATEGORY_ELEMENTS = {
                    ("Drop-vs-drive choice", "partial"),
                    ("Drop landing depth", "planned"), ("Transition success", "planned")],
     "dink": [("How much you dink", "partial"), ("Dink-rally length", "partial"),
+             ("Athletic stance (staying low)", "live"),
              ("Pop-up rate", "planned"), ("Height & depth control", "planned")],
     "volley": [("How often you volley at the net", "partial"),
                ("Block / reset", "planned"), ("Put-aways", "planned"),
@@ -75,6 +76,7 @@ METRIC_DISPLAY = {
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
     "contact_front": ("Contact point", "contact"),
+    "dink_knee_bend": ("Athletic stance on dinks", "knee"),
     "mean_rally_length": ("Average rally length", "shots"),
 }
 
@@ -149,6 +151,14 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             n, nf = int(val["n"]), int(val.get("n_in_front", 0))
             pct = int(round(val.get("pct_in_front", 0) * 100))
             return f"{nf} of {n} hit in front of you ({pct}%)"
+        if fmt == "knee":
+            # val = {n, mean_deg, n_athletic, pct_athletic}. Report how often the
+            # player stayed low (loaded knees) + the mean bend.
+            if not isinstance(val, dict) or not val.get("n"):
+                return None
+            n, na = int(val["n"]), int(val.get("n_athletic", 0))
+            pct = int(round(val.get("pct_athletic", 0) * 100))
+            return f"{na} of {n} hit with a low, athletic stance ({pct}%)"
     except (TypeError, ValueError):
         return None
     return str(val)

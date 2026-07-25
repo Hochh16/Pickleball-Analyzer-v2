@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
+ATHLETIC_KNEE_DEG = 160.0     # mean knee angle below this at contact = athletic/loaded
 STAGE_VERSION = "0.5.0"       # 0.3.0 front-foot -> 0.4.0 rally-scoped position ->
                               # 0.5.0 noise-robust (downsampled) movement distance
 
@@ -245,6 +246,18 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
                 "mean": round(statistics.mean(v), 2)}
 
     cf_all = _cf(lambda s: True)
+    # knee bend / athletic stance: mean knee angle at contact (~180 = standing tall,
+    # lower = loaded). "athletic" = bent below ATHLETIC_KNEE_DEG. Reported overall and
+    # for dinks (staying low on the soft game is a quality tell).
+    def _knee_stats(sel) -> Optional[dict]:
+        v = [s["features"]["knee_angle_deg"] for s in shots
+             if sel(s) and (s.get("features") or {}).get("knee_angle_deg") is not None]
+        if not v:
+            return None
+        n_ath = sum(1 for x in v if x < ATHLETIC_KNEE_DEG)
+        return {"n": len(v), "mean_deg": round(statistics.mean(v)),
+                "n_athletic": n_ath, "pct_athletic": round(n_ath / len(v), 2)}
+
     technique = {
         "contact_front_mean": round(statistics.mean(cf_all), 2) if cf_all else None,
         "pct_in_front": round(sum(1 for x in cf_all if x > 0) / len(cf_all), 2) if cf_all else None,
@@ -253,6 +266,8 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
                            for st in [_cf_stats(lambda s: s.get("stroke_side") == sd)] if st},
         "power_contact_front": (round(statistics.mean(v), 2)
                                 if (v := _cf(lambda s: s.get("shot_type") in ("drive", "serve"))) else None),
+        "knee_bend": _knee_stats(lambda s: True),
+        "knee_bend_dink": _knee_stats(lambda s: s.get("shot_type") == "dink"),
     }
     return {
         "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),
