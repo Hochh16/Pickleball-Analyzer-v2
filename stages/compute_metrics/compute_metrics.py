@@ -227,9 +227,28 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
     by_side = count_by(shots, lambda s: s.get("stroke_side", "unknown"))
     volley = {"n_volley": n_volley,
               "volley_rate": round(n_volley / n, 3) if n else 0.0}
+    # technique: contact point (paddle wrist net-ward of body at contact; + in
+    # front, - late), from pose. First camera-feasible SHOT-QUALITY signal. Reported
+    # per stroke side and per soft/power type -- interpretation is type-specific (a
+    # drive should be well in front; a dink is naturally compact).
+    def _cf(sel) -> List[float]:
+        return [s["features"]["contact_front"] for s in shots
+                if sel(s) and (s.get("features") or {}).get("contact_front") is not None]
+    cf_all = _cf(lambda s: True)
+    technique = {
+        "contact_front_mean": round(statistics.mean(cf_all), 2) if cf_all else None,
+        "pct_in_front": round(sum(1 for x in cf_all if x > 0) / len(cf_all), 2) if cf_all else None,
+        "n": len(cf_all),
+        "by_stroke_side": {sd: round(statistics.mean(v), 2)
+                           for sd in ("forehand", "backhand")
+                           for v in [_cf(lambda s: s.get("stroke_side") == sd)] if v},
+        "power_contact_front": (round(statistics.mean(v), 2)
+                                if (v := _cf(lambda s: s.get("shot_type") in ("drive", "serve"))) else None),
+    }
     return {
         "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),
                                    n, role_factor),
+        "technique": mv_sample_size(technique, technique["n"]),
         "by_stroke_side": mv_sourced(by_side, _confs(shots, "stroke_side_confidence"),
                                      n, role_factor),
         "volley": mv_sourced(volley, _confs(shots, "is_volley_confidence"),

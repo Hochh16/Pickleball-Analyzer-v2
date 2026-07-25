@@ -44,9 +44,8 @@ SYNTH_CONFIDENCE_FACTOR = 0.35   # data_conf for synthetic-ball-derived categori
 NEUTRAL_PRIOR_LEVEL = 3.0        # subscore when a driver is missing / quality unmeasured
 ASSESS_CONF_FLOOR = 0.10         # below this a category is 'not_assessable'
 MEASURED_CONF_FLOOR = 0.50       # at/above this a category is 'measured' (else 'partial')
-QUALITY_UNMEASURED_CONF = 0.05   # count-only categories (forehand/backhand): the stroke is
-                                 # counted but its QUALITY (pace/depth/consistency) can't be
-                                 # judged yet -> capped below the floor -> not_assessable
+QUALITY_UNMEASURED_CONF = 0.05   # count-only stroke, no quality signal -> not_assessable
+PARTIAL_QUALITY_CONF = 0.30      # one pose quality signal (contact point) present -> partial
 RANGE_MIN_HALF = 0.25            # min half-width of the confidence range
 RANGE_SPAN = 1.25                # extra half-width at confidence 0
 USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
@@ -128,6 +127,7 @@ def _unwrap_user(uw: dict) -> dict:
             "by_stroke_side": _v(sm.get("by_stroke_side")) or {},
             "n_volley": volley.get("n_volley", 0),
             "volley_rate": volley.get("volley_rate"),
+            "technique": _v(sm.get("technique")) or {},
         },
         "serve": _v(uw.get("serve")) or {},
         "third_shot": _v(uw.get("third_shot")) or {},
@@ -286,19 +286,29 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
     return clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)), drivers
 
 
+CONTACT_FRONT_MIN_N = 4   # min stroke-side shots with a contact-point read to score
+
 def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
-    """Forehand / backhand. We can COUNT the stroke (by_stroke_side) but cannot yet
-    judge its QUALITY (pace/depth/directional control/consistency) — those need
-    court-plane speed (F7), landing depth (C4), and reliable stroke-side (F16). So
-    the subscore is neutral and the category is confidence-capped to
-    not_assessable; the count is surfaced for context only."""
-    by_side = (user.get("shot_mix", {}) or {}).get("by_stroke_side", {}) or {}
+    """Forehand / backhand. We can COUNT the stroke, and now have ONE quality signal
+    from pose: CONTACT POINT (paddle wrist ahead of the body at contact = clean;
+    late/jammed = a lower-level tell). Pace/depth/consistency still need court-plane
+    speed + landing depth (height-limited). So contact point gives a partial quality
+    read; the subscore leans on it when enough shots have a read, else neutral."""
+    sm = user.get("shot_mix", {}) or {}
+    by_side = sm.get("by_stroke_side", {}) or {}
     n_shots = user.get("n_shots", 0) or 0
     cnt = by_side.get(side, 0)
     frac = (cnt / n_shots) if n_shots > 0 else None
+    tech = sm.get("technique", {}) or {}
+    cf = (tech.get("by_stroke_side", {}) or {}).get(side)
     drivers = {f"{side}_count": cnt,
                f"{side}_frac": round(frac, 4) if frac is not None else None,
+               "contact_front": cf,
                "pace_mph": None, "depth": None, "consistency": None}
+    # Score from contact point: at the body (~0) -> 3.0; well in front (~2.5) -> 4.2;
+    # late (<0) -> below 3.0. Needs a few reads to be meaningful.
+    if cf is not None and cnt >= CONTACT_FRONT_MIN_N:
+        return clamp_level(lin(cf, 0.0, 3.0, 2.5, 4.2)), drivers
     return NEUTRAL_PRIOR_LEVEL, drivers
 
 
@@ -399,10 +409,13 @@ def compute_rating(metrics: dict, ball_source: str,
         # (Stage 8 contract § Synthetic-ball interaction). Inactive on real ball.
         gate = 1.0 if is_real_source else synth_factor
         conf = base_conf * gate
-        # Count-only categories (forehand/backhand): the stroke is counted but its
-        # quality is unmeasured, so cap confidence below the floor -> not_assessable.
+        # Forehand/backhand: the stroke is counted, and now has ONE pose-based quality
+        # signal (contact point). That's PARTIAL quality (pace/depth/consistency still
+        # unmeasured), so keep confidence modest rather than capping to not_assessable
+        # -- but only when a contact-point read actually exists for this side.
         if name in COUNT_ONLY_DIMS:
-            conf = min(conf, QUALITY_UNMEASURED_CONF)
+            has_cf = (drivers or {}).get("contact_front") is not None
+            conf = min(conf, PARTIAL_QUALITY_CONF if has_cf else QUALITY_UNMEASURED_CONF)
         conf = round(conf, 4)
         # Coverage vs the RATING is quality-driven (a count-only category can't move
         # the number confidently). But the report's coverage BADGE should tell the

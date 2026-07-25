@@ -135,9 +135,11 @@ def load_court(path: Path) -> dict:
     video = c.get("video", {}) or {}
     homo = c.get("homography", {}) or {}
     i2c = homo.get("image_to_court")
+    c2i = homo.get("court_to_image")
     img2court = np.array(i2c, dtype=float) if i2c is not None else None
+    court2img = np.array(c2i, dtype=float) if c2i is not None else None
     return {"ppf_near": near, "ppf_far": far, "fps": video.get("fps"),
-            "image_to_court": img2court}
+            "image_to_court": img2court, "court_to_image": court2img}
 
 
 def project_court_y(court: dict, px: float, py: float) -> Optional[float]:
@@ -149,6 +151,53 @@ def project_court_y(court: dict, px: float, py: float) -> Optional[float]:
     if abs(v[2]) < 1e-9:
         return None
     return float(v[1] / v[2])
+
+
+def contact_point_frontness(court: dict, pose: Optional[dict], hand: Optional[str],
+                            body_court_y: float) -> Optional[float]:
+    """Technique metric: is the paddle-hand wrist AHEAD of the body in the net-ward
+    direction at contact ("in front", the mark of a clean strike) or behind it
+    ("late"/jammed)? Computed in the IMAGE (no airborne projection): the homography
+    only supplies the net-ward direction. Normalised by shoulder width so it is
+    scale-invariant across near/far players. + = in front, - = late. Interpretation
+    is per-shot-type (a drive should be well in front; a dink is naturally compact).
+    Returns None when the pose/homography is missing."""
+    c2i = court.get("court_to_image")
+    if pose is None or c2i is None or hand not in ("left", "right"):
+        return None
+    VIS = 0.3
+    wx = pose.get("rwx" if hand == "right" else "lwx")
+    wy = pose.get("rwy" if hand == "right" else "lwy")
+    wv = pose.get("rwv" if hand == "right" else "lwv")
+    if wx is None or wy is None or (wv is not None and wv < VIS):
+        return None
+    lsx, rsx = pose.get("lsx"), pose.get("rsx")
+    lhx, rhx = pose.get("lhx"), pose.get("rhx")
+    lhy, rhy = pose.get("lhy"), pose.get("rhy")
+    if None in (lsx, rsx, lhx, rhx, lhy, rhy):
+        return None
+    body_x = 0.5 * (float(lhx) + float(rhx))
+    body_y = 0.5 * (float(lhy) + float(rhy))
+    shoulder_w = abs(float(rsx) - float(lsx))
+    if shoulder_w < EPS:
+        return None
+    # net-ward image direction at the player: a near player (court_y < net) hits
+    # toward +court_y, a far player toward -court_y. Step 1 ft that way, project.
+    sign = 1.0 if body_court_y < NET_Y_FT else -1.0
+
+    def _proj(cx, cy):
+        v = c2i @ np.array([cx, cy, 1.0])
+        return np.array([v[0] / v[2], v[1] / v[2]]) if abs(v[2]) > EPS else None
+    p0, p1 = _proj(10.0, body_court_y), _proj(10.0, body_court_y + sign)
+    if p0 is None or p1 is None:
+        return None
+    netward = p1 - p0
+    nn = np.linalg.norm(netward)
+    if nn < EPS:
+        return None
+    netward /= nn
+    wrist_off = np.array([float(wx) - body_x, float(wy) - body_y])
+    return float(wrist_off @ netward / shoulder_w)
 
 
 def front_foot_court_y(court: dict, pose: Optional[dict],
@@ -211,8 +260,10 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
     cols = ["frame", "track_id", "pose_detected",
             "left_shoulder_x_px", "left_shoulder_y_px", "left_shoulder_visibility",
             "right_shoulder_x_px", "right_shoulder_y_px", "right_shoulder_visibility",
-            "left_hip_y_px", "left_hip_visibility",
-            "right_hip_y_px", "right_hip_visibility",
+            "left_hip_x_px", "left_hip_y_px", "left_hip_visibility",
+            "right_hip_x_px", "right_hip_y_px", "right_hip_visibility",
+            "left_wrist_x_px", "left_wrist_y_px", "left_wrist_visibility",
+            "right_wrist_x_px", "right_wrist_y_px", "right_wrist_visibility",
             "left_ankle_x_px", "left_ankle_y_px", "left_ankle_visibility",
             "right_ankle_x_px", "right_ankle_y_px", "right_ankle_visibility"]
     df = pd.read_parquet(path, columns=cols)
@@ -224,8 +275,10 @@ def index_poses(path: Path) -> Dict[Tuple[int, int], dict]:
             "lsv": r.left_shoulder_visibility,
             "rsx": r.right_shoulder_x_px, "rsy": r.right_shoulder_y_px,
             "rsv": r.right_shoulder_visibility,
-            "lhy": r.left_hip_y_px, "lhv": r.left_hip_visibility,
-            "rhy": r.right_hip_y_px, "rhv": r.right_hip_visibility,
+            "lhx": r.left_hip_x_px, "lhy": r.left_hip_y_px, "lhv": r.left_hip_visibility,
+            "rhx": r.right_hip_x_px, "rhy": r.right_hip_y_px, "rhv": r.right_hip_visibility,
+            "lwx": r.left_wrist_x_px, "lwy": r.left_wrist_y_px, "lwv": r.left_wrist_visibility,
+            "rwx": r.right_wrist_x_px, "rwy": r.right_wrist_y_px, "rwv": r.right_wrist_visibility,
             "lax": r.left_ankle_x_px, "lay": r.left_ankle_y_px,
             "lav": r.left_ankle_visibility,
             "rax": r.right_ankle_x_px, "ray": r.right_ankle_y_px,
@@ -594,6 +647,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # court_y (player depth) for its pixels-per-foot scaling.
         zone_court_y = front_foot_court_y(court, pose, court_y)
         zone = zone_from_court_y(zone_court_y)
+        # this player's handedness (user from roster; others via role) -- used by
+        # both the stroke side and the contact-point technique metric.
+        hand = user_hand if is_user else roster.get(roles_by_tid.get(tid) or "")
+        # technique: contact point front-vs-late (paddle wrist net-ward of body).
+        contact_front = contact_point_frontness(court, pose, hand, court_y)
 
         post_ftps = speed_ftps(s.get("speed_post_px_per_frame"), court, court_y, fps)
         pre_ftps = speed_ftps(s.get("speed_pre_px_per_frame"), court, court_y, fps)
@@ -663,7 +721,6 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # user/partner/opp_a/opp_b and stroke_side() derives facing from the pose,
         # so restricting this to the user threw away data we already collect (it
         # left 74 of 108 shots' stroke side "unknown").
-        hand = user_hand if is_user else roster.get(roles_by_tid.get(tid) or "")
         side, side_conf = stroke_side(float(impact_x), pose, hand)
         # Operator model: EVERY shot is a forehand or a backhand (serves are
         # forehands). An overhead is still struck with a FH or BH grip, so it is
@@ -694,6 +751,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
                 "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
                 "contact_height": contact_h,
+                # technique: paddle-wrist net-ward of body at contact (+ in front,
+                # - late), normalised by shoulder width. Interpreted per shot type.
+                "contact_front": round(contact_front, 3) if contact_front is not None else None,
                 # landing court_y (sound shot-type signal) + whether the type came
                 # from the landing path (reliable) vs the speed/arc fallback.
                 "landing_court_y": round(landing_y, 2) if landing_y is not None else None,

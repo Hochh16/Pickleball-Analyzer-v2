@@ -50,11 +50,12 @@ CATEGORY_ELEMENTS = {
     "serve_return": [("Serve / return count", "live"),
                      ("In-play rate & faults", "partial"),
                      ("Depth", "planned"), ("Pace & spin", "planned")],
-    "forehand": [("How many forehands you hit", "live"), ("Consistency", "partial"),
+    "forehand": [("How many forehands you hit", "live"),
+                 ("Contact point (in front vs late)", "live"),
                  ("Pace", "planned"), ("Placement & depth", "planned")],
     "backhand": [("How many backhands you hit", "live"),
-                 ("Running around it", "partial"), ("Error rate", "partial"),
-                 ("Pace & depth", "planned")],
+                 ("Contact point (in front vs late)", "live"),
+                 ("Pace & depth", "planned"), ("Consistency", "planned")],
 }
 
 # Driver-metric key -> (plain-English label, format). Keys not listed are hidden
@@ -73,6 +74,7 @@ METRIC_DISPLAY = {
     "n_returns": ("Returns of serve detected", "int"),
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
+    "contact_front": ("Contact point", "contact"),
     "mean_rally_length": ("Average rally length", "shots"),
 }
 
@@ -139,6 +141,14 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "contact":
+            # contact_front normalised by shoulder width: >~1 clearly in front,
+            # ~0 at the body, <0 late/jammed.
+            v = float(val)
+            where = ("out in front" if v >= 1.0 else
+                     "just in front" if v >= 0.3 else
+                     "at your body" if v >= -0.3 else "late (behind your body)")
+            return f"{where}"
     except (TypeError, ValueError):
         return None
     return str(val)
