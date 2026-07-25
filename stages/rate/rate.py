@@ -130,6 +130,8 @@ def _unwrap_user(uw: dict) -> dict:
             "volley_rate": volley.get("volley_rate"),
         },
         "serve": _v(uw.get("serve")) or {},
+        "third_shot": _v(uw.get("third_shot")) or {},
+        "n_returns": _v(uw.get("n_returns")) or 0,
         "position": _v(uw.get("position")) or {},
         "mean_post_speed_ftps": _v(uw.get("mean_post_speed_ftps")),
     }
@@ -219,15 +221,23 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
     return clamp_level(base + bonus - penalty + mv), drivers
 
 
-def score_third_shot(match: dict) -> Tuple[float, dict]:
-    """Third-shot drop-to-net (soft/power mix). drop_rate is the live signal.
-    NOTE: match-level (all players' 3rd shots) until per-user attribution lands."""
-    ts = match.get("third_shot", {}) or {}
+MIN_THIRD_DECISIONS = 4   # fewer deep drop-or-drive 3rd shots than this = too few
+
+def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
+    """Third-shot drop-vs-drive from deep, for the RATED USER. The denominator is
+    the user's own 3rd shots that were a drop or a drive hit from deep (a serve at
+    position 3 or a kitchen dink is not a third-shot decision and is excluded).
+    Too few user decisions -> neutral + low confidence (a 5-min clip yields only a
+    handful), so we don't coach off a 1-in-N rate."""
+    ts = user.get("third_shot", {}) or {}
+    n = ts.get("n_third_decisions", 0) or 0
     drop = ts.get("drop_rate")
-    drivers = {"third_shot_drop_rate": drop,
-               "third_shot_by_type": ts.get("by_shot_type") or None,
-               "per_user": False}
-    if drop is None:
+    enough = drop is not None and n >= MIN_THIRD_DECISIONS
+    drivers = {  # hide the rate when too few decisions -> it won't render a "100%"
+        "third_shot_drop_rate": drop if enough else None,
+        "third_shot_by_type": ts.get("by_shot_type") or None,
+        "n_third_decisions": n, "per_user": True}
+    if not enough:
         return NEUTRAL_PRIOR_LEVEL, drivers
     return clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)), drivers
 
@@ -270,7 +280,7 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
     n_serves = serve.get("n_serves", 0) or 0
     rate = serve.get("serve_fault_rate") if n_serves > 0 else None
     drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
-               "return_metric": None}
+               "n_returns": user.get("n_returns", 0) or 0, "return_metric": None}
     if rate is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     return clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)), drivers
@@ -369,7 +379,7 @@ def compute_rating(metrics: dict, ball_source: str,
     # (name, subscore, drivers)
     raw = [
         ("strategy", *score_strategy(user, team_near, n_rallies)),
-        ("third_shot", *score_third_shot(match)),
+        ("third_shot", *score_third_shot(user, match)),
         ("dink", *score_dink(user, match)),
         ("volley", *score_volley(user)),
         ("serve_return", *score_serve_return(user)),

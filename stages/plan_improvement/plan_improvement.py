@@ -48,10 +48,11 @@ OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter
 # act on: the 5-min match clip detected only 4 user serves, 2 of which were called
 # faults, and the report told the player "about 50% of your serves are faults ...
 # you're giving away free points" — harsh, prescriptive advice from n=4 (a 50% rate
-# from 4 events carries roughly +/-35 points of uncertainty). Below this bar a
+# from 4 events carries roughly +/-35 points of uncertainty). Operator: ~6-8 shots give
+# 'some indication'; below this bar a
 # category is routed to developing_capability ("not enough seen yet") instead of
 # being presented as a weakness to fix or a strength to celebrate.
-MIN_EVENTS_FOR_COACHING = 10
+MIN_EVENTS_FOR_COACHING = 6
 ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
                                  # coaching signal -> routed to developing_capability
 UNMEASURED_REASON = {
@@ -144,8 +145,9 @@ DRILLS = {
                             "cue": "Have a partner feed hard balls; block them softly "
                                    "into the kitchen instead of swinging."},
     "third_shot_drop_reps": {"name": "Third-shot-drop reps",
-                            "cue": "From the baseline, drop the 3rd ball into the "
-                                   "kitchen — target 7/10 before moving up."},
+                            "cue": "From the baseline, practice dropping the 3rd ball "
+                                   "softly into the kitchen so you can follow it to "
+                                   "the net (drop vs drive depends on the return)."},
     "shot_variety_ladder": {"name": "Shot-variety ladder",
                            "cue": "Cycle drive / drop / dink on command so you can "
                                   "hit the right shot for the situation."},
@@ -287,9 +289,9 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
                    if dv else
                    ("A third-shot drop you can trust — used by choice, not chance — "
                     "is the skill that moves 3.5 players to 4.0."))
-        if (drop or 0) < 0.4:
-            keys.append("third_shot_drop_reps")
-        keys += ["transition_resets", "soft_game_targets"]
+        # Third-shot-specific drills only. transition_resets belongs to Strategy and
+        # soft_game_targets to Dink (operator) -- they were duplicated here.
+        keys.append("third_shot_drop_reps")
     elif dim == "dink":
         df = dr.get("dink_frac")
         dc = dr.get("dink_count")
@@ -374,6 +376,9 @@ def _category_events(name: str, drivers: dict) -> Optional[int]:
         "serve_return": drivers.get("n_serves"),
         "forehand": drivers.get("forehand_count"),
         "backhand": drivers.get("backhand_count"),
+        # third shot: the user's own deep drop-or-drive decisions (a 5-min clip
+        # yields only a handful -- coaching a rate off 1 is meaningless).
+        "third_shot": drivers.get("n_third_decisions"),
     }.get(name)
 
 

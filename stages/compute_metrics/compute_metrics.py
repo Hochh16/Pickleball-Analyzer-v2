@@ -739,16 +739,47 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # per-rally end_reason confidence (source for by_end_reason + serve)
     end_reason_confs = _confs(rallies, "end_reason_confidence")
 
-    # third shot
-    third_shots = []
-    for r in rallies:
-        if int(r["n_shots"]) >= 3 and len(r["shot_ids"]) >= 3:
-            s = shot_by_id.get(int(r["shot_ids"][2]))
-            if s is not None:
-                third_shots.append(s)
+    # third shot. The real "third-shot decision" is the drop-vs-drive choice made
+    # from DEEP (baseline/transition) on the 3rd ball. So the denominator is only
+    # 3rd shots that are a drop or a drive hit from deep -- excluding a mis-segmented
+    # serve at position 3, and a kitchen dink (not a third-shot-drop situation),
+    # both of which polluted the old count. drop_rate = drops / (drops + drives).
+    def _clean_thirds(only_user: bool) -> List[dict]:
+        out = []
+        for r in rallies:
+            if int(r["n_shots"]) >= 3 and len(r["shot_ids"]) >= 3:
+                s = shot_by_id.get(int(r["shot_ids"][2]))
+                if (s is not None and not s.get("is_serve")
+                        and s.get("shot_type") in ("drop", "drive")
+                        and (s.get("features") or {}).get("contact_zone")
+                        in ("baseline", "transition")
+                        and (not only_user or s.get("is_user"))):
+                    out.append(s)
+        return out
+
+    def _third_block(thirds: List[dict], per_user: bool) -> dict:
+        by = count_by(thirds, lambda s: s.get("shot_type", "unknown"))
+        n_dd = by.get("drop", 0) + by.get("drive", 0)
+        rate = round(by.get("drop", 0) / n_dd, 3) if n_dd else None
+        return mv_sourced({
+            "n_third_decisions": len(thirds),  # deep drop-or-drive 3rd shots
+            "by_shot_type": by,
+            "drop_rate": rate,
+            "per_user": per_user,
+        }, _confs(thirds, "shot_type_confidence"), len(thirds))
+
+    third_shots = _clean_thirds(only_user=False)
     third_by_type = count_by(third_shots, lambda s: s.get("shot_type", "unknown"))
-    third_drop_rate = (round(third_by_type.get("drop", 0) / len(third_shots), 3)
-                       if third_shots else 0.0)
+    third_drop_rate = (round(third_by_type.get("drop", 0) /
+                             (third_by_type.get("drop", 0) + third_by_type.get("drive", 0)), 3)
+                       if (third_by_type.get("drop", 0) + third_by_type.get("drive", 0)) else None)
+
+    # returns = the 2nd shot of each rally (the return of serve). Count total + user.
+    returns = [shot_by_id.get(int(r["shot_ids"][1])) for r in rallies
+               if len(r.get("shot_ids", [])) >= 2]
+    returns = [s for s in returns if s is not None]
+    n_returns = len(returns)
+    n_user_returns = sum(1 for s in returns if s.get("is_user"))
 
     n_in = sum(1 for b in bounces if b.get("is_in_court") is True)
     n_out = sum(1 for b in bounces if b.get("is_in_court") is False)
@@ -777,11 +808,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
         }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
-        "third_shot": mv_sourced({
-            "n_rallies_ge_3_shots": len(third_shots),
-            "by_shot_type": third_by_type,
-            "drop_rate": third_drop_rate,
-        }, _confs(third_shots, "shot_type_confidence"), len(third_shots)),
+        "third_shot": _third_block(third_shots, per_user=False),
+        "returns": mv_structural(n_returns, n_returns),
         "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
             "in_rate": round(n_in / (n_in + n_out), 4) if (n_in + n_out) else 0.0,
@@ -934,6 +962,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "track_ids": role_to_tids[r],
             "n_shots": mv_structural(len(rshots), len(rshots)),
             "shot_mix": shot_mix(rshots, role_factor=rconf),
+            # this role's OWN third-shot decisions (deep drop-or-drive on the 3rd
+            # ball) and return-of-serve count, for a per-user (not match) read.
+            "third_shot": _third_block(
+                [s for s in _clean_thirds(only_user=False)
+                 if int(s["track_id"]) in tids], per_user=True),
+            "n_returns": mv_structural(
+                sum(1 for s in returns if int(s["track_id"]) in tids),
+                sum(1 for s in returns if int(s["track_id"]) in tids)),
             "serve": mv_sourced({
                 "n_serves": len(rserves),
                 "n_serve_faults": rsf,

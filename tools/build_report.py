@@ -66,10 +66,11 @@ METRIC_DISPLAY = {
     "distance_ft_per_min": ("Court covered during play", "ftmin"),
     "third_shot_drop_rate": ("Third shots played as a soft drop", "pct"),
     "dink_count": ("Dinks detected", "int"),
-    "volley_rate": ("Shots played as a net volley", "pct"),
+    "volley_rate": ("Your shots that were volleys", "pct"),
     "n_volley": ("Net volleys detected", "int"),
     "serve_fault_rate": ("Serves that faulted", "pct"),
     "n_serves": ("Serves detected", "int"),
+    "n_returns": ("Returns of serve detected", "int"),
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
     "mean_rally_length": ("Average rally length", "shots"),
@@ -313,6 +314,7 @@ def build_html(folder: Path) -> str:
         "dink_count": _bt.get("dink"),
         "n_volley": ((_mm.get("volley", {}) or {}).get("value", {}) or {}).get("n_volley"),
         "n_serves": _bt.get("serve"),
+        "n_returns": ((metrics.get("match", {}) or {}).get("returns", {}) or {}).get("value"),
         "forehand_count": _bs.get("forehand"),
         "backhand_count": _bs.get("backhand"),
     }
@@ -356,8 +358,14 @@ def build_html(folder: Path) -> str:
     A('</div></div>')
 
     # ---- Session at a glance ----
-    shots = classified.get("shots", [])
     rallies = rallies_doc.get("rallies", [])
+    # Header counts use IN-RALLY shots only, matching the category counts (metrics
+    # scopes to rallies). Otherwise the headline "Shots" (all detections incl.
+    # between-point) disagrees with everything below it.
+    _rsids = {int(i) for r in rallies for i in r.get("shot_ids", [])}
+    _all_shots = classified.get("shots", [])
+    shots = ([s for s in _all_shots if int(s["shot_id"]) in _rsids]
+             if _rsids else _all_shots)
     n_volley = sum(1 for s in shots if s.get("is_volley"))
     dur = timeline.get("duration_sec")
     mins = f"{dur/60:.1f}" if isinstance(dur, (int, float)) else "—"
@@ -502,10 +510,10 @@ def build_html(folder: Path) -> str:
           f'<span style="color:var(--court)">●</span> in bounds · '
           f'<span style="color:#d23">●</span> out. Near baseline at the bottom, far '
           f'court at the top, net across the middle.</p>'
-          f'<p class="small muted">Showing the {n_inr} of {len(all_bounces)} detected '
-          f'bounces that happened during rallies. Volleys (hit in the air) never '
-          f'bounce, and many ground bounces are still missed{fn(6)}, so this is a '
-          f'partial map — it will fill in as bounce detection improves.</p></div></div>')
+          f'<p class="small muted">Showing {n_inr} of {len(all_bounces)} detected '
+          f'bounces (the rest were between points). Volleys never bounce, and a '
+          f'ball hit into the net doesn\'t bounce either, so those aren\'t shown. '
+          f'A few real bounces are also still missed by detection{fn(6)}.</p></div></div>')
 
     # ---- Match video ----
     A('<h2>Match video &amp; timeline</h2><hr class="rule">')
@@ -537,11 +545,12 @@ def build_html(folder: Path) -> str:
 
     # ---- Footnotes ----
     A('<div class="foot"><h3>Notes</h3><ol>')
-    A(f'<li id="fn1">Overall confidence is {int(round((rt.get("confidence") or 0)*100))}%. '
-      f'That reflects how much of the full skill picture we can measure yet — a '
-      f'confident read of <i>incomplete</i> coverage, not an uncertain rating. '
-      f'Thresholds are uncalibrated heuristics anchored to the USAPA definitions, '
-      f'not an official rating.</li>')
+    A(f'<li id="fn1">Measurement coverage is {int(round((rt.get("confidence") or 0)*100))}%. '
+      f'This is how much of the full 7-category skill picture we can measure from one '
+      f'camera yet — <b>not</b> how sure we are of your rating. It\'s low mainly '
+      f'because shot <i>quality</i> (pace, dink height, return depth) isn\'t measured '
+      f'yet; the counts we do report are validated. Thresholds are uncalibrated '
+      f'heuristics anchored to the USAPA definitions, not an official rating.</li>')
     A('<li id="fn2">"Not yet measured" categories need upcoming shot-speed, serve, '
       'and stroke detection. We flag them rather than guess a number.</li>')
     A('<li id="fn3">Level descriptions are a condensed synthesis of the published '
@@ -552,11 +561,12 @@ def build_html(folder: Path) -> str:
       'On its own it isn\'t good or bad — strong players often move <i>less</i> but '
       'get to better spots — so we don\'t rate it. The coachable lever is footwork '
       'and positioning, which lives under Strategy above.</li>')
-    A('<li id="fn6">Bounce detection is incomplete. Every groundstroke follows a '
-      'bounce, so bounces should roughly match your non-volley shots — here ~30 are '
-      'expected but fewer are detected. Missed bounces are a known ball-detection '
-      'limit we\'re improving; they thin out the landing map and the depth-based '
-      'stats, but don\'t affect your positioning or rating.</li>')
+    A(f'<li id="fn6">Every ground shot bounces once, so bounces should equal your '
+      f'non-volley shots: about {max(0, len(shots) - n_volley)} expected here, '
+      f'{len(all_bounces)} detected. The ~{max(0, len(shots) - n_volley - len(all_bounces))} '
+      f'gap is real bounces missed by detection — a known ball-detection limit we\'re '
+      f'improving. It thins the landing map and depth stats, but doesn\'t affect your '
+      f'positioning or rating.</li>')
     A('</ol>')
     for w in (rating.get("warnings", []) or []):
         A(f'<p>⚠ {esc(w)}</p>')
