@@ -1,4 +1,62 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-22)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-22b)
+
+## 2026-07-22b — REPORT VALIDATED PER-USER; next = TECHNIQUE (body mechanics) — READ FIRST
+
+### State: the report is now internally consistent and validated against operator counts
+
+USER-level counts (rating is per-user) vs operator truth on `pb_5_minute_outdoor-2`:
+drive 14 (12) · serve 4 (4) · dink 6 (6) · drop 1 (2) · volley 6 (6) · returns 3 (3) ·
+FH 13 (15) · BH 10 (9). **Dink/serve/volley/returns are EXACT.** Rating 3.77, band 4.0,
+measurement coverage 36%. Match-level counts also shown ("22 in the match, 6 by you").
+
+Report fixes done this session (operator's 12-question review): per-user + cleaned
+third shot (deep drop-or-drive only; gated at <4 decisions), returns counted, header
+shots in-rally (96), volley relabelled "your shots", confidence relabelled
+"measurement coverage", bounce map notes net/volley shots aren't shown + separates
+between-point from missed, plan drills refiled (resets->Strategy, soft-game->Dink),
+7/10 target removed, coaching gate 10->6.
+
+### OPERATOR DIRECTION (2026-07-22b): technique BEFORE multi-clip
+
+Operator wants to **enrich the report + close any remaining CURRENTLY-DOABLE accuracy
+items first**, then multi-clip. Named priority: **TECHNIQUE / BODY MECHANICS** — which
+is derivable from POSE (94% detected, 33 joints/frame) and does NOT need ball height,
+so it is achievable on this one 6ft camera. This adds shot-QUALITY the camera can
+actually see (unlike pace/spin/dink-height, which are height-limited).
+
+### ROADMAP (priority order set by operator)
+
+1. **TECHNIQUE / BODY MECHANICS from pose (NEXT).** Camera-feasible quality signals:
+   ready position / paddle-up between shots; split-step timing (hop as opponent
+   contacts); athletic stance / knee bend; contact point in front vs late; shoulder
+   turn / rotation on groundstrokes; balance at contact; reach-vs-move; follow-through.
+   Maps to USAPA technique language. Scope which are robust from a 6ft corner view.
+2. **Report enrichment** — surface more of what we already compute (per-rally detail,
+   position quality, movement) with honest confidence.
+3. **Remaining doable accuracy** — bounce recall (close the ~2-10 shot identity gap);
+   reduce "unknown" strokes (recover the 2 user FH); tighten opponent-side dink
+   over-count (match totals only; does not affect the per-user rating).
+4. **Net-hit detection** — a ball into the net doesn't bounce; detect the ball
+   stopping/dropping at the net line so net errors show on the bounce map + counts
+   (operator hit several into the net: dink, FH, BH, drives).
+5. **Multi-clip aggregation over time** — accumulate per-player stats across many
+   clips/sessions so thin per-category samples (dink 6, serve 4 in 5 min) become
+   coachable. Operator wants this AFTER technique/enrichment.
+6. **HEIGHT-LIMITED quality (needs camera change; deferred)** — true shot speed, dink
+   pop-up height/depth control, return depth/location, volley block/put-away/speed-up
+   classification, spin, direct bounce-vs-volley. All need ball height; three
+   height-free methods tested and defeated (see ACCURACY_LEDGER). Revisit only if a
+   higher/second camera is added.
+
+### Fast test rig + acceptance test (unchanged)
+
+`data/pb_outdoor2_excerpt` (44s, source f16200-18861, excerpt f == source f+16200).
+Acceptance test = operator COUNTS (see ACCURACY_LEDGER top). Validate every change
+against them, never the previous run. All work committed + pushed (HEAD 47c25ef);
+20/20 stage tests pass.
+
+---
+
 
 ## 2026-07-22 — ACCURACY DRIVEN BY OPERATOR COUNTS → next = dinks, volleys, rallies — READ FIRST
 

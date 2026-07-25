@@ -180,6 +180,31 @@ AND garbage speeds. Match data justifies building it next. What's already SOLID:
 serve detection, settled-rally sides, and dinks that bounce & land in the kitchen
 (#4/#7/#8/#9 all correct).
 
+## REPORT VALIDATED PER-USER + ROADMAP (2026-07-22b)
+
+Operator did a detailed 12-question review of the built report; all addressed. USER
+counts (rating is per-user) now match operator truth well: dink 6=6, serve 4=4,
+volley 6=6, returns 3=3 EXACT; drive 14 (12), drop 1 (2), FH 13 (15), BH 10 (9).
+Report is internally consistent (header 96 in-rally shots, categories agree),
+per-user where it should be (third shot, returns), and honestly labelled
+(measurement coverage not "confidence"; volley % = share of YOUR shots; bounce map
+states net/volley shots aren't shown). Third shot is gated (<4 user decisions), so
+it is not coached off n=1.
+
+**ROADMAP (operator priority: technique/enrichment BEFORE multi-clip):**
+1. **Technique / body mechanics from POSE** (NEXT) — ready position, split-step
+   timing, athletic stance/knee bend, contact point (front vs late), shoulder turn,
+   balance, reach-vs-move, follow-through. Pose is 94% detected, 33 joints/frame, and
+   these need NO ball height -> achievable on the 6ft camera. Adds camera-feasible
+   shot QUALITY.
+2. Report enrichment (surface more of what we compute).
+3. Remaining doable accuracy: bounce recall (identity gap), fewer "unknown" strokes,
+   opponent-side dink over-count (match totals only).
+4. Net-hit detection (ball stops at the net; show net errors).
+5. Multi-clip aggregation over time (AFTER technique).
+6. HEIGHT-LIMITED quality (true speed, dink height, return depth, volley sub-types,
+   spin) — deferred; needs a camera change (height-free methods all defeated).
+
 ## USER-LEVEL acceptance test (operator, `pb_5_minute_outdoor-2`, 2026-07-22)
 
 The USAPA rating is PER-USER, so the user's counts are the real acceptance test.
