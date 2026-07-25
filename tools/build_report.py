@@ -142,13 +142,13 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
         if fmt == "shots":
             return f"{val:.1f} shots"
         if fmt == "contact":
-            # contact_front normalised by shoulder width: >~1 clearly in front,
-            # ~0 at the body, <0 late/jammed.
-            v = float(val)
-            where = ("out in front" if v >= 1.0 else
-                     "just in front" if v >= 0.3 else
-                     "at your body" if v >= -0.3 else "late (behind your body)")
-            return f"{where}"
+            # val = {n, n_in_front, pct_in_front, mean}. Report the count + share
+            # hit in front of the body (the coachable technique read).
+            if not isinstance(val, dict) or not val.get("n"):
+                return None
+            n, nf = int(val["n"]), int(val.get("n_in_front", 0))
+            pct = int(round(val.get("pct_in_front", 0) * 100))
+            return f"{nf} of {n} hit in front of you ({pct}%)"
     except (TypeError, ValueError):
         return None
     return str(val)

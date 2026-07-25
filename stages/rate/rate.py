@@ -300,15 +300,15 @@ def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
     cnt = by_side.get(side, 0)
     frac = (cnt / n_shots) if n_shots > 0 else None
     tech = sm.get("technique", {}) or {}
-    cf = (tech.get("by_stroke_side", {}) or {}).get(side)
+    cf = (tech.get("by_stroke_side", {}) or {}).get(side)   # {n, n_in_front, pct, mean}
     drivers = {f"{side}_count": cnt,
                f"{side}_frac": round(frac, 4) if frac is not None else None,
-               "contact_front": cf,
+               "contact_front": cf,   # full stats dict for the report
                "pace_mph": None, "depth": None, "consistency": None}
-    # Score from contact point: at the body (~0) -> 3.0; well in front (~2.5) -> 4.2;
-    # late (<0) -> below 3.0. Needs a few reads to be meaningful.
-    if cf is not None and cnt >= CONTACT_FRONT_MIN_N:
-        return clamp_level(lin(cf, 0.0, 3.0, 2.5, 4.2)), drivers
+    # Score from mean contact point: at the body (~0) -> 3.0; well in front (~2.5) ->
+    # 4.2; late (<0) -> below 3.0. Needs a few reads to be meaningful.
+    if cf and cf.get("n", 0) >= CONTACT_FRONT_MIN_N and cf.get("mean") is not None:
+        return clamp_level(lin(cf["mean"], 0.0, 3.0, 2.5, 4.2)), drivers
     return NEUTRAL_PRIOR_LEVEL, drivers
 
 

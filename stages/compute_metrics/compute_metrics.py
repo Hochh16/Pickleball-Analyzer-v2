@@ -234,14 +234,23 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
     def _cf(sel) -> List[float]:
         return [s["features"]["contact_front"] for s in shots
                 if sel(s) and (s.get("features") or {}).get("contact_front") is not None]
+
+    def _cf_stats(sel) -> Optional[dict]:
+        v = _cf(sel)
+        if not v:
+            return None
+        n_front = sum(1 for x in v if x > 0)   # ahead of body center = "in front"
+        return {"n": len(v), "n_in_front": n_front,
+                "pct_in_front": round(n_front / len(v), 2),
+                "mean": round(statistics.mean(v), 2)}
+
     cf_all = _cf(lambda s: True)
     technique = {
         "contact_front_mean": round(statistics.mean(cf_all), 2) if cf_all else None,
         "pct_in_front": round(sum(1 for x in cf_all if x > 0) / len(cf_all), 2) if cf_all else None,
         "n": len(cf_all),
-        "by_stroke_side": {sd: round(statistics.mean(v), 2)
-                           for sd in ("forehand", "backhand")
-                           for v in [_cf(lambda s: s.get("stroke_side") == sd)] if v},
+        "by_stroke_side": {sd: st for sd in ("forehand", "backhand")
+                           for st in [_cf_stats(lambda s: s.get("stroke_side") == sd)] if st},
         "power_contact_front": (round(statistics.mean(v), 2)
                                 if (v := _cf(lambda s: s.get("shot_type") in ("drive", "serve"))) else None),
     }
