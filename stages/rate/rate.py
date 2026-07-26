@@ -308,14 +308,21 @@ def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
     frac = (cnt / n_shots) if n_shots > 0 else None
     tech = sm.get("technique", {}) or {}
     cf = (tech.get("by_stroke_side", {}) or {}).get(side)   # {n, n_in_front, pct, mean}
+    turn = (tech.get("drive_turn_by_side", {}) or {}).get(side)  # {n, mean_deg, pct_turned}
     drivers = {f"{side}_count": cnt,
                f"{side}_frac": round(frac, 4) if frac is not None else None,
-               "contact_front": cf,   # full stats dict for the report
+               "contact_front": cf,     # full stats dicts for the report
+               "drive_turn": turn,
                "pace_mph": None, "depth": None, "consistency": None}
-    # Score from mean contact point: at the body (~0) -> 3.0; well in front (~2.5) ->
-    # 4.2; late (<0) -> below 3.0. Needs a few reads to be meaningful.
+    # Score from mean contact point (primary): at the body (~0) -> 3.0; well in front
+    # (~2.5) -> 4.2; late (<0) -> below 3.0. Shoulder turn on drives adds a small
+    # secondary bump (using the body, not all-arm) -- kept small, it's camera-
+    # compressed. Both need a few reads to be meaningful.
     if cf and cf.get("n", 0) >= CONTACT_FRONT_MIN_N and cf.get("mean") is not None:
-        return clamp_level(lin(cf["mean"], 0.0, 3.0, 2.5, 4.2)), drivers
+        lvl = lin(cf["mean"], 0.0, 3.0, 2.5, 4.2)
+        if turn and turn.get("n", 0) >= 3 and turn.get("mean_deg") is not None:
+            lvl += lin(turn["mean_deg"], 5.0, -0.15, 30.0, 0.3) or 0.0
+        return clamp_level(lvl), drivers
     return NEUTRAL_PRIOR_LEVEL, drivers
 
 

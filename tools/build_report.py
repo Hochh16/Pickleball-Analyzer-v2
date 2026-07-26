@@ -53,10 +53,12 @@ CATEGORY_ELEMENTS = {
                      ("Depth", "planned"), ("Pace & spin", "planned")],
     "forehand": [("How many forehands you hit", "live"),
                  ("Contact point (in front vs late)", "live"),
+                 ("Shoulder turn on drives", "live"),
                  ("Pace", "planned"), ("Placement & depth", "planned")],
     "backhand": [("How many backhands you hit", "live"),
                  ("Contact point (in front vs late)", "live"),
-                 ("Pace & depth", "planned"), ("Consistency", "planned")],
+                 ("Shoulder turn on drives", "live"),
+                 ("Pace & depth", "planned")],
 }
 
 # Driver-metric key -> (plain-English label, format). Keys not listed are hidden
@@ -76,6 +78,7 @@ METRIC_DISPLAY = {
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
     "contact_front": ("Contact point", "contact"),
+    "drive_turn": ("Shoulder turn on drives", "turn"),
     "dink_knee_bend": ("Athletic stance on dinks", "knee"),
     "mean_rally_length": ("Average rally length", "shots"),
 }
@@ -159,6 +162,13 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             n, na = int(val["n"]), int(val.get("n_athletic", 0))
             pct = int(round(val.get("pct_athletic", 0) * 100))
             return f"{na} of {n} hit with a low, athletic stance ({pct}%)"
+        if fmt == "turn":
+            # val = {n, mean_deg, n_turned, pct_turned}. Body rotation on drives.
+            if not isinstance(val, dict) or not val.get("n"):
+                return None
+            n, nt = int(val["n"]), int(val.get("n_turned", 0))
+            pct = int(round(val.get("pct_turned", 0) * 100))
+            return f"{nt} of {n} drives with body rotation ({pct}%)"
     except (TypeError, ValueError):
         return None
     return str(val)

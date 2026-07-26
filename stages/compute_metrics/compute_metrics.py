@@ -33,6 +33,7 @@ import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
 ATHLETIC_KNEE_DEG = 160.0     # mean knee angle below this at contact = athletic/loaded
+TURNED_SHOULDER_DEG = 15.0    # shoulder-vs-net angle at/above this = body rotation (camera-compressed)
 STAGE_VERSION = "0.5.0"       # 0.3.0 front-foot -> 0.4.0 rally-scoped position ->
                               # 0.5.0 noise-robust (downsampled) movement distance
 
@@ -258,6 +259,15 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
         return {"n": len(v), "mean_deg": round(statistics.mean(v)),
                 "n_athletic": n_ath, "pct_athletic": round(n_ath / len(v), 2)}
 
+    def _turn_stats(sel) -> Optional[dict]:
+        v = [s["features"]["shoulder_turn_deg"] for s in shots
+             if sel(s) and (s.get("features") or {}).get("shoulder_turn_deg") is not None]
+        if not v:
+            return None
+        n_turn = sum(1 for x in v if x >= TURNED_SHOULDER_DEG)   # body rotation present
+        return {"n": len(v), "mean_deg": round(statistics.mean(v)),
+                "n_turned": n_turn, "pct_turned": round(n_turn / len(v), 2)}
+
     technique = {
         "contact_front_mean": round(statistics.mean(cf_all), 2) if cf_all else None,
         "pct_in_front": round(sum(1 for x in cf_all if x > 0) / len(cf_all), 2) if cf_all else None,
@@ -268,6 +278,12 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
                                 if (v := _cf(lambda s: s.get("shot_type") in ("drive", "serve"))) else None),
         "knee_bend": _knee_stats(lambda s: True),
         "knee_bend_dink": _knee_stats(lambda s: s.get("shot_type") == "dink"),
+        # shoulder turn on POWER shots (drives) per stroke side: body rotation is
+        # desirable on drives (naturally low on compact dinks, so drives only).
+        "drive_turn_by_side": {sd: st for sd in ("forehand", "backhand")
+                               for st in [_turn_stats(
+                                   lambda s, _sd=sd: s.get("shot_type") == "drive"
+                                   and s.get("stroke_side") == _sd)] if st},
     }
     return {
         "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),
