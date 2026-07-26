@@ -464,6 +464,12 @@ def build_html(folder: Path) -> str:
     A('<div class="legend"><span><span class="sym">●</span> measured now</span>'
       '<span><span class="sym">◐</span> partial / early signal</span>'
       '<span><span class="sym">○</span> coming soon</span></div>')
+    A('<p class="small muted" style="margin-top:8px">About knee bend: '
+      '&ldquo;the right knee bend&rdquo; means your knees were flexed into the range '
+      'good technique calls for on that shot &mdash; you get lower on soft, control '
+      'shots and less on power shots. Target bend (how far the knees flex from '
+      'straight): serve &amp; return 10&ndash;30&deg;, drive 20&ndash;35&deg;, '
+      'third-shot drop 30&ndash;45&deg;, dink &amp; reset 35&ndash;50&deg;.</p>')
 
     # ---- Improvement plan ----
     A('<h2>Your improvement plan</h2><hr class="rule">')
