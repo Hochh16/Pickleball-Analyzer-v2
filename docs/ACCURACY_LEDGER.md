@@ -205,6 +205,30 @@ it is not coached off n=1.
 6. HEIGHT-LIMITED quality (true speed, dink height, return depth, volley sub-types,
    spin) — deferred; needs a camera change (height-free methods all defeated).
 
+## TECHNIQUE / BODY MECHANICS from pose (2026-07-22c) — quality layer
+
+Camera-feasible shot QUALITY from pose (no ball height). Calibrated to OPERATOR
+coaching standards.
+
+- **Contact point (front vs late): SHIPPED.** Paddle-wrist net-ward of the hip at
+  contact. Operator standard: contact "in front of your hip" (~1:00 forehand / 11:00
+  backhand). Feeds Forehand/Backhand quality. User: FH 90% in front, BH 62%.
+- **Knee bend / athletic stance: SHIPPED, calibrated to per-shot-type BANDS.** bend =
+  180 - knee angle. Operator bands: serve/return 10-30, drive 20-35, drop 30-45, dink
+  35-50 (soft shots need a deeper, lower base). Measured means land in-band
+  (validated). Feeds Forehand/Backhand (drives) + Dink + Serve.
+- **Shoulder turn / rotation: REMOVED.** Operator standard is peak BACKSWING rotation
+  in degrees (drive 60-90, drop 20-45, dink 5-15). Absolute 3-D rotation is NOT
+  reliably recoverable from one corner camera: recovering it from shoulder-width
+  foreshortening is noise-dominated (dinks measured 62 deg vs the true 5-15). SAME
+  monocular-3D limit as ball height. Don't ship what we can't measure.
+
+**Principle reinforced:** contact-frame + ground-plane + relative quantities are
+robust; absolute 3-D quantities (ball height, rotation degrees) are monocular-limited.
+Technique now fills previously-empty quality circles + drives body-mechanics coaching
+(late contact, not enough knee bend) in the improvement plan; Backhand surfaces as a
+focus (weakest: 62% contact, 0% in-band drive knee bend).
+
 ## USER-LEVEL acceptance test (operator, `pb_5_minute_outdoor-2`, 2026-07-22)
 
 The USAPA rating is PER-USER, so the user's counts are the real acceptance test.
