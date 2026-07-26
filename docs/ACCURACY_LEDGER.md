@@ -223,6 +223,15 @@ coaching standards.
   foreshortening is noise-dominated (dinks measured 62 deg vs the true 5-15). SAME
   monocular-3D limit as ball height. Don't ship what we can't measure.
 
+- **Ready position (paddle up): SHIPPED.** Paddle-hand wrist height up the torso
+  over in-rally, non-swing frames (0 = hip, 1 = shoulder). No ball height / no fine
+  timing needed. User: paddle up 68% but carried LOW (median at hip, 4% chest-high)
+  -> feeds Strategy quality + a "paddle up & ready" drill. 12k+ frame sample.
+- **Split-step: NOT shipped.** A split-step is a few-inch vertical hop timed to the
+  opponent's contact = a few pixels at this distance, at the pose-jitter floor; the
+  "59% detection" was noise-firing, unverifiable. Same sub-pixel limit as shoulder
+  turn. Deferred (needs a closer/higher camera).
+
 **Principle reinforced:** contact-frame + ground-plane + relative quantities are
 robust; absolute 3-D quantities (ball height, rotation degrees) are monocular-limited.
 Technique now fills previously-empty quality circles + drives body-mechanics coaching

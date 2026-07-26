@@ -36,7 +36,8 @@ CATEGORY_LABEL = {
 # coverage: "live" (measured now), "partial" (early/low-confidence), "planned".
 CATEGORY_ELEMENTS = {
     "strategy": [("Kitchen-line positioning", "live"), ("Moving as a team", "live"),
-                 ("Court coverage & movement", "live"), ("Stacking", "planned"),
+                 ("Court coverage & movement", "live"),
+                 ("Ready position (paddle up)", "live"), ("Stacking", "planned"),
                  ("Targeting weakness", "planned"), ("Resets under pressure", "planned"),
                  ("Unforced errors", "planned")],
     "third_shot": [("How often you play the 3rd shot", "live"),
@@ -77,6 +78,7 @@ METRIC_DISPLAY = {
     "n_returns": ("Returns of serve detected", "int"),
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
+    "ready_position": ("Ready position (paddle up)", "ready"),
     "contact_front": ("Contact point", "contact"),
     "drive_knee_bend": ("Knee bend on drives", "knee"),
     "dink_knee_bend": ("Knee bend on dinks", "knee"),
@@ -154,6 +156,16 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             n, nf = int(val["n"]), int(val.get("n_in_front", 0))
             pct = int(round(val.get("pct_in_front", 0) * 100))
             return f"{nf} of {n} hit in front of your hip ({pct}%)"
+        if fmt == "ready":
+            # val = {n_frames, median_height, pct_paddle_up, pct_chest_high}.
+            if not isinstance(val, dict) or not val.get("n_frames"):
+                return None
+            up = int(round(val.get("pct_paddle_up", 0) * 100))
+            chest = int(round(val.get("pct_chest_high", 0) * 100))
+            carry = ("up at chest height" if chest >= 40 else
+                     "up but low (around the waist)" if up >= 50 else
+                     "down at your side")
+            return f"paddle up {up}% of the time, carried {carry}"
         if fmt == "knee":
             # val = {n, mean_bend_deg, n_good, pct_good}. Good = knee bend within the
             # operator's per-shot-type band (soft shots want a deeper bend).

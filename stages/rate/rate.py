@@ -132,6 +132,7 @@ def _unwrap_user(uw: dict) -> dict:
         "serve": _v(uw.get("serve")) or {},
         "third_shot": _v(uw.get("third_shot")) or {},
         "n_returns": _v(uw.get("n_returns")) or 0,
+        "ready_position": _v(uw.get("ready_position")) or {},
         "position": _v(uw.get("position")) or {},
         "mean_post_speed_ftps": _v(uw.get("mean_post_speed_ftps")),
     }
@@ -207,10 +208,12 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
     per_min = (pos.get("movement", {}) or {}).get("distance_ft_per_min")
     errs = user.get("errors_committed")
     epr = (errs / n_rallies) if (errs is not None and n_rallies > 0) else None
+    ready = user.get("ready_position") or {}    # paddle-up readiness (movement mech.)
     drivers = {"user_kitchen_time_frac": kitchen,
                "both_at_kitchen_frac": both,
                "user_transition_time_frac": transition,
                "distance_ft_per_min": per_min,
+               "ready_position": ready or None,
                "unforced_error_rate": round(epr, 4) if epr is not None else None}
     if kitchen is None:
         return NEUTRAL_PRIOR_LEVEL, drivers

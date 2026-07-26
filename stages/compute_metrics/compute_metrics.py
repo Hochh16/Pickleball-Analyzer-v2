@@ -397,6 +397,41 @@ def role_frame_pos(sub: pd.DataFrame) -> Dict[int, Tuple[float, float]]:
             for f, r in g.iterrows()}
 
 
+def ready_position(poses_df: Optional[pd.DataFrame], tids: List[int], hand: str,
+                   rally_windows: List[Tuple[int, int]],
+                   swing_frames: set) -> Optional[dict]:
+    """Between-shot READY POSITION: is the paddle hand carried UP (ready to react)?
+    Measured over in-rally frames, EXCLUDING frames near this player's own shots
+    (their swing), as the paddle-hand wrist height up the torso: 0 = at the hip,
+    1 = at the shoulder. Paddle-up = wrist above the hip. A camera-feasible movement
+    signal (no ball height / no fine timing needed, unlike split-step). None if pose
+    is missing / handedness unknown."""
+    if poses_df is None or poses_df.empty or hand not in ("left", "right") or not tids:
+        return None
+    wj = "right_wrist" if hand == "right" else "left_wrist"
+    d = poses_df[(poses_df["track_id"].isin(tids)) & (poses_df["pose_detected"])]
+    if d.empty:
+        return None
+    fr = d["frame"].to_numpy()
+    in_rally = np.array([_frame_rally_index(int(f), rally_windows) is not None
+                         for f in fr]) if rally_windows else np.ones(len(fr), bool)
+    not_swing = np.array([int(f) not in swing_frames for f in fr])
+    keep = in_rally & not_swing
+    wy = d[f"{wj}_y_px"].to_numpy()
+    hy = ((d["left_hip_y_px"] + d["right_hip_y_px"]) / 2).to_numpy()
+    sy = ((d["left_shoulder_y_px"] + d["right_shoulder_y_px"]) / 2).to_numpy()
+    ok = keep & ~(np.isnan(wy) | np.isnan(hy) | np.isnan(sy))
+    denom = np.maximum(hy - sy, 1e-6)
+    frac_up = (hy - wy) / denom            # 0 = at hip, 1 = at shoulder
+    vals = frac_up[ok]
+    if len(vals) < 30:
+        return None
+    return {"n_frames": int(len(vals)),
+            "median_height": round(float(np.median(vals)), 2),
+            "pct_paddle_up": round(float(np.mean(vals > 0.0)), 2),
+            "pct_chest_high": round(float(np.mean(vals >= 0.6)), 2)}
+
+
 def pose_front_foot(poses_df: Optional[pd.DataFrame],
                     image_to_court) -> Dict[int, Dict[int, Tuple[float, float]]]:
     """track_id -> {frame -> (court_x, court_y)} from the FRONT foot (the ankle
@@ -1017,6 +1052,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                   if not s.get("is_serve") and s.get("features", {}).get("post_speed_ftps") is not None]
         rconf = role_confidence.get(r, 0.0)
         pos_n = role_positions[r]["n_frames"]
+        rp = ready_position(poses_df, role_to_tids[r], handedness.get(r, "unknown"),
+                            rally_windows, {int(s["frame"]) for s in rshots})
         players_out[r] = {
             "role_confidence": rconf,
             "role_contaminated": bool(role_contaminated.get(r, False)),
@@ -1032,6 +1069,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "n_returns": mv_structural(
                 sum(1 for s in returns if int(s["track_id"]) in tids),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
+            "ready_position": mv_sample_size(rp or {}, (rp or {}).get("n_frames", 0)),
             "serve": mv_sourced({
                 "n_serves": len(rserves),
                 "n_serve_faults": rsf,

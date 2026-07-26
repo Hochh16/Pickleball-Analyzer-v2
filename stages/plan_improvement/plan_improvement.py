@@ -166,6 +166,10 @@ DRILLS = {
                          "cue": "Shadow-swing and hit feeds so contact is in front of "
                                 "your hip (~1 o'clock forehand, ~11 o'clock backhand), "
                                 "not beside you — meet the ball early."},
+    "paddle_ready": {"name": "Paddle up & ready",
+                     "cue": "Between shots, hold the paddle up in front of you around "
+                            "chest height (not down at your side) so you can react to "
+                            "either wing without a wind-up."},
     "loaded_stance": {"name": "Loaded stance",
                       "cue": "Play from a lower, athletic base — bend the knees so "
                              "you get UNDER dinks and resets; power shots need less "
@@ -278,12 +282,21 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
                       "and you cover the line together as a team well")
         if bv:
             s += f"; {bv} ({_pct(b)} of the rally)"
+        ready = dr.get("ready_position") or {}
+        if ready.get("n_frames"):
+            up = ready.get("pct_paddle_up", 0)
+            chest = ready.get("pct_chest_high", 0)
+            if chest < 0.4:
+                s += (f" Your paddle is up at chest height only {_pct(chest)} of the "
+                      f"time — carrying it up and in front lets you react faster")
         finding = s + "."
         keys.append("get_to_line")
         if (b or 0) < 0.30:
             keys.append("move_as_unit")
         if (t or 0) > 0.25:
             keys.append("transition_resets")
+        if (ready.get("pct_chest_high") or 1) < 0.4:
+            keys.append("paddle_ready")
         keys.append("split_step_recover")     # court coverage is part of strategy
     elif dim == "third_shot":
         drop = dr.get("third_shot_drop_rate")
