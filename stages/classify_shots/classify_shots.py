@@ -200,43 +200,6 @@ def contact_point_frontness(court: dict, pose: Optional[dict], hand: Optional[st
     return float(wrist_off @ netward / shoulder_w)
 
 
-def shoulder_turn_deg(court: dict, pose: Optional[dict], body_court_y: float
-                      ) -> Optional[float]:
-    """Technique metric: shoulder rotation at contact = using the body (coil) vs an
-    all-arm swing. Angle between the shoulder line and the NET-parallel direction at
-    the player: ~0 deg = square to the net (arm-dominant), toward 90 = turned/coiled.
-    Camera caveat: with the near player's back to the camera, real 3-D turn coils in
-    DEPTH and only partly rotates the image shoulder line, so absolute values are
-    COMPRESSED (validated: drives ~20 deg, dinks ~5 deg) -- read it comparatively
-    (turn is desirable on power shots, naturally low on compact dinks). None if the
-    shoulders or homography are missing."""
-    c2i = court.get("court_to_image")
-    if pose is None or c2i is None:
-        return None
-    lsx, lsy = pose.get("lsx"), pose.get("lsy")
-    rsx, rsy = pose.get("rsx"), pose.get("rsy")
-    if None in (lsx, lsy, rsx, rsy):
-        return None
-    sv = np.array([float(rsx) - float(lsx), float(rsy) - float(lsy)])
-    ns = np.linalg.norm(sv)
-    if ns < EPS:
-        return None
-    sv /= ns
-
-    def _proj(cx, cy):
-        v = c2i @ np.array([cx, cy, 1.0])
-        return np.array([v[0] / v[2], v[1] / v[2]]) if abs(v[2]) > EPS else None
-    p0, p1 = _proj(10.0, body_court_y), _proj(11.0, body_court_y)   # net-parallel (court-x)
-    if p0 is None or p1 is None:
-        return None
-    npar = p1 - p0
-    nn = np.linalg.norm(npar)
-    if nn < EPS:
-        return None
-    npar /= nn
-    return round(float(np.degrees(np.arccos(np.clip(abs(sv @ npar), 0.0, 1.0)))), 1)
-
-
 def knee_bend_angle(pose: Optional[dict]) -> Optional[float]:
     """Technique metric: athletic stance = how bent the knees are at contact. Returns
     the mean knee angle in degrees (hip-knee-ankle) over both legs with a visible
@@ -720,7 +683,6 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # technique: contact point front-vs-late (paddle wrist net-ward of body).
         contact_front = contact_point_frontness(court, pose, hand, court_y)
         knee_deg = knee_bend_angle(pose)   # athletic stance: lower = more bent
-        turn_deg_val = shoulder_turn_deg(court, pose, court_y)  # 0=square, higher=coiled
 
         post_ftps = speed_ftps(s.get("speed_post_px_per_frame"), court, court_y, fps)
         pre_ftps = speed_ftps(s.get("speed_pre_px_per_frame"), court, court_y, fps)
@@ -826,9 +788,6 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 # technique: mean knee angle (hip-knee-ankle) at contact; ~180 =
                 # standing tall, lower = athletic/loaded.
                 "knee_angle_deg": knee_deg,
-                # technique: shoulder rotation vs the net (0=square/all-arm, higher=
-                # coiled). Compressed by the camera; read comparatively on power shots.
-                "shoulder_turn_deg": turn_deg_val,
                 # landing court_y (sound shot-type signal) + whether the type came
                 # from the landing path (reliable) vs the speed/arc fallback.
                 "landing_court_y": round(landing_y, 2) if landing_y is not None else None,

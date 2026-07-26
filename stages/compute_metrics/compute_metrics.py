@@ -32,8 +32,13 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
-ATHLETIC_KNEE_DEG = 160.0     # mean knee angle below this at contact = athletic/loaded
-TURNED_SHOULDER_DEG = 15.0    # shoulder-vs-net angle at/above this = body rotation (camera-compressed)
+# Operator knee-BEND bands (bend deg = 180 - knee angle) per shot type: soft/control
+# shots need a deeper, lower stance than power shots. A shot is "good" if its bend is
+# within its type's band. (Shoulder-turn technique was removed: absolute 3-D rotation
+# is not reliably measurable from one corner camera -- dinks read 62 deg vs a true
+# 5-15, see docs/ACCURACY_LEDGER.)
+KNEE_BEND_BANDS = {"serve": (10, 30), "return": (10, 30), "drive": (20, 35),
+                   "drop": (30, 45), "dink": (35, 50)}
 STAGE_VERSION = "0.5.0"       # 0.3.0 front-foot -> 0.4.0 rally-scoped position ->
                               # 0.5.0 noise-robust (downsampled) movement distance
 
@@ -247,26 +252,25 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
                 "mean": round(statistics.mean(v), 2)}
 
     cf_all = _cf(lambda s: True)
-    # knee bend / athletic stance: mean knee angle at contact (~180 = standing tall,
-    # lower = loaded). "athletic" = bent below ATHLETIC_KNEE_DEG. Reported overall and
-    # for dinks (staying low on the soft game is a quality tell).
-    def _knee_stats(sel) -> Optional[dict]:
-        v = [s["features"]["knee_angle_deg"] for s in shots
-             if sel(s) and (s.get("features") or {}).get("knee_angle_deg") is not None]
-        if not v:
-            return None
-        n_ath = sum(1 for x in v if x < ATHLETIC_KNEE_DEG)
-        return {"n": len(v), "mean_deg": round(statistics.mean(v)),
-                "n_athletic": n_ath, "pct_athletic": round(n_ath / len(v), 2)}
+    # knee bend at contact, scored against OPERATOR per-shot-type bands (bend =
+    # 180 - knee angle; more bend = lower/loaded). A shot is "good bend" if its bend
+    # is within its type's band -- soft/control shots need MORE bend than power shots.
+    def _bend(s) -> Optional[float]:
+        a = (s.get("features") or {}).get("knee_angle_deg")
+        return (180.0 - a) if a is not None else None
 
-    def _turn_stats(sel) -> Optional[dict]:
-        v = [s["features"]["shoulder_turn_deg"] for s in shots
-             if sel(s) and (s.get("features") or {}).get("shoulder_turn_deg") is not None]
-        if not v:
+    def _knee_stats(sel) -> Optional[dict]:
+        rows = [(s, _bend(s)) for s in shots if sel(s) and _bend(s) is not None]
+        if not rows:
             return None
-        n_turn = sum(1 for x in v if x >= TURNED_SHOULDER_DEG)   # body rotation present
-        return {"n": len(v), "mean_deg": round(statistics.mean(v)),
-                "n_turned": n_turn, "pct_turned": round(n_turn / len(v), 2)}
+        vals = [b for _, b in rows]
+        in_band = 0
+        for s, b in rows:
+            lo, hi = KNEE_BEND_BANDS.get(s.get("shot_type"), (None, None))
+            if lo is not None and lo <= b <= hi:
+                in_band += 1
+        return {"n": len(rows), "mean_bend_deg": round(statistics.mean(vals)),
+                "n_good": in_band, "pct_good": round(in_band / len(rows), 2)}
 
     technique = {
         "contact_front_mean": round(statistics.mean(cf_all), 2) if cf_all else None,
@@ -274,16 +278,15 @@ def shot_mix(shots: List[dict], role_factor: float = 1.0) -> dict:
         "n": len(cf_all),
         "by_stroke_side": {sd: st for sd in ("forehand", "backhand")
                            for st in [_cf_stats(lambda s: s.get("stroke_side") == sd)] if st},
-        "power_contact_front": (round(statistics.mean(v), 2)
-                                if (v := _cf(lambda s: s.get("shot_type") in ("drive", "serve"))) else None),
+        # knee bend vs the per-type band, per category: drives (feed FH/BH), dinks,
+        # serves. Soft shots want deep bend, power shots moderate.
         "knee_bend": _knee_stats(lambda s: True),
         "knee_bend_dink": _knee_stats(lambda s: s.get("shot_type") == "dink"),
-        # shoulder turn on POWER shots (drives) per stroke side: body rotation is
-        # desirable on drives (naturally low on compact dinks, so drives only).
-        "drive_turn_by_side": {sd: st for sd in ("forehand", "backhand")
-                               for st in [_turn_stats(
-                                   lambda s, _sd=sd: s.get("shot_type") == "drive"
-                                   and s.get("stroke_side") == _sd)] if st},
+        "knee_bend_serve": _knee_stats(lambda s: s.get("shot_type") == "serve"),
+        "knee_bend_drive_by_side": {sd: st for sd in ("forehand", "backhand")
+                                    for st in [_knee_stats(
+                                        lambda s, _sd=sd: s.get("shot_type") == "drive"
+                                        and s.get("stroke_side") == _sd)] if st},
     }
     return {
         "by_shot_type": mv_sourced(by_type, _confs(shots, "shot_type_confidence"),

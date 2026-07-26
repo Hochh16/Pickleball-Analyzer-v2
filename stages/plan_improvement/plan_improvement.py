@@ -32,7 +32,7 @@ METRICS_SCHEMA_VERSION = 2       # Stage 8 metrics.json schema (read-but-not-con
 STAGE_VERSION = "0.5.0"          # re-keyed to Stage 9's 7 USAPA categories (0.4.0: plain findings)
 
 # --- Config (matches contract) ----------------------------------------------
-MAX_FOCUS_AREAS = 4
+MAX_FOCUS_AREAS = 6
 CONFIDENCE_WEIGHT_FLOOR = 0.5    # min multiplier applied to a dim's leverage
 TARGET_CAP = 5.0                 # USAPA top band
 USAPA_BANDS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
@@ -47,11 +47,10 @@ OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter
 # A proportion from a handful of events has a confidence interval far too wide to
 # act on: the 5-min match clip detected only 4 user serves, 2 of which were called
 # faults, and the report told the player "about 50% of your serves are faults ...
-# you're giving away free points" — harsh, prescriptive advice from n=4 (a 50% rate
-# from 4 events carries roughly +/-35 points of uncertainty). Operator: ~6-8 shots give
-# 'some indication'; below this bar a
-# category is routed to developing_capability ("not enough seen yet") instead of
-# being presented as a weakness to fix or a strength to celebrate.
+# you're giving away free points" — harsh advice from n=4 (a 50% rate from 4 events
+# carries roughly +/-35 points of uncertainty). Operator: ~6-8 shots give "some
+# indication"; below this bar a category is routed to developing_capability ("not
+# enough seen yet") rather than presented as a weakness to fix or a strength.
 MIN_EVENTS_FOR_COACHING = 6
 ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
                                  # coaching signal -> routed to developing_capability
@@ -163,6 +162,14 @@ DRILLS = {
     "sustained_rally_game": {"name": "Sustained-rally game",
                             "cue": "Cooperative rally to 15 shots before anyone tries "
                                    "to win the point."},
+    "contact_in_front": {"name": "Contact out in front",
+                         "cue": "Shadow-swing and hit feeds so contact is in front of "
+                                "your hip (~1 o'clock forehand, ~11 o'clock backhand), "
+                                "not beside you — meet the ball early."},
+    "loaded_stance": {"name": "Loaded stance",
+                      "cue": "Play from a lower, athletic base — bend the knees so "
+                             "you get UNDER dinks and resets; power shots need less "
+                             "bend but still an athletic base, not straight legs."},
     "volley_exchanges": {"name": "Volley exchanges",
                         "cue": "Net-height volley-to-volley exchanges with a partner; "
                                "soft hands, paddle in front."},
@@ -299,11 +306,17 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
                       "so you're rarely playing the soft dinking game",
                       "so you mix in some dinks but lean on harder shots",
                       "so you're comfortable playing the soft game")
-        finding = ((f"About {_pct(df)} of your shots are dinks ({dc} seen), {fv}.")
+        knee = dr.get("dink_knee_bend") or {}
+        low = (f" You got low enough on {knee.get('n_good',0)} of {knee['n']} dinks "
+               f"({_pct(knee.get('pct_good'))}) — staying loaded lets you control the "
+               f"soft game." if knee.get("n") else "")
+        finding = ((f"About {_pct(df)} of your shots are dinks ({dc} seen), {fv}.{low}")
                    if fv else
                    ("Building patience in the dinking game — controlled dinks until "
                     "you get an attackable ball — is a core 3.5+ skill."))
         keys += ["coop_dink_count", "soft_game_targets"]
+        if knee.get("pct_good") is not None and knee["pct_good"] < 0.6:
+            keys.append("loaded_stance")
     elif dim == "volley":
         vr = dr.get("volley_rate")
         finding = ((f"About {_pct(vr)} of your shots are volleys at the net; "
@@ -328,12 +341,25 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
             keys.append("deep_serve_targets")
         keys.append("pre_serve_routine")
     elif dim in ("forehand", "backhand"):
-        cnt = dr.get(f"{dim}_count")
-        finding = (f"You hit {dim}s in the rallies we saw"
-                   + (f" ({cnt} seen)" if isinstance(cnt, int) else "")
-                   + ", but pace, depth, and consistency aren't measured yet, so we "
-                     "can't rate the shot — build a dependable, repeatable stroke.")
-        keys += ["shot_variety_ladder", "soft_game_targets"]
+        cf = dr.get("contact_front") or {}
+        knee = dr.get("drive_knee_bend") or {}
+        bits = []
+        if cf.get("n"):
+            bits.append(f"you hit {cf.get('n_in_front',0)} of {cf['n']} in front of "
+                        f"your hip ({_pct(cf.get('pct_in_front'))})")
+        if knee.get("n"):
+            bits.append(f"{knee.get('n_good',0)} of {knee['n']} drives had the right "
+                        f"knee bend ({_pct(knee.get('pct_good'))})")
+        body = ("; ".join(bits) if bits else "we saw your stroke")
+        finding = (f"On your {dim}, {body}. Meeting the ball in front of your hip from "
+                   f"a loaded stance is the clean-technique base; pace and depth "
+                   f"aren't measured yet.")
+        # coach whichever mechanic is weak
+        if cf.get("pct_in_front") is not None and cf["pct_in_front"] < 0.7:
+            keys.append("contact_in_front")
+        if knee.get("pct_good") is not None and knee["pct_good"] < 0.5:
+            keys.append("loaded_stance")
+        keys += ["contact_in_front"]   # always relevant to a stroke focus
     else:
         finding = "This area is below your target level."
     # de-dup preserve order, cap at 3, guarantee >= 1

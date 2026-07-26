@@ -251,7 +251,7 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
     dink_n = by_type.get("dink", 0)
     dink_frac = (dink_n / n_shots) if n_shots > 0 else None
     mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
-    knee = (sm.get("technique", {}) or {}).get("knee_bend_dink")   # {n, mean_deg, pct_athletic}
+    knee = (sm.get("technique", {}) or {}).get("knee_bend_dink")   # {n, pct_good, ...}
     drivers = {"dink_count": dink_n,
                "dink_frac": round(dink_frac, 4) if dink_frac is not None else None,
                "mean_rally_length": mean_len,
@@ -260,10 +260,10 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
         return NEUTRAL_PRIOR_LEVEL, drivers
     base = lin(dink_frac, 0.0, 2.8, 0.4, 4.3)          # more dinking -> softer game
     sustain = lin(mean_len, 3.0, 0.0, 10.0, 0.3) or 0.0
-    # staying low on dinks (athletic knee bend) is a quality bump
+    # getting low enough on dinks (knee bend in the operator's 35-50 deg band) = a bump
     stance = 0.0
-    if knee and knee.get("n", 0) >= 3 and knee.get("mean_deg") is not None:
-        stance = lin(knee["mean_deg"], 170.0, 0.2, 140.0, 0.5) or 0.0   # lower angle -> more
+    if knee and knee.get("n", 0) >= 3:
+        stance = lin(knee.get("pct_good", 0.0), 0.0, 0.0, 1.0, 0.5) or 0.0
     return clamp_level(base + sustain + stance), drivers
 
 
@@ -308,20 +308,19 @@ def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
     frac = (cnt / n_shots) if n_shots > 0 else None
     tech = sm.get("technique", {}) or {}
     cf = (tech.get("by_stroke_side", {}) or {}).get(side)   # {n, n_in_front, pct, mean}
-    turn = (tech.get("drive_turn_by_side", {}) or {}).get(side)  # {n, mean_deg, pct_turned}
+    knee = (tech.get("knee_bend_drive_by_side", {}) or {}).get(side)  # {n, pct_good, ...}
     drivers = {f"{side}_count": cnt,
                f"{side}_frac": round(frac, 4) if frac is not None else None,
-               "contact_front": cf,     # full stats dicts for the report
-               "drive_turn": turn,
+               "contact_front": cf,       # full stats dicts for the report
+               "drive_knee_bend": knee,
                "pace_mph": None, "depth": None, "consistency": None}
-    # Score from mean contact point (primary): at the body (~0) -> 3.0; well in front
-    # (~2.5) -> 4.2; late (<0) -> below 3.0. Shoulder turn on drives adds a small
-    # secondary bump (using the body, not all-arm) -- kept small, it's camera-
-    # compressed. Both need a few reads to be meaningful.
+    # Two calibrated quality signals (operator standards): CONTACT POINT (in front of
+    # the hip = clean) and KNEE BEND on drives (in the 20-35 deg band). Contact point
+    # is primary; a good in-band knee bend on drives adds a small bump.
     if cf and cf.get("n", 0) >= CONTACT_FRONT_MIN_N and cf.get("mean") is not None:
         lvl = lin(cf["mean"], 0.0, 3.0, 2.5, 4.2)
-        if turn and turn.get("n", 0) >= 3 and turn.get("mean_deg") is not None:
-            lvl += lin(turn["mean_deg"], 5.0, -0.15, 30.0, 0.3) or 0.0
+        if knee and knee.get("n", 0) >= 3:
+            lvl += lin(knee.get("pct_good", 0.0), 0.0, -0.2, 1.0, 0.3) or 0.0
         return clamp_level(lvl), drivers
     return NEUTRAL_PRIOR_LEVEL, drivers
 

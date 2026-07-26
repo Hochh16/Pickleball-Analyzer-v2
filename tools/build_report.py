@@ -43,7 +43,7 @@ CATEGORY_ELEMENTS = {
                    ("Drop-vs-drive choice", "partial"),
                    ("Drop landing depth", "planned"), ("Transition success", "planned")],
     "dink": [("How much you dink", "partial"), ("Dink-rally length", "partial"),
-             ("Athletic stance (staying low)", "live"),
+             ("Knee bend (staying low)", "live"),
              ("Pop-up rate", "planned"), ("Height & depth control", "planned")],
     "volley": [("How often you volley at the net", "partial"),
                ("Block / reset", "planned"), ("Put-aways", "planned"),
@@ -52,12 +52,12 @@ CATEGORY_ELEMENTS = {
                      ("In-play rate & faults", "partial"),
                      ("Depth", "planned"), ("Pace & spin", "planned")],
     "forehand": [("How many forehands you hit", "live"),
-                 ("Contact point (in front vs late)", "live"),
-                 ("Shoulder turn on drives", "live"),
+                 ("Contact point (in front of hip)", "live"),
+                 ("Knee bend on drives", "live"),
                  ("Pace", "planned"), ("Placement & depth", "planned")],
     "backhand": [("How many backhands you hit", "live"),
-                 ("Contact point (in front vs late)", "live"),
-                 ("Shoulder turn on drives", "live"),
+                 ("Contact point (in front of hip)", "live"),
+                 ("Knee bend on drives", "live"),
                  ("Pace & depth", "planned")],
 }
 
@@ -78,8 +78,8 @@ METRIC_DISPLAY = {
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
     "contact_front": ("Contact point", "contact"),
-    "drive_turn": ("Shoulder turn on drives", "turn"),
-    "dink_knee_bend": ("Athletic stance on dinks", "knee"),
+    "drive_knee_bend": ("Knee bend on drives", "knee"),
+    "dink_knee_bend": ("Knee bend on dinks", "knee"),
     "mean_rally_length": ("Average rally length", "shots"),
 }
 
@@ -153,22 +153,16 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
                 return None
             n, nf = int(val["n"]), int(val.get("n_in_front", 0))
             pct = int(round(val.get("pct_in_front", 0) * 100))
-            return f"{nf} of {n} hit in front of you ({pct}%)"
+            return f"{nf} of {n} hit in front of your hip ({pct}%)"
         if fmt == "knee":
-            # val = {n, mean_deg, n_athletic, pct_athletic}. Report how often the
-            # player stayed low (loaded knees) + the mean bend.
+            # val = {n, mean_bend_deg, n_good, pct_good}. Good = knee bend within the
+            # operator's per-shot-type band (soft shots want a deeper bend).
             if not isinstance(val, dict) or not val.get("n"):
                 return None
-            n, na = int(val["n"]), int(val.get("n_athletic", 0))
-            pct = int(round(val.get("pct_athletic", 0) * 100))
-            return f"{na} of {n} hit with a low, athletic stance ({pct}%)"
-        if fmt == "turn":
-            # val = {n, mean_deg, n_turned, pct_turned}. Body rotation on drives.
-            if not isinstance(val, dict) or not val.get("n"):
-                return None
-            n, nt = int(val["n"]), int(val.get("n_turned", 0))
-            pct = int(round(val.get("pct_turned", 0) * 100))
-            return f"{nt} of {n} drives with body rotation ({pct}%)"
+            n, ng = int(val["n"]), int(val.get("n_good", 0))
+            pct = int(round(val.get("pct_good", 0) * 100))
+            mb = int(val.get("mean_bend_deg", 0))
+            return f"{ng} of {n} with the right knee bend ({pct}%; avg {mb}°)"
     except (TypeError, ValueError):
         return None
     return str(val)
