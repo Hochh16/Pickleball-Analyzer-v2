@@ -1,3 +1,60 @@
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-27)
+
+## 2026-07-27 — READ FIRST: unified point-boundary detector SHIPPED; NEXT = user/partner IDENTITY foundation
+
+### What shipped this session (commit 8424963)
+A **unified point-boundary detector** (`detect_shots.structure_points`) replacing isolated
+serve heuristics, built the operator's way: **combine weak cues + anchor on the known COUNTS
++ solve the shared dependency (point boundaries) ONCE.** A rally is SERVE → … → POINT-END:
+- **POINT-END** = opponent does NOT return within 2.5s + dead time follows (≥3s).
+- **SERVE** = struck from BEHIND the baseline (`hitter dist_from_net ≥ 21 ft`; baseline is
+  22 ft from the net — an IN-FRONT shot is never a serve, operator rule) + opens a point (≥3s gap).
+- **MUTUAL CONSTRAINT** = one serve per point (accept a serve only if a point ended since the
+  last accepted serve, OR ≥10s elapsed) → drops between-point balls/returns that look serve-like.
+- `segment_rallies`: rally starts at a serve; the FIRST burst is kept even if its serve was
+  missed (a missed serve must not delete real play); between-point balls dropped.
+
+**Result vs operator truth on `pb_5_minute_outdoor-2`: 14 rallies (13), 99 shots (98), 13
+serves — 11/14 real, 2 false.** 20/20 tests pass. Report auto-regenerates from the pipeline
+(build_report needed no changes; report.html/metrics.json are NOT git-tracked — regenerated).
+
+### The diagnosis that sets the NEXT target (cheap-test-first, do NOT re-derive)
+The remaining serve/attribution errors are NOT ball-association errors — **the ball is linked
+to the correct hitter track.** Two distinct causes:
+1. **Serve DETECTION misses (0:03, false 2:24):** the server *steps forward through contact*
+   so the instantaneous depth reads shallow (0:03: partner at dist 26 pre-contact but 20 at the
+   detected frame); and at 2:24 the front thrower **isn't tracked**, so the behind player is the
+   only near track. A windowed "deepest-recent-position" tweak recovers 0:03 but trades precision
+   (12/14 but 3 false, count 15) — marginal, NOT adopted.
+2. **WHO-served errors (0:48, 3:39) = ROLE IDENTITY, not association.** At 0:48 we picked the
+   RIGHT hitter (tid=669, deep server, closest to ball) but it's LABELED "user" when the operator
+   says the server was the PARTNER. Root: **track fragmentation** (over 5 min: partner=29 track-IDs,
+   user=8, opp_a=19, opp_b=27) → fragment→role assignment churns and swaps user↔partner (same side).
+
+### NEXT (operator-chosen): FIX THE user/partner IDENTITY FOUNDATION (Stage 2.5) FIRST
+Operator: "make sure the foundation is correct otherwise we risk building additional function off
+a shaky foundation." The true lever for who-served AND every per-player stat is **user-vs-partner
+identity in Stage 2.5 (classify_tracks / track_roles)**: de-fragment tracks and reliably pin which
+near-side player is the user vs the partner. Also improve **far-side shot recall** (opponent serves
+44 ft away, e.g. 4:04 not detected as a shot) and the clip-start shots (operator: 0:03 serve by
+partner + 0:06 return by opponent are BOTH missed/mis-attributed today).
+
+### Method to follow (operator's, saved as memory feedback_avoid_rabbit_hole_cycle)
+Combine weak cues; anchor on known counts; **cheap-test → gate → then build** (don't deep-build on
+faith); solve the shared dependency once; when a "camera limit" appears, first check it's not a
+mis-set rule. Multi-venue generalization is a priority AFTER critical fixes — prefer game-structure
+signals that travel across courts over per-court thresholds; derive court values from calibration.
+
+### Operator ground truth for `pb_5_minute_outdoor-2` (the acceptance test)
+98 shots (24 user) · 13 rallies = 13 serves · 18 dinks · 17 volleys (5 user) · 81 bounces
+(shots = volleys + bounces). **Net hits: 8 total, 3 user** (BH dink @0:20, FH drive @2:36,
+BH drive @3:49); all 8 @ 0:20/0:38/1:09/1:51/2:19/2:36/3:25/3:49. **Serves (~14):**
+0:03(partner)/0:33/0:48(partner)/1:04(partner)/1:16(partner)/1:29/2:08/2:32(me)/2:45/3:06/
+3:39(opp)/4:04(opp)/4:43(opp)/4:58. Camera-BLOCKED (need side/2nd camera): net-hit counting,
+per-shot outcome (net/out/winner), ball height, true speed, spin.
+
+---
+
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-22b)
 
 ## 2026-07-22b — REPORT VALIDATED PER-USER; next = TECHNIQUE (body mechanics) — READ FIRST
