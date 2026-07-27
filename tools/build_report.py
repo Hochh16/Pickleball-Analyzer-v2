@@ -157,15 +157,23 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             pct = int(round(val.get("pct_in_front", 0) * 100))
             return f"{nf} of {n} hit in front of your hip ({pct}%)"
         if fmt == "ready":
-            # val = {n_frames, median_height, pct_paddle_up, pct_chest_high}.
-            if not isinstance(val, dict) or not val.get("n_frames"):
+            # val = {n_frames, by_zone:{kitchen/transition/baseline:{median_height}},
+            # trend_ok}. Height should be HIGHER at the net, dropping toward the back.
+            # (Hand height, a proxy for the paddle -- we can't see the tip.)
+            if not isinstance(val, dict) or not val.get("by_zone"):
                 return None
-            up = int(round(val.get("pct_paddle_up", 0) * 100))
-            chest = int(round(val.get("pct_chest_high", 0) * 100))
-            carry = ("up at chest height" if chest >= 40 else
-                     "up but low (around the waist)" if up >= 50 else
-                     "down at your side")
-            return f"paddle up {up}% of the time, carried {carry}"
+            def _label(h):
+                return ("up near chest" if h >= 0.35 else
+                        "around the waist" if h >= 0.1 else "low (hip or below)")
+            bz = val["by_zone"]
+            parts = []
+            for z, name in [("kitchen", "at the kitchen"), ("baseline", "at the baseline")]:
+                if z in bz:
+                    parts.append(f"{name}: hands {_label(bz[z]['median_height'])}")
+            tail = ("" if val.get("trend_ok") is None else
+                    " — good: lower as you move back" if val["trend_ok"] else
+                    " — try carrying it higher at the net and lower at the back")
+            return ("; ".join(parts) + tail) if parts else None
         if fmt == "knee":
             # val = {n, mean_bend_deg, n_good, pct_good}. Good = knee bend within the
             # operator's per-shot-type band (soft shots want a deeper bend).

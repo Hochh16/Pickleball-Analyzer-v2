@@ -398,38 +398,53 @@ def role_frame_pos(sub: pd.DataFrame) -> Dict[int, Tuple[float, float]]:
 
 
 def ready_position(poses_df: Optional[pd.DataFrame], tids: List[int], hand: str,
-                   rally_windows: List[Tuple[int, int]],
-                   swing_frames: set) -> Optional[dict]:
-    """Between-shot READY POSITION: is the paddle hand carried UP (ready to react)?
-    Measured over in-rally frames, EXCLUDING frames near this player's own shots
-    (their swing), as the paddle-hand wrist height up the torso: 0 = at the hip,
-    1 = at the shoulder. Paddle-up = wrist above the hip. A camera-feasible movement
-    signal (no ball height / no fine timing needed, unlike split-step). None if pose
-    is missing / handedness unknown."""
+                   rally_windows: List[Tuple[int, int]], swing_frames: set,
+                   court_y_by_frame: Dict[int, float]) -> Optional[dict]:
+    """Between-shot READY POSITION, ZONE-AWARE. Operator standard: the paddle should
+    ride HIGH at the kitchen (chest) and drop as you move back (waist in transition,
+    waist-to-ankles at the baseline) -- a chest-high paddle deep in the court sends
+    balls out. So the right height depends on court depth, like the knee-bend bands.
+
+    MEASUREMENT CAVEAT: we track the WRIST, not the paddle TIP (no paddle detection).
+    In a real ready position the hands sit near the waist while the paddle points up,
+    so wrist height under-reads absolute "paddle up" and can't be mapped to
+    chest/waist/ankles precisely. What IS reliable is the zone TREND: is the hand
+    carried higher at the net and lower at the back? We report per-zone hand height
+    (0 = hip, 1 = shoulder) and whether the trend is right. None if pose/handedness
+    missing."""
     if poses_df is None or poses_df.empty or hand not in ("left", "right") or not tids:
         return None
     wj = "right_wrist" if hand == "right" else "left_wrist"
     d = poses_df[(poses_df["track_id"].isin(tids)) & (poses_df["pose_detected"])]
     if d.empty:
         return None
-    fr = d["frame"].to_numpy()
-    in_rally = np.array([_frame_rally_index(int(f), rally_windows) is not None
-                         for f in fr]) if rally_windows else np.ones(len(fr), bool)
-    not_swing = np.array([int(f) not in swing_frames for f in fr])
-    keep = in_rally & not_swing
-    wy = d[f"{wj}_y_px"].to_numpy()
-    hy = ((d["left_hip_y_px"] + d["right_hip_y_px"]) / 2).to_numpy()
-    sy = ((d["left_shoulder_y_px"] + d["right_shoulder_y_px"]) / 2).to_numpy()
-    ok = keep & ~(np.isnan(wy) | np.isnan(hy) | np.isnan(sy))
-    denom = np.maximum(hy - sy, 1e-6)
-    frac_up = (hy - wy) / denom            # 0 = at hip, 1 = at shoulder
-    vals = frac_up[ok]
-    if len(vals) < 30:
+    by_zone: Dict[str, List[float]] = {"kitchen": [], "transition": [], "baseline": []}
+    for r in d.itertuples(index=False):
+        f = int(r.frame)
+        if f in swing_frames:
+            continue
+        if rally_windows and _frame_rally_index(f, rally_windows) is None:
+            continue
+        y = court_y_by_frame.get(f)
+        if y is None or (isinstance(y, float) and math.isnan(y)):
+            continue
+        wy = getattr(r, f"{wj}_y_px")
+        hy = (r.left_hip_y_px + r.right_hip_y_px) / 2.0
+        sy = (r.left_shoulder_y_px + r.right_shoulder_y_px) / 2.0
+        if any(math.isnan(v) for v in (wy, hy, sy)) or abs(hy - sy) < 1e-6:
+            continue
+        by_zone[zone_from_court_y(float(y))].append((hy - wy) / (hy - sy))
+    zstats = {z: {"n": len(v), "median_height": round(float(np.median(v)), 2)}
+              for z, v in by_zone.items() if len(v) >= 20}
+    total = sum(s["n"] for s in zstats.values())
+    if total < 30:
         return None
-    return {"n_frames": int(len(vals)),
-            "median_height": round(float(np.median(vals)), 2),
-            "pct_paddle_up": round(float(np.mean(vals > 0.0)), 2),
-            "pct_chest_high": round(float(np.mean(vals >= 0.6)), 2)}
+    # trend check: paddle should be HIGHER at the kitchen than at the baseline
+    kh = zstats.get("kitchen", {}).get("median_height")
+    bh = zstats.get("baseline", {}).get("median_height")
+    trend_ok = (kh is not None and bh is not None and kh > bh + 0.05)
+    return {"n_frames": total, "by_zone": zstats,
+            "trend_ok": bool(trend_ok) if (kh is not None and bh is not None) else None}
 
 
 def pose_front_foot(poses_df: Optional[pd.DataFrame],
@@ -1053,7 +1068,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         rconf = role_confidence.get(r, 0.0)
         pos_n = role_positions[r]["n_frames"]
         rp = ready_position(poses_df, role_to_tids[r], handedness.get(r, "unknown"),
-                            rally_windows, {int(s["frame"]) for s in rshots})
+                            rally_windows, {int(s["frame"]) for s in rshots},
+                            {f: xy[1] for f, xy in role_fpos.get(r, {}).items()})
         players_out[r] = {
             "role_confidence": rconf,
             "role_contaminated": bool(role_contaminated.get(r, False)),

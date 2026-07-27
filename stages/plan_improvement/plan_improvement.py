@@ -283,19 +283,18 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
         if bv:
             s += f"; {bv} ({_pct(b)} of the rally)"
         ready = dr.get("ready_position") or {}
-        if ready.get("n_frames"):
-            up = ready.get("pct_paddle_up", 0)
-            chest = ready.get("pct_chest_high", 0)
-            if chest < 0.4:
-                s += (f" Your paddle is up at chest height only {_pct(chest)} of the "
-                      f"time — carrying it up and in front lets you react faster")
+        kh = (ready.get("by_zone", {}) or {}).get("kitchen", {}).get("median_height")
+        low_at_net = kh is not None and kh < 0.35   # hands at waist/low at the kitchen
+        if low_at_net:
+            s += (" At the kitchen your paddle sits low (around the waist) — carrying "
+                  "it up in front at the net lets you react to the fast exchanges")
         finding = s + "."
         keys.append("get_to_line")
         if (b or 0) < 0.30:
             keys.append("move_as_unit")
         if (t or 0) > 0.25:
             keys.append("transition_resets")
-        if (ready.get("pct_chest_high") or 1) < 0.4:
+        if low_at_net:
             keys.append("paddle_ready")
         keys.append("split_step_recover")     # court coverage is part of strategy
     elif dim == "third_shot":

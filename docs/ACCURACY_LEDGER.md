@@ -223,10 +223,13 @@ coaching standards.
   foreshortening is noise-dominated (dinks measured 62 deg vs the true 5-15). SAME
   monocular-3D limit as ball height. Don't ship what we can't measure.
 
-- **Ready position (paddle up): SHIPPED.** Paddle-hand wrist height up the torso
-  over in-rally, non-swing frames (0 = hip, 1 = shoulder). No ball height / no fine
-  timing needed. User: paddle up 68% but carried LOW (median at hip, 4% chest-high)
-  -> feeds Strategy quality + a "paddle up & ready" drill. 12k+ frame sample.
+- **Ready position (paddle up): SHIPPED, ZONE-AWARE.** Operator standard: paddle
+  high at the kitchen (chest), dropping to waist/ankles as you move back (a high
+  paddle deep in the court sends balls out). Reported per court zone. CAVEAT: we track
+  the WRIST, not the paddle TIP (no paddle detection), so absolute chest/waist/ankle
+  isn't reliable -- what IS reliable is the zone TREND (higher at net, lower back).
+  User: trend correct (kitchen 0.14 > baseline 0.04) but LOW at the net (hands at
+  waist, should be chest). Feeds Strategy + a "paddle up & ready" drill.
 - **Split-step: NOT shipped.** A split-step is a few-inch vertical hop timed to the
   opponent's contact = a few pixels at this distance, at the pose-jitter floor; the
   "59% detection" was noise-firing, unverifiable. Same sub-pixel limit as shoulder
