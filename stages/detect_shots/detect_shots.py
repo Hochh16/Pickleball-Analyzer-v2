@@ -60,6 +60,22 @@ TELEPORT_IN_PX_PER_FRAME = 40.0  # ref px/frame @1920 (scaled by frame_width/192
                         # from where our ball actually was) is the other court's ball.
 SERVE_DEDUP_S = 2.0     # two serve detections this close with no rally shot between
                         # = a pre-serve artifact + the real serve; keep the longer run.
+# Unified point-boundary detection (operator method 2026-07-27). A rally is
+# SERVE -> ... -> POINT-END, one of each, alternating. No single rule carries it;
+# combine weak cues + the structural one-each constraint + the hitter's robust
+# GROUND depth (not the airborne/dead-time-contaminated ball).
+SERVE_BEHIND_BASELINE_FT = 21.0  # hitter dist_from_net beyond this = behind the baseline
+                                 # (baseline is 22 ft from the net; 1 ft tolerance for
+                                 # position noise. A shot from IN FRONT of the baseline is
+                                 # never a serve -- operator rule 2026-07-27.)
+SERVE_OPEN_GAP_S = 3.0           # >= this gap before a deep shot = it opens a point
+POINT_RETURN_S = 2.5             # opposite-side shot within this = the shot was RETURNED (rally continues)
+POINT_DEAD_GAP_S = 3.0           # dead time after an un-returned shot = the point ENDED
+# A second acceptance path for a serve: two real serves are separated by a whole point
+# + retrieval, so a deep point-opener this long after the last accepted serve is a new
+# serve even when its point-end went undetected (the mutual constraint alone over-rejects
+# whenever a return-timing point-end is missed). Recovers far-side / missed-end serves.
+POINT_MIN_INTER_SERVE_S = 10.0
 REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresholds scale by frame_width/this
 REFERENCE_FPS = 30.0  # fps the frame-count windows were tuned at; they scale by fps/this
 
@@ -314,6 +330,93 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     flush()
     kept.sort(key=lambda x: x["frame"])
     return kept, n_dropped
+
+
+def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: float,
+                     open_gap_frames: int, return_frames: int,
+                     dead_gap_frames: int, min_inter_serve_frames: int) -> int:
+    """Unified point-boundary detection (operator method 2026-07-27). A rally is
+    SERVE -> ... -> POINT-END, one of each, alternating. Combine weak cues with the
+    structural one-each constraint so no single rule has to carry it. Sets `is_serve`
+    and `is_between_point` on each shot in place; returns the serve count.
+
+    - POINT-END: a shot the opponent does NOT return (no opposite-side shot within
+      `return_frames`) AND dead time follows (>= `dead_gap_frames` to the next shot).
+    - SERVE: struck from BEHIND the baseline (>= `behind_baseline_ft` from the net,
+      robust ground depth) AND opens a point (>= `open_gap_frames` since the prior shot).
+    - MUTUAL CONSTRAINT: accept a serve only if a POINT ENDED since the previous
+      accepted serve -> drops the deep between-point balls/returns that look serve-like
+      on depth+gap alone (two serves with no end between = one is spurious).
+    - BETWEEN-POINT: shots after a rally's point-end and before the next serve (and any
+      before the first serve / after the last) -> dead-time returns-to-server, thrown
+      balls. Flagged is_between_point for downstream to exclude from rally evaluation."""
+    ss = sorted(shots, key=lambda s: int(s["frame"]))
+    N = len(ss)
+
+    def side(i):
+        return ss[i].get("hitter_side")
+
+    def dist(i):
+        hy = (ss[i].get("hitter_court_xy_ft") or [None, None])[1]
+        return abs(hy - net_y_ft) if hy is not None else 0.0
+
+    def gap_prev(i):
+        return (ss[i]["frame"] - ss[i - 1]["frame"]) if i > 0 else open_gap_frames + 1
+
+    def gap_next(i):
+        return (ss[i + 1]["frame"] - ss[i]["frame"]) if i + 1 < N else dead_gap_frames + 1
+
+    def returned(i):
+        s = side(i)
+        if s is None:
+            return None
+        for j in range(i + 1, N):
+            dt = ss[j]["frame"] - ss[i]["frame"]
+            if dt <= 0:
+                continue
+            if dt > return_frames:
+                break
+            if side(j) is not None and side(j) != s:
+                return True
+        return False
+
+    def serve_cand(i):
+        return dist(i) >= behind_baseline_ft and gap_prev(i) >= open_gap_frames
+
+    ends = {i for i in range(N)
+            if not serve_cand(i) and returned(i) is False
+            and gap_next(i) >= dead_gap_frames}
+
+    accepted: List[int] = []
+    for i in range(N):
+        if not serve_cand(i):
+            continue
+        end_since = bool(accepted) and any(accepted[-1] < e < i for e in ends)
+        gap_since = (not accepted
+                     or (ss[i]["frame"] - ss[accepted[-1]]["frame"]) >= min_inter_serve_frames)
+        if not accepted or end_since or gap_since:
+            accepted.append(i)
+    accepted_set = set(accepted)
+
+    # Between-point = dead-time balls AFTER a rally's point-end and before the next
+    # serve (returns-to-server / thrown balls). Do NOT flag pre-first-serve shots:
+    # a real first rally can precede the first DETECTED serve (its serve may be missed),
+    # and dropping it would delete real play. Segmentation keeps that first burst.
+    between = set()
+    bounds = accepted + [N]
+    for k, si in enumerate(accepted):
+        nxt = bounds[k + 1]
+        eb = [e for e in ends if si < e < nxt]
+        if eb:                                   # trim dead-time balls after the point-end
+            between.update(range(eb[-1] + 1, nxt))
+        # no detected end -> keep the whole span (a missed end must not drop real play)
+
+    n = 0
+    for i in range(N):
+        ss[i]["is_serve"] = i in accepted_set
+        ss[i]["is_between_point"] = i in between
+        n += int(i in accepted_set)
+    return n
 
 
 def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
@@ -703,6 +806,19 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     if params.get("handling_filter"):
         shots, n_same_track = reject_same_track_repeats(shots, params["rally_gap_frames"])
     shots.sort(key=lambda s: s["frame"])
+    # Unified point-boundary detection (operator method): re-derive is_serve + flag
+    # between-point balls from the SERVE->...->POINT-END structure (combines depth,
+    # return-timing, dead-time + the one-serve-per-point constraint). Real ball only.
+    if params.get("contamination_filter"):
+        n_serves = structure_points(
+            shots, net_y_ft=params["net_y_ft"],
+            behind_baseline_ft=params["serve_behind_baseline_ft"],
+            open_gap_frames=params["serve_open_gap_frames"],
+            return_frames=params["point_return_frames"],
+            dead_gap_frames=params["point_dead_gap_frames"],
+            min_inter_serve_frames=params["point_min_inter_serve_frames"])
+    for s in shots:
+        s.setdefault("is_between_point", False)
     for i, s in enumerate(shots):
         s["shot_id"] = i
 
@@ -828,6 +944,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
         "teleport_in_px_per_frame": TELEPORT_IN_PX_PER_FRAME * res_scale,
         "serve_dedup_frames": int(round(SERVE_DEDUP_S * float(fps))),
+        "serve_behind_baseline_ft": SERVE_BEHIND_BASELINE_FT,
+        "serve_open_gap_frames": int(round(SERVE_OPEN_GAP_S * float(fps))),
+        "point_return_frames": int(round(POINT_RETURN_S * float(fps))),
+        "point_dead_gap_frames": int(round(POINT_DEAD_GAP_S * float(fps))),
+        "point_min_inter_serve_frames": int(round(POINT_MIN_INTER_SERVE_S * float(fps))),
         "net_y_ft": court["net_y_ft"],
         "resolution_scale": round(res_scale, 4),
         "reference_width_px": REFERENCE_WIDTH_PX,

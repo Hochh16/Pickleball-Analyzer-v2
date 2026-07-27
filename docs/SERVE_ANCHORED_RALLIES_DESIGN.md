@@ -131,9 +131,30 @@ gate.** Findings:
   (operator truth 13).** So the cleanup is bounded by serve quality, which is bounded by
   the tracking/identity foundation.
 
-**Conclusion:** reliable serves / rally boundaries / who-served / per-shot outcome all bottom
-out on the SAME foundation — single-camera per-shot signal + track fragmentation + identity.
-Heuristics on top just trade one error for another. The honest path to these is fixing the
-FOUNDATION (stable per-player identity: de-fragment tracks, pin user vs partner, far-side
-recall), OR a camera change. Reverted to the gap-based baseline (13 rallies). Design kept as
-the record; revisit once identity is stable.
+**Conclusion (first attempt):** heuristic serve detection in isolation trades one error for
+another. Reverted.
+
+## 10. SHIPPED 2026-07-27 — unified point-boundary detector (operator method)
+
+The operator reframed the process: stop seeking ONE rule per item and declaring "blocked";
+instead COMBINE weak cues, anchor on the known COUNTS, and solve the shared dependency
+(point boundaries) ONCE. That worked. `detect_shots.structure_points`:
+
+- **POINT-END** = a shot the opponent does not RETURN (no opposite-side shot within 2.5s)
+  AND dead time follows (>= 3s). (Cheap test: 7/8 of the operator's net hits show no return.)
+- **SERVE** = struck from BEHIND the baseline (dist_from_net >= 21 ft; the baseline is 22 ft
+  from the net — an IN-FRONT shot is never a serve, operator's rule; earlier 19 ft wrongly
+  admitted in-front shots) AND opens a point (>= 3s gap before).
+- **MUTUAL CONSTRAINT** = accept a serve only if a point ENDED since the last accepted serve,
+  OR it has been >= 10s (a whole point) since the last — the one-serve-per-point structure
+  drops the deep between-point balls/returns that look serve-like on depth alone.
+- Segmentation: a rally starts at a serve; the first burst is kept even if its serve was
+  missed (a missed serve must not delete real play). Between-point balls flagged + dropped.
+
+**Result vs operator truth: 14 rallies (13), 99 shots (98), 13 serves — 11 of 14 real, 2
+false.** The 2 false (2:24, 4:27) and 2-3 missed (0:03, 2:32, 4:04) all trace to **ball-player
+ASSOCIATION** (the ball linked to the wrong player -> wrong hitter depth; the operator spotted
+this: "check the location of the person HITTING the ball") + far-side shot recall — i.e. the
+same identity/foundation limit, now NARROWED to a specific, fixable cause rather than "camera
+blocked." 20/20 tests pass. This is the first serve/rally change this session that IMPROVED the
+structure instead of trading errors. Next lever: serve-shot ball-player association.

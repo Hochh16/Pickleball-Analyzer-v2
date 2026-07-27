@@ -246,68 +246,35 @@ def segment_rallies(shots: List[dict],
             rallies.append(cur)
         return rallies, pre_rally
 
-    # Real-ball: a rally is a BURST of shots. The single robust boundary is a large
-    # inter-shot TIME GAP -- within a point, contacts are 0.5-2 s apart (a high lob
-    # ~3 s at most); between points there is a multi-second break to retrieve/serve.
-    # `rally_gap_frames` (~6 s) sits well above any mid-rally gap and below real
-    # dead time, so it separates points without cutting rallies. This replaces an
-    # earlier serve-start / deep-start / same-side-stall model that was fragile
-    # (it split a serve off from its own rally, and over-counted 18 vs 13). Verified
-    # on pb_5_minute_outdoor-2: matches the operator's 13 rallies within +/-1 and
-    # keeps rally 10 intact. The ball-out-of-play run stays as a SECONDARY signal
-    # (a clean, physical break even when the gap is borderline).
-    gap_frames = (max_gap_frames if max_gap_frames is not None
-                  else (ball_dead_run_frames or 0))
-    segments: List[List[dict]] = []
-    cur: List[dict] = []
-    prev_frame: Optional[int] = None
+    # Real ball: is_serve is now clean — Stage 5 `structure_points` derives it from the
+    # SERVE -> ... -> POINT-END structure (hitter depth + return-timing + dead-time +
+    # the one-serve-per-point constraint) and flags the between-point balls. So segment
+    # by SERVE (a rally = one serve up to, not including, the next serve) and DROP the
+    # flagged between-point balls (dead-time returns-to-server / thrown balls) and any
+    # pre-first-serve shots. This replaces the earlier gap-based workaround, which was
+    # needed only because serve detection used to be unreliable (it merged points
+    # whenever between-point balls kept every gap under the threshold).
+    # A new rally starts at a SERVE. The FIRST burst starts at the first shot even if
+    # its serve was missed (a real first rally can precede the first detected serve), so
+    # a missed serve doesn't delete real play. No gap-based splitting here: serves are
+    # now the clean boundary, and gap-splitting over-cut on this footage's slow play.
+    # Between-point balls (flagged upstream) are dropped.
+    rallies: List[List[dict]] = []
+    dropped: List[dict] = []
+    cur: Optional[List[dict]] = None
     for s in shots:
-        f = int(s["frame"])
-        dead = (longest_dead_run(prev_frame, f, ball_known)
-                if (prev_frame is not None and ball_known is not None
-                    and ball_dead_run_frames is not None) else 0)
-        big_gap = bool(prev_frame is not None and gap_frames
-                       and (f - prev_frame) >= gap_frames)
-        # Dead-ball break only as a SECONDARY confirmation, and only when the ball
-        # was gone for the full rally-gap duration -- a mid-rally occlusion (seen up
-        # to ~4 s on this footage) must not split a point.
-        dead_break = bool(gap_frames and dead >= gap_frames)
-        if cur and (big_gap or dead_break):
-            segments.append(cur)
+        if s.get("is_between_point"):
+            dropped.append(s)                       # dead-time ball, never part of a rally
+            continue
+        if cur is None:
+            cur = [s]                               # first burst (serve may be missed)
+        elif s.get("is_serve"):
+            rallies.append(cur)
             cur = [s]
         else:
             cur.append(s)
-        prev_frame = f
-    if cur:
-        segments.append(cur)
-
-    # Second pass: a few points are separated by a break SHORTER than the primary
-    # gap (4-5.6 s here), which merges them into one implausibly long "rally". Only
-    # for such over-long segments, re-split at the largest internal gaps (>= the
-    # resplit threshold). This never touches a normal-length rally, so it can't
-    # falsely cut a real point -- it only recovers points that were merged.
-    if resplit_gap_frames and long_rally_shots:
-        expanded: List[List[dict]] = []
-        for seg in segments:
-            if len(seg) <= long_rally_shots:
-                expanded.append(seg)
-                continue
-            sub = [seg[0]]
-            for a, b in zip(seg, seg[1:]):
-                if (int(b["frame"]) - int(a["frame"])) >= resplit_gap_frames:
-                    expanded.append(sub)
-                    sub = [b]
-                else:
-                    sub.append(b)
-            expanded.append(sub)
-        segments = expanded
-
-    rallies, dropped = [], []
-    for seg in segments:
-        if len(seg) == 1 and not seg[0].get("is_serve"):
-            dropped.extend(seg)  # courtesy feed / isolated non-serve hit
-        else:
-            rallies.append(seg)
+    if cur is not None:
+        rallies.append(cur)
     dropped.sort(key=lambda s: int(s["frame"]))
     return rallies, dropped
 
