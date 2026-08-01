@@ -1,6 +1,44 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-07-27)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-01)
 
-## 2026-07-27 — READ FIRST: unified point-boundary detector SHIPPED; NEXT = user/partner IDENTITY foundation
+## 2026-08-01 — READ FIRST: identity RENDER-VALIDATED; the foundation gap is the FAR SIDE
+
+### The 07-27 "next = user/partner identity" theory was tested and is WRONG
+
+Built `tools/verify_identity.py` (cheap test before build, per the operator method) —
+automatic consistency report + per-role track timelines + contact sheets of sampled
+frames with every player boxed and labelled `role / track_id / confidence / basis`.
+Sampled at the **detected serve frames** (where operator truth already exists) plus a
+uniform sweep. Full detail in `docs/ACCURACY_LEDGER.md` ("IDENTITY VALIDATED BY RENDER").
+
+1. **user/partner is NOT flipped.** Despite Stage 2.5's `seed is ambiguous (dx=0.2ft)`
+   warning, the render shows the woman serving at **1:16 labelled `partner`, matching
+   operator truth**; the man is consistently `user`. Duplicate-role frames (provably
+   impossible) are rare: user 8, partner 53 of 18,862.
+2. **ROOT CAUSE found — Stage 2.5 throws real OPPONENTS away as noise.** The filter cuts
+   on **median `court_y_ft` ∈ [-8, 44]**; the documented far-side foot-point drift (±5 ft,
+   SYSTEM_DESIGN §3 Stage 2) pushes real opponents' median just past 44. **`opp_a` absent
+   41% of frames, `opp_b` 36%**; 35 noise tracks / 19,034 rows in the 22–60 ft band. At
+   **3:39 the far half of the court has ZERO tracked players**, so the opponent's serve
+   went to the near-side man. Explains the wrong-side serves (3:39, 4:43), the missed
+   far-side shots (2:32, 4:04), and the contract's open "opponent roles are contaminated".
+3. **The discriminator is RANGE, not median:** a real opponent works between the far
+   kitchen and far baseline (**p10 ≈ 29–31**); an adjacent-court player sits in a tight
+   deep band (**p10 ≈ 51–57**) and never comes forward.
+
+### OPEN with the operator
+At **0:48 the render clearly shows the MAN (`user`) serving from behind the baseline**,
+but operator truth says partner. Timestamps align tightly elsewhere, so this is not drift.
+
+### NEXT (operator-chosen 2026-08-01)
+**Fix far-side opponent retention in Stage 2.5** — replace the hard `court_y ≤ 44` cut
+with a far-side-aware rule (keep tracks that range into the far playing zone; still reject
+adjacent-court players). Validate by RE-RENDERING the same frames: opponents present, and
+3:39 / 4:43 attributed far-side. **Deferred, latent, unproven:** 72% of `user` frames rest
+on two conf-0.53–0.56 assignments (tid 1452 @1:28–4:19, tid 4127 @4:23–5:14).
+
+---
+
+## 2026-07-27 — unified point-boundary detector SHIPPED; NEXT = user/partner IDENTITY foundation
 
 ### What shipped this session (commit 8424963)
 A **unified point-boundary detector** (`detect_shots.structure_points`) replacing isolated

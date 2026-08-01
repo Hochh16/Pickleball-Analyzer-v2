@@ -83,6 +83,60 @@ what is measured, partial, or not yet available.**
    wrong — trace the 7 actual restart points rather than tuning blind.
 4. **Then** rebuild the report.
 
+## IDENTITY VALIDATED BY RENDER (2026-08-01) — root cause is the FAR side, not user/partner
+
+The 2026-07-27 handoff named user/partner identity (Stage 2.5) as the next foundation,
+on the theory that track fragmentation swapped user↔partner at the who-served errors.
+**Rendering the roles (`tools/verify_identity.py`) disproved that theory and found the
+real cause.** This is the `feedback_consumer_output_validation` discipline paying off
+again: no smoke test could see either result.
+
+**1. The near-side axis is CORRECT — the ambiguous seed did NOT flip user/partner.**
+Stage 2.5 warns `near players are close in the opening window (dx=0.2ft); user/partner
+seed by starting corner is ambiguous`, so the fear was a global flip that would make
+every "your" stat the partner's. It didn't happen: at **1:16 the render shows the woman
+serving, labelled `partner`, matching operator truth**; the man is consistently `user` at
+0:06 / 1:29 / 3:39. Automatic check agrees — *duplicate-role* frames (one role on two
+tracks at once, provably impossible) are rare: **user 8, partner 53 of 18,862 frames**.
+⚠ Note a fully-swapped assignment is self-consistent, so duplicates near zero is NOT
+proof of correctness — only the render is.
+
+**2. OPEN with the operator:** at **0:48 the render unambiguously shows the MAN (`user`)
+serving from behind the baseline**, but operator truth says partner. Timestamps align
+tightly elsewhere (0:33→0:33.9, 1:16→1:16.3, 1:29→1:29.5) so this is not drift.
+
+**3. ROOT CAUSE of the who-served errors: Stage 2.5 discards real OPPONENTS as noise.**
+The noise filter cuts on **median `court_y_ft` ∈ [-8, 44]**. The documented far-side
+foot-point drift (±5 ft zone-precision, SYSTEM_DESIGN §3 Stage 2) pushes real opponents'
+median just past the 44 ft baseline, so they are thrown away as adjacent-court
+contamination:
+
+| track | median court_y | p10 | in_court | verdict |
+|---|---|---|---|---|
+| 3 | 45.3 | 30.6 | 50% | **noise** ← real opponent |
+| 3454 | 45.4 | 29.6 | 40% | **noise** ← real opponent |
+| 3443 | 47.7 | 44.6 | 10% | **noise** ← real opponent |
+| 965 | 36.5 | 29.2 | 70% | opp_a ✓ (median merely happened to land < 44) |
+
+**Measured blast radius: `opp_a` absent in 41% of frames, `opp_b` in 36%** (present
+11,051 / 11,971 of 18,862). **35 noise tracks / 19,034 rows** sit in the 22–60 ft band.
+At **3:39 there are ZERO tracked players in the far half of the court**, so the
+opponent's serve was attributed to the near-side man — the same mechanism the 07-27
+handoff spotted at 2:24 ("the front thrower isn't tracked, so the behind player is the
+only near track"). This ONE cause explains the wrong-side serves (3:39, 4:43), the
+missed far-side shots (2:32, 4:04), and the contract's own open follow-up ("opponent
+roles are contaminated").
+
+**Adjacent-court players ARE separable from real opponents** — the discriminator is
+range, not median: a real opponent works between the far kitchen and the far baseline
+(**p10 ≈ 29–31**), while an adjacent-court player sits in a tight deep band (**p10 ≈
+51–57**) and never comes forward.
+
+**Consequence for the roadmap:** the Stage 2.5 *near-side* rebuild the handoff proposed
+would not have fixed any observed error. Latent risk there is real but unproven — **72%
+of `user` frames come from two tracks assigned at confidence 0.53–0.56** (tid 1452
+covering 1:28–4:19, tid 4127 covering 4:23–5:14). Revisit after the far side.
+
 
 Foundations-first accuracy tracking: validate each stage by RENDERING its output
 against reality, not by smoke tests. Confidence ≠ correctness. Started 2026-07-18
