@@ -14,27 +14,37 @@ uniform sweep. Full detail in `docs/ACCURACY_LEDGER.md` ("IDENTITY VALIDATED BY 
    warning, the render shows the woman serving at **1:16 labelled `partner`, matching
    operator truth**; the man is consistently `user`. Duplicate-role frames (provably
    impossible) are rare: user 8, partner 53 of 18,862.
-2. **ROOT CAUSE found — Stage 2.5 throws real OPPONENTS away as noise.** The filter cuts
-   on **median `court_y_ft` ∈ [-8, 44]**; the documented far-side foot-point drift (±5 ft,
-   SYSTEM_DESIGN §3 Stage 2) pushes real opponents' median just past 44. **`opp_a` absent
-   41% of frames, `opp_b` 36%**; 35 noise tracks / 19,034 rows in the 22–60 ft band. At
-   **3:39 the far half of the court has ZERO tracked players**, so the opponent's serve
-   went to the near-side man. Explains the wrong-side serves (3:39, 4:43), the missed
-   far-side shots (2:32, 4:04), and the contract's open "opponent roles are contaminated".
-3. **The discriminator is RANGE, not median:** a real opponent works between the far
-   kitchen and far baseline (**p10 ≈ 29–31**); an adjacent-court player sits in a tight
-   deep band (**p10 ≈ 51–57**) and never comes forward.
+2. **A far-side "real opponents are discarded" theory was then built, tested, and
+   DISPROVED the same day — REVERTED.** Full write-up in `docs/ACCURACY_LEDGER.md`
+   ("FAR-SIDE RECKONING"). Two operator corrections killed it: (a) **players legitimately
+   play outside the court** — behind the baseline to serve, wide chasing balls (real
+   envelope **±5 ft beyond sidelines, 10–15 ft beyond each baseline**), so a deep far
+   reading is NOT proof of drift; (b) zoomed renders show the "recovered opponents" are
+   **people past the fence on the ADJACENT court**.
+3. **What rendering DID establish about the far side:** at **2:08.8 mid-rally a real
+   opponent is on our far court and IS correctly labelled**; at **2:45.3 / 3:06.5 / 3:39.8
+   / 4:43.7 the far half of our court is EMPTY** and `opp_a`/`opp_b` have landed on
+   adjacent-court people. So the defect is **OVER-inclusion (contamination)** — the
+   contract's own open follow-up — **not** opponents being discarded.
 
-### OPEN with the operator
-At **0:48 the render clearly shows the MAN (`user`) serving from behind the baseline**,
-but operator truth says partner. Timestamps align tightly elsewhere, so this is not drift.
+### OPEN with the operator (both block the next step)
+1. At **0:48 the render clearly shows the MAN (`user`) serving from behind the baseline**,
+   but operator truth says partner. Timestamps align tightly elsewhere, so not drift.
+2. Operator truth lists **opponent serves at 3:39, 4:04, 4:43**, but the video at those
+   exact frames shows **nobody on the far half of the court** (at 4:43.7 only the user is
+   on court at all). Either the timestamps map elsewhere, or those detected shots are
+   spurious dead-time contacts.
 
-### NEXT (operator-chosen 2026-08-01)
-**Fix far-side opponent retention in Stage 2.5** — replace the hard `court_y ≤ 44` cut
-with a far-side-aware rule (keep tracks that range into the far playing zone; still reject
-adjacent-court players). Validate by RE-RENDERING the same frames: opponents present, and
-3:39 / 4:43 attributed far-side. **Deferred, latent, unproven:** 72% of `user` frames rest
-on two conf-0.53–0.56 assignments (tid 1452 @1:28–4:19, tid 4127 @4:23–5:14).
+### NEXT — undecided, pending the two questions above
+Candidate threads, none started: **opponent-role contamination** (stop adjacent-court
+people being labelled `opp_a`/`opp_b`); **near-side identity confidence** (72% of `user`
+frames rest on two conf-0.53–0.56 assignments, tid 1452 @1:28–4:19, tid 4127 @4:23–5:14 —
+render-checked as NOT flipped, so latent risk only).
+
+### Method lesson (do not lose)
+The reverted change passed a 6/6 smoke test AND improved its own coverage metric AND was
+still wrong. **Numbers derived from a corrupted coordinate cannot validate a hypothesis
+about that coordinate — render the frames BEFORE building, not after.**
 
 ---
 

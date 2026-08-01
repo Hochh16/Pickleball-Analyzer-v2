@@ -105,7 +105,13 @@ proof of correctness — only the render is.
 serving from behind the baseline**, but operator truth says partner. Timestamps align
 tightly elsewhere (0:33→0:33.9, 1:16→1:16.3, 1:29→1:29.5) so this is not drift.
 
-**3. ROOT CAUSE of the who-served errors: Stage 2.5 discards real OPPONENTS as noise.**
+> ### ⚠ CORRECTED SAME DAY (2026-08-01) — point 3 below was WRONG. Read §"FAR-SIDE
+> ### RECKONING" before acting on it. Rendering the actual frames showed the far half
+> ### of the court is often EMPTY, and the tracks the "fix" recovered are people on the
+> ### ADJACENT court. The defect is opponent roles being OVER-included (contamination),
+> ### not real opponents being discarded. The retention change was reverted.
+
+**3. ~~ROOT CAUSE of the who-served errors: Stage 2.5 discards real OPPONENTS as noise.~~**
 The noise filter cuts on **median `court_y_ft` ∈ [-8, 44]**. The documented far-side
 foot-point drift (±5 ft zone-precision, SYSTEM_DESIGN §3 Stage 2) pushes real opponents'
 median just past the 44 ft baseline, so they are thrown away as adjacent-court
@@ -136,6 +142,54 @@ range, not median: a real opponent works between the far kitchen and the far bas
 would not have fixed any observed error. Latent risk there is real but unproven — **72%
 of `user` frames come from two tracks assigned at confidence 0.53–0.56** (tid 1452
 covering 1:28–4:19, tid 4127 covering 4:23–5:14). Revisit after the far side.
+
+## FAR-SIDE RECKONING (2026-08-01) — the retention "fix" was WRONG; REVERTED
+
+A far-side retention change was built, stage-validated, run end-to-end, and then
+**disproved by rendering and reverted.** Recording it so nobody rebuilds it.
+
+**What was built.** Beyond the 44 ft baseline became a *drift zone* (`FAR_DRIFT_FT=8`) a
+track could occupy if it (a) *reached* forward to the far kitchen line (29.0 ft) and (b)
+kept a player-sized depth *span* (≤30 ft). Rationale: the documented far-side foot-point
+drift pushes a real opponent's median past 44 ft. Stage smoke 6/6; `opp_a` frame presence
+59%→87%; +6 tracks, 0 lost; test_clip's 4 wandering tracks correctly rejected.
+
+**Why it was wrong — two operator corrections, both fatal to the reasoning:**
+1. **"Physically impossible" was a bad argument.** The analysis leaned on far-side
+   readings of 45–56 ft being impossible on a 44 ft court. **Players legitimately play
+   well outside the court** — behind the baseline to serve, wide chasing balls. Operator's
+   real play envelope: **±5 ft beyond each sideline, 10–15 ft beyond each baseline**
+   (i.e. court_x ≈ [-5, 25], court_y ≈ [-15, 59]). A deep far reading is not proof of drift.
+2. **The recovered tracks are ADJACENT-COURT people.** Zoomed renders of the far half at
+   0:32.8 / 0:47.5 / 0:55.1 show the recovered `opp_a` boxes standing **past the fence on
+   the next court**, with the far half of our court **empty**.
+
+**What rendering actually established (the real state of the far side):**
+- At **2:08.8 (mid-rally) a real opponent IS on our far court and IS correctly labelled**
+  — so the pipeline does track opponents when they are there.
+- At **2:45.3, 3:06.5, 3:39.8 and 4:43.7 the far half of our court is EMPTY**, and the
+  `opp_a`/`opp_b` labels have landed on adjacent-court people past the fence.
+- So the defect is **OVER-inclusion (contamination), not under-inclusion** — exactly the
+  contract's own open follow-up ("Opponent roles are contaminated"), never "real opponents
+  are being discarded."
+
+**Downstream it regressed, which is the tell.** Re-running Stage 5 on the retained tracks:
+**shots 99→118** (truth 98), **serves 13→15**; the 0:33 and 0:48 serves moved from
+near-side to `opp_a`/far. Mechanism: an adjacent-court figure reads `dist_from_net`
+21.8–33.8 ft, which satisfies the serve rule's "struck from behind the baseline (≥21 ft)",
+so contaminating tracks **steal serve status**. One case associated the ball at 5 px to a
+figure on the next court.
+
+**OPEN QUESTION for the operator (blocks the next step):** the operator's truth lists
+serves by an **opponent at 3:39, 4:04 and 4:43**, but the video at those exact frames shows
+**nobody on the far half of the court** (at 4:43.7 only the user is on court at all).
+Either the timestamps map elsewhere, or those detected shots are spurious dead-time
+contacts. Resolve before any further serve/attribution work.
+
+**Method lesson (reinforces `feedback_consumer_output_validation`):** the change passed a
+6/6 smoke test, improved its own coverage metric, and was still wrong. Numbers derived
+from a corrupted coordinate cannot validate a hypothesis about that coordinate — only the
+render can. **Render the frames BEFORE building, not after.**
 
 
 Foundations-first accuracy tracking: validate each stage by RENDERING its output
