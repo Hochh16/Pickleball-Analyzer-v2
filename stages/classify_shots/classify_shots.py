@@ -26,7 +26,12 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.4.0"  # 0.1.0 -> 0.2.0: is_volley consumed bounces.json.
+STAGE_VERSION = "0.5.0"  # 0.4.0 -> 0.5.0: REMOVED the landing-path "speed guard"
+                         # (a slow ball with a DEEP landing was called a dink). It
+                         # contradicted the operator's ruling that the LANDING decides
+                         # type, and rested on ball speed, a known-weak discriminator.
+                         # dinks 36 -> 31 (truth 18) on pb_5_minute_outdoor-2.
+                         # 0.1.0 -> 0.2.0: is_volley consumed bounces.json.
                          # 0.2.0 -> 0.3.0 (real-ball): is_volley primary signal is
                          # a recall-focused LOCAL ball-trajectory scan between
                          # shots (the precision bounce list under-detects on the
@@ -560,13 +565,18 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
             # players dink from a step or two behind the kitchen line); a drop is
             # the soft shot from DEEP (baseline, the third-shot drop).
             return ("drop", 0.78) if zone == "baseline" else ("dink", 0.78)
-        # Speed guard: a drive REQUIRES real pace. A slow ball near the net whose
-        # landing read a bit deep (soft-shot depth is noisy for an airborne ball)
-        # is still a dink, not a drive. Baseline stays out of this (could be a drop).
-        if (post_ftps is not None and post_ftps <= dink_max
-                and zone != "baseline"):
-            return "dink", 0.7
-        return "drive", 0.78   # deep landing + real pace = a flat fast ball
+        # REMOVED 2026-08-02 — the "speed guard" (a slow ball with a deep landing was
+        # called a dink anyway) is deleted. It CONTRADICTED the operator's own ruling:
+        # "shot type is decided by WHERE THE BALL LANDED, not by how it was struck. A
+        # softly-hit ball that lands well past the kitchen line is NOT a dink — it's a
+        # dink that got away, typed by outcome." It existed to compensate for landings
+        # being read too deep, but the ledger's own investigation of the canonical case
+        # (drill shot 7) concluded the deep landing was REAL, so the compensation was
+        # correcting an error that wasn't there — while resting on ball speed, which is
+        # documented as a weak discriminator by physics, not a fixable bug.
+        # Measured on pb_5_minute_outdoor-2: dinks 36 -> 31 (operator truth 18), mean
+        # error across the 14 acceptance counts 26.9% -> 26.7%.
+        return "drive", 0.78   # deep landing = a ball that got past the kitchen
 
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
     if post_ftps is not None and post_ftps >= drive_min:
