@@ -18,6 +18,64 @@ Issues observed during development that are not yet resolved, with notes on
 when/where they should be addressed. Update as issues are resolved or as new
 ones are discovered.
 
+## Stage 5 - A FAULTED serve is indistinguishable from a FEED (operator-accepted, deferred)
+
+**Observed:** 2026-08-01, `pb_5_minute_outdoor-2`, while building the in-play /
+between-point separation.
+
+**Problem:** Balls sent back to the server ("feeds") must be excluded — operator: a
+ball thrown back to the next server "is Not a serve or a shot", and separating balls
+in play from returning-the-ball is a stated product requirement. The working rule is
+**IN PLAY = part of a cross-net exchange** (an opposite-side shot within ~1.5 s); a
+feed is isolated, with dead time either side. That rule is right for feeds and gets
+shots to 99 vs the operator's 98.
+
+**But a FAULTED serve is also isolated** — nobody returns it, by definition — so the
+same rule drops it. Per the operator (2026-08-01): **a faulted serve counts as a point
+and a serve, and there is NO re-serve** (unlike tennis). So a fault should be kept and
+a feed dropped, and the pipeline currently cannot tell them apart:
+
+| | struck from | returned? | followed by |
+|---|---|---|---|
+| faulted serve | behind the baseline | no | the next point's serve |
+| feed | often behind the baseline | no | the next serve |
+
+**Signals tested and rejected:** ball speed (the known feed reads 3.0 px/frame — so do
+the real serves at 1:16, 3:06 and 4:04; no separation, consistent with the established
+finding that ball speed is unreliable on this camera) and timing/isolation (identical
+by construction).
+
+**Operator decision (2026-08-01): DEFER.** There are **no faulted serves in this clip**
+to test against, it is uncommon, and the genuinely hard case is narrower still — only
+when the **feed is struck from behind the baseline**. A feed from anywhere else is
+separable on position. Other work is higher priority.
+
+**Where to fix, when it matters:** the most promising untested signal is direction
+relative to who serves next (a feed travels TO the player about to serve), or the fact
+that a feed is often *thrown/rolled* rather than paddle-struck (operator's description
+of the 0:55 ball), which pose or a ground-contact trace might expose. Needs a clip that
+actually contains a faulted serve.
+
+## Stage 5 - Pre-serve ball handling detected instead of the serve
+
+**Observed:** 2026-08-01, from the operator's corrected serve timestamps.
+
+**Problem:** The operator corrected two serve times — the serve listed at 1:29 is really
+at **1:33**, and the one at 4:58 is really at **5:01**. In both cases the pipeline
+detects a shot ~3.5 s EARLIER (1:29.5 and 4:58.1, both by the user from behind the near
+baseline) and detects **nothing at the actual serve**. The pattern is the player
+bouncing/handling the ball before serving: the handling is caught, the serve is missed.
+
+**Why it matters:** the handling ball gets flagged as the serve, so the rally is
+anchored ~3.5 s early, and the real serve is absent from the shot set.
+`reject_same_track_repeats` exists for exactly this ball-handling case but only collapses
+repeats within `rally_gap_frames`; at ~3.5 s apart these fall outside it, and the real
+serve is not detected at all so there is nothing to collapse *to*.
+
+**Where to fix:** Stage 5 — either widen the same-track handling window when the later
+shot is a serve candidate, or fix the underlying miss (the serve strike itself is not
+detected, which is ball-recall-limited).
+
 ## Stage 2 - Adjacent-court contamination
 
 **Observed:** May 2026, Stage 2 smoke test on `data/test_clip/`.

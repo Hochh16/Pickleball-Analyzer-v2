@@ -46,6 +46,46 @@ def load(clip: Path, name: str):
     return json.load(open(clip / name, encoding="utf-8"))
 
 
+def draw_court(img, court: dict) -> None:
+    """Project THE USER'S court onto the frame.
+
+    Non-negotiable: at a multi-court venue you cannot tell by eye which court is
+    which -- the user's court is a thin foreshortened sliver near the top of frame
+    while a neighbouring court can dominate the view. Judging "is that player on our
+    court?" without these lines drawn produces confident, wrong answers.
+    """
+    H = np.array(court["homography"]["court_to_image"])
+    w = float(court.get("court_geometry_feet", {}).get("width_ft", 20.0))
+    ln = float(court.get("court_geometry_feet", {}).get("length_ft", 44.0))
+    kd = float(court.get("court_geometry_feet", {}).get("kitchen_depth_ft", 7.0))
+
+    def c2i(x, y):
+        v = H @ np.array([x, y, 1.0])
+        return int(round(v[0] / v[2])), int(round(v[1] / v[2]))
+
+    def line(a, b, col, th):
+        cv2.line(img, c2i(*a), c2i(*b), col, th)
+
+    white, net_col, kit = (255, 255, 255), (0, 220, 255), (200, 200, 60)
+    for y in (0.0, ln):                       # baselines
+        line((0, y), (w, y), white, 4)
+    for x in (0.0, w):                        # sidelines
+        line((x, 0), (x, ln), white, 4)
+    line((0, ln / 2), (w, ln / 2), net_col, 5)              # net
+    for y in (ln / 2 - kd, ln / 2 + kd):                     # kitchen lines
+        line((0, y), (w, y), kit, 3)
+    cv2.putText(img, "YOUR far baseline", c2i(1.0, ln - 1.5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, white, 2)
+    cv2.putText(img, "NET", c2i(0.3, ln / 2 - 0.8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, net_col, 2)
+    # the operator's play envelope — players legitimately serve from behind the
+    # baseline and chase wide, so this, not the rectangle, bounds "on our court"
+    ex, ey = 5.0, 15.0
+    env = [(-ex, -ey), (w + ex, -ey), (w + ex, ln + ey), (-ex, ln + ey)]
+    for a, b in zip(env, env[1:] + env[:1]):
+        line(a, b, (120, 255, 120), 2)
+
+
 def tc(frame: int, fps: float) -> str:
     t = frame / fps
     return f"{int(t // 60)}:{t % 60:04.1f}"
@@ -106,6 +146,7 @@ def main():
     args = ap.parse_args()
     D = Path(args.clip)
 
+    court = load(D, "court.json")
     roles_meta = load(D, "track_roles.json")["track_roles"]
     players = pd.read_parquet(D / "players.parquet")
     players["role"] = players.track_id.astype(str).map(
@@ -156,6 +197,7 @@ def main():
         if not ok:
             print(f"  !! could not read frame {frame}")
             continue
+        draw_court(img, court)
         rows = by_frame.get(frame)
         seen = []
         if rows is not None:

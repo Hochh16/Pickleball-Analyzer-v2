@@ -11,10 +11,30 @@ adjacent-court contamination bug in minutes.)
 | item | operator truth |
 |---|---|
 | Shots | **98** |
-| Serves = rallies = returns | **13** |
+| Serves = rallies = returns | **14** |
 | Dinks | **18** |
 | Volleys | **17** |
 | Bounces | **81** |
+
+> **CORRECTED 2026-08-01 — serves/rallies are 14, not 13.** The operator re-checked
+> all 14 listed serve timestamps against the rendered frames and confirmed **every one
+> is a real serve**, so 14 serves = 14 rallies. Two timestamps also shift: the serve
+> listed at **1:29 is really at 1:33**, and **4:58 is really at 5:01** (in both cases
+> the pipeline detects the player's pre-serve ball-handling ~3.5 s early and misses the
+> serve itself — see KNOWN_ISSUES "Pre-serve ball handling"). Also confirmed: **a
+> faulted serve counts as a point AND a serve, with no re-serve** — and there are no
+> faulted serves in this clip.
+> Corrected serve times: 0:03 · 0:33 · 0:47 · 1:04 · 1:16 · **1:33** · 2:08 · 2:32 ·
+> 2:45 · 3:06 · 3:39 · 4:04 · 4:43 · **5:01**.
+> `tools/score_acceptance.py` scores every count in this table in one command.
+>
+> **OPEN: the +1 shot (99 detected vs 98).** Operator (2026-08-01): "could be my count
+> is off by one OR you included a feed back to server." The second is now a concrete
+> suspect — feeds are confirmed present in this clip (the 0:55 ball) and the baseline
+> pipeline does NOT exclude them. **Resolve by listing the 99 detected shots and finding
+> the one that is a feed**, rather than by assuming either count is wrong. Do this before
+> treating 98 as a hard target — a 1-shot error is within the noise of everything else
+> right now, but it also silently sets the bar for `shots = volleys + bounces`.
 
 **Identity that must hold: `shots = volleys + bounces`** (98 = 17 + 81). Every shot is
 either volleyed out of the air or lands exactly once. This is the single best
@@ -105,13 +125,7 @@ proof of correctness — only the render is.
 serving from behind the baseline**, but operator truth says partner. Timestamps align
 tightly elsewhere (0:33→0:33.9, 1:16→1:16.3, 1:29→1:29.5) so this is not drift.
 
-> ### ⚠ CORRECTED SAME DAY (2026-08-01) — point 3 below was WRONG. Read §"FAR-SIDE
-> ### RECKONING" before acting on it. Rendering the actual frames showed the far half
-> ### of the court is often EMPTY, and the tracks the "fix" recovered are people on the
-> ### ADJACENT court. The defect is opponent roles being OVER-included (contamination),
-> ### not real opponents being discarded. The retention change was reverted.
-
-**3. ~~ROOT CAUSE of the who-served errors: Stage 2.5 discards real OPPONENTS as noise.~~**
+**3. ROOT CAUSE of the who-served errors: Stage 2.5 discards real OPPONENTS as noise.**
 The noise filter cuts on **median `court_y_ft` ∈ [-8, 44]**. The documented far-side
 foot-point drift (±5 ft zone-precision, SYSTEM_DESIGN §3 Stage 2) pushes real opponents'
 median just past the 44 ft baseline, so they are thrown away as adjacent-court
@@ -143,53 +157,60 @@ would not have fixed any observed error. Latent risk there is real but unproven 
 of `user` frames come from two tracks assigned at confidence 0.53–0.56** (tid 1452
 covering 1:28–4:19, tid 4127 covering 4:23–5:14). Revisit after the far side.
 
-## FAR-SIDE RECKONING (2026-08-01) — the retention "fix" was WRONG; REVERTED
+## THE PLAY ENVELOPE (operator, 2026-08-01) — the fix, and two wrong turns on the way
 
-A far-side retention change was built, stage-validated, run end-to-end, and then
-**disproved by rendering and reverted.** Recording it so nobody rebuilds it.
+**THE RULE: players are NOT confined to the 20×44 court.** They serve from BEHIND the
+baseline and chase balls wide. Operator's real play envelope:
+**5 ft beyond each sideline, 15 ft beyond each baseline** → `court_x ∈ [-5, 25]`,
+`court_y ∈ [-15, 59]`. Any "is this person playing on our court" test must use THIS,
+not the court rectangle.
 
-**What was built.** Beyond the 44 ft baseline became a *drift zone* (`FAR_DRIFT_FT=8`) a
-track could occupy if it (a) *reached* forward to the far kitchen line (29.0 ft) and (b)
-kept a player-sized depth *span* (≤30 ft). Rationale: the documented far-side foot-point
-drift pushes a real opponent's median past 44 ft. Stage smoke 6/6; `opp_a` frame presence
-59%→87%; +6 tracks, 0 lost; test_clip's 4 wandering tracks correctly rejected.
+**The defect this exposes.** Stage 2.5's noise filter cut at `med_y ≤ 44` AND required a
+floor on `in_court_frac` — measured against the strict rectangle. Together these
+**discarded far-side servers by construction**: standing behind the baseline means
+out-of-rectangle. Operator-confirmed by eye, then confirmed in the data — at EVERY
+operator-identified opponent serve, BOTH opponents were detected just behind the far
+baseline and BOTH were classified `noise`:
 
-**Why it was wrong — two operator corrections, both fatal to the reasoning:**
-1. **"Physically impossible" was a bad argument.** The analysis leaned on far-side
-   readings of 45–56 ft being impossible on a 44 ft court. **Players legitimately play
-   well outside the court** — behind the baseline to serve, wide chasing balls. Operator's
-   real play envelope: **±5 ft beyond each sideline, 10–15 ft beyond each baseline**
-   (i.e. court_x ≈ [-5, 25], court_y ≈ [-15, 59]). A deep far reading is not proof of drift.
-2. **The recovered tracks are ADJACENT-COURT people.** Zoomed renders of the far half at
-   0:32.8 / 0:47.5 / 0:55.1 show the recovered `opp_a` boxes standing **past the fence on
-   the next court**, with the far half of our court **empty**.
+| frame | opponent 1 | opponent 2 | role before |
+|---|---|---|---|
+| 0:47.5 | tid 797 (14.8, 50.4) | tid 583 (6.7, 51.3) | both `noise` |
+| 3:39.8 | tid 3443 (4.7, 45.4) | tid 3454 (14.3, 46.2) | both `noise` |
+| 4:05 | tid 3590 (5.0, 51.6) | tid 3713 (15.7, 52.0) | both `noise` |
+| 4:43.7 | tid 3912 (7.3, 48.5) | tid 4399 (15.9, 52.0) | both `noise` |
 
-**What rendering actually established (the real state of the far side):**
-- At **2:08.8 (mid-rally) a real opponent IS on our far court and IS correctly labelled**
-  — so the pipeline does track opponents when they are there.
-- At **2:45.3, 3:06.5, 3:39.8 and 4:43.7 the far half of our court is EMPTY**, and the
-  `opp_a`/`opp_b` labels have landed on adjacent-court people past the fence.
-- So the defect is **OVER-inclusion (contamination), not under-inclusion** — exactly the
-  contract's own open follow-up ("Opponent roles are contaminated"), never "real opponents
-  are being discarded."
+Opponents sit at **court_y 45–54**; genuinely adjacent-court people separate at
+**59–115 ft**. **v0.2.0 fix:** noise is judged against the play envelope, and the
+`in_court_frac` floor becomes an **`in_env_frac`** floor.
 
-**Downstream it regressed, which is the tell.** Re-running Stage 5 on the retained tracks:
-**shots 99→118** (truth 98), **serves 13→15**; the 0:33 and 0:48 serves moved from
-near-side to `opp_a`/far. Mechanism: an adjacent-court figure reads `dist_from_net`
-21.8–33.8 ft, which satisfies the serve rule's "struck from behind the baseline (≥21 ft)",
-so contaminating tracks **steal serve status**. One case associated the ball at 5 px to a
-figure on the next court.
+### Two wrong turns — recorded so they are not repeated
 
-**OPEN QUESTION for the operator (blocks the next step):** the operator's truth lists
-serves by an **opponent at 3:39, 4:04 and 4:43**, but the video at those exact frames shows
-**nobody on the far half of the court** (at 4:43.7 only the user is on court at all).
-Either the timestamps map elsewhere, or those detected shots are spurious dead-time
-contacts. Resolve before any further serve/attribution work.
+**Wrong turn 1 — a too-clever rule.** First attempt made `(44, 52]` a "drift zone" a
+track could occupy only if it *reached* the far kitchen line and kept a player-sized
+*span*, reasoning from the documented far-side foot-point drift. It passed smoke 6/6 and
+raised `opp_a` frame presence 59%→87% — but the window was too tight and the extra tests
+too strict: it recovered only **one of the two** opponents at 0:47/3:39/4:05 and **neither**
+at 4:43. Superseded by the envelope, which is simpler and operator-grounded.
 
-**Method lesson (reinforces `feedback_consumer_output_validation`):** the change passed a
-6/6 smoke test, improved its own coverage metric, and was still wrong. Numbers derived
-from a corrupted coordinate cannot validate a hypothesis about that coordinate — only the
-render can. **Render the frames BEFORE building, not after.**
+**Wrong turn 2 — misreading which court is ours, then reverting a correct fix.** Zoomed
+crops of the far side were read as "the recovered opponents are past the fence on the next
+court; our far half is empty", and the fix was reverted on that basis. **This was a visual
+error.** Our court's far half is a *thin foreshortened sliver* near the top of frame
+(image x 1801→2739, y 1217→1370) while a NEIGHBOURING court dominates the view. The boxes
+judged "past the fence" were on our court. **`tools/verify_identity.py` now projects the
+court outline onto every frame** — never judge "is that player on our court" by eye again.
+
+**The downstream regression that seemed to confirm the revert** (shots 99→118, serves
+13→15) was misread too: the 0:47 serve moving to `opp_a`/far is **CORRECT** (operator: "at
+:47 the opponent is serving"), and 0:48 is the operator **returning** it, not serving. The
+residual over-count is real and traced to remaining contamination — an adjacent-court
+figure reads `dist_from_net` 21.8–33.8 ft, satisfying the serve rule's "behind the baseline
+(≥21 ft)", so contaminating tracks can steal serve status. **Track that as the open item,
+not as a reason to revert.**
+
+**Method lesson (reinforces `feedback_consumer_output_validation`):** across both wrong
+turns, every wrong conclusion came from judging geometry by eye or from a coordinate that
+was itself the thing in question. **Project the court, then look. Render before building.**
 
 
 Foundations-first accuracy tracking: validate each stage by RENDERING its output

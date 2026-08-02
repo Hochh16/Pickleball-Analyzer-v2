@@ -74,6 +74,21 @@ test (cleaner than the within-clip 12% slices Run-2b used).
 4. Run `reality_check_v4.ipynb` -> per-venue raw + effective coverage. Target: each
    venue >= ~0.80 effective, home not regressed.
 
+## AVAILABLE NOW — 3 unlabeled indoor clips (operator, 2026-08-01)
+
+The operator has **3 additional INDOOR videos, not yet labeled**, and has offered to
+label them. **This is the single highest-value unblocked input to the project**, because
+indoor is the venue furthest below the bar (**effective recall ~0.61 vs the 0.80 target**)
+and the note below already says indoor "should reach the bar with more data (isolated
+misses)" — i.e. it is a data problem, not a technique problem. Indoor recall gates
+Focus Area 3 (must work on different courts, inside and outside), and until it clears,
+Stages 5-11 cannot be validated on indoor clips at all.
+
+**Before spending operator labeling time, confirm the pre-work is cheap:** each clip
+needs Stage 1 calibration + `prepare_v4` frame caching first, and per the "Retrain loop"
+above the labeling itself is the operator-only step. Hold one indoor clip out entirely
+as an unseen-venue test (see "Held-out discipline").
+
 ## Note on expectations
 
 - **indoor** should reach the bar with more data (isolated misses).

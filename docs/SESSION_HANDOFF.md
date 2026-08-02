@@ -14,37 +14,43 @@ uniform sweep. Full detail in `docs/ACCURACY_LEDGER.md` ("IDENTITY VALIDATED BY 
    warning, the render shows the woman serving at **1:16 labelled `partner`, matching
    operator truth**; the man is consistently `user`. Duplicate-role frames (provably
    impossible) are rare: user 8, partner 53 of 18,862.
-2. **A far-side "real opponents are discarded" theory was then built, tested, and
-   DISPROVED the same day — REVERTED.** Full write-up in `docs/ACCURACY_LEDGER.md`
-   ("FAR-SIDE RECKONING"). Two operator corrections killed it: (a) **players legitimately
-   play outside the court** — behind the baseline to serve, wide chasing balls (real
-   envelope **±5 ft beyond sidelines, 10–15 ft beyond each baseline**), so a deep far
-   reading is NOT proof of drift; (b) zoomed renders show the "recovered opponents" are
-   **people past the fence on the ADJACENT court**.
-3. **What rendering DID establish about the far side:** at **2:08.8 mid-rally a real
-   opponent is on our far court and IS correctly labelled**; at **2:45.3 / 3:06.5 / 3:39.8
-   / 4:43.7 the far half of our court is EMPTY** and `opp_a`/`opp_b` have landed on
-   adjacent-court people. So the defect is **OVER-inclusion (contamination)** — the
-   contract's own open follow-up — **not** opponents being discarded.
+2. **ROOT CAUSE (operator-confirmed): Stage 2.5 discarded far-side SERVERS by
+   construction.** THE RULE — **players are NOT confined to the 20×44 court.** They serve
+   from BEHIND the baseline and chase wide. Operator's play envelope: **5 ft beyond each
+   sideline, 15 ft beyond each baseline** → `court_x ∈ [-5, 25]`, `court_y ∈ [-15, 59]`.
+   The old noise filter cut at `med_y ≤ 44` AND floored `in_court_frac` against the strict
+   rectangle — so a server behind the baseline failed both. At EVERY operator-identified
+   opponent serve (0:47, 3:39, 4:05, 4:43) **both opponents were detected at court_y 45–54
+   and both were classified `noise`.** Adjacent-court people separate at 59–115 ft.
+   **v0.2.0:** noise judged against the play envelope; `in_court_frac` floor → `in_env_frac`.
 
-### OPEN with the operator (both block the next step)
-1. At **0:48 the render clearly shows the MAN (`user`) serving from behind the baseline**,
-   but operator truth says partner. Timestamps align tightly elsewhere, so not drift.
-2. Operator truth lists **opponent serves at 3:39, 4:04, 4:43**, but the video at those
-   exact frames shows **nobody on the far half of the court** (at 4:43.7 only the user is
-   on court at all). Either the timestamps map elsewhere, or those detected shots are
-   spurious dead-time contacts.
+### Two wrong turns on the way — DO NOT REPEAT (detail in ACCURACY_LEDGER)
+1. **A too-clever rule** (a `(44,52]` "drift zone" gated on reaching the far kitchen +
+   a depth-span cap) passed smoke 6/6 and raised `opp_a` presence 59%→87%, but recovered
+   only ONE of the two opponents at 0:47/3:39/4:05 and NEITHER at 4:43.
+2. **Misreading which court is ours, then reverting a correct fix.** Our court's far half
+   is a thin foreshortened sliver near the top of frame (image x 1801→2739, y 1217→1370)
+   while a NEIGHBOURING court dominates the view; boxes judged "past the fence" were on
+   our court. **`tools/verify_identity.py` now projects the court outline onto every
+   frame** — never judge "is that player on our court" by eye again.
 
-### NEXT — undecided, pending the two questions above
-Candidate threads, none started: **opponent-role contamination** (stop adjacent-court
-people being labelled `opp_a`/`opp_b`); **near-side identity confidence** (72% of `user`
-frames rest on two conf-0.53–0.56 assignments, tid 1452 @1:28–4:19, tid 4127 @4:23–5:14 —
-render-checked as NOT flipped, so latent risk only).
+### Operator truth CLARIFIED (supersedes the older serve list)
+**0:47 opponent serves; 0:48 is the operator RETURNING** (so the man IS the user, near-side
+labels confirmed). **3:39, 4:05, 4:43 are all opponent serves.** The earlier "0:48(partner)"
+note meant the return, not a serve.
+
+### OPEN
+- Residual **over-count** (shots 99→118, serves 13→15 on the first far-side run): an
+  adjacent-court figure reads `dist_from_net` 21.8–33.8 ft, satisfying the serve rule's
+  "behind the baseline (≥21 ft)", so contamination can **steal serve status**. The generous
+  envelope admits more far tracks (83→131 kept), so opponent-role contamination is the
+  live risk to measure — NOT a reason to revert.
+- **Near-side identity confidence** (latent, render-checked as not flipped): 72% of `user`
+  frames rest on two conf-0.53–0.56 assignments (tid 1452 @1:28–4:19, tid 4127 @4:23–5:14).
 
 ### Method lesson (do not lose)
-The reverted change passed a 6/6 smoke test AND improved its own coverage metric AND was
-still wrong. **Numbers derived from a corrupted coordinate cannot validate a hypothesis
-about that coordinate — render the frames BEFORE building, not after.**
+Both wrong turns came from judging geometry by eye, or from a coordinate that was itself
+the thing in question. **Project the court, then look. Render before building.**
 
 ---
 
