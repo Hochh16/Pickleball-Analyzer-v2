@@ -26,7 +26,10 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.5.0"  # 0.4.0 -> 0.5.0: REMOVED the landing-path "speed guard"
+STAGE_VERSION = "0.6.0"  # 0.5.0 -> 0.6.0: a landing must be on the OPPOSITE side of
+                         # the net (net hits excepted). 23% of landings were same-side
+                         # mis-associations -- ball-handling bounces typed as landings.
+                         # 0.4.0 -> 0.5.0: REMOVED the landing-path "speed guard"
                          # (a slow ball with a DEEP landing was called a dink). It
                          # contradicted the operator's ruling that the LANDING decides
                          # type, and rested on ball speed, a known-weak discriminator.
@@ -701,6 +704,19 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
         # landing court_y from the first bounce after this shot (sound signal)
         landing_y = landing_index.get(int(s["shot_id"]))
+        # PHYSICAL CONSTRAINT (2026-08-02): a shot must land on the OPPOSITE side of
+        # the net. A same-side landing is only physical for a NET HIT -- the ball
+        # fails to cross and dies near the net (the operator counted 8 net hits in
+        # this clip), so those are KEPT. Anything else same-side is a
+        # mis-association: measured 16 of 70 landings (23%) were same-side, of which
+        # 4 landed BEHIND a baseline and 6 within ~2 ft of the hitter's own feet --
+        # ball-handling bounces, which cannot be the landing of the shot just struck.
+        # Dropping the landing sends those shots to the fallback path rather than
+        # typing them from a landing that belongs to a different event.
+        if landing_y is not None:
+            _hy = (s.get("hitter_court_xy_ft") or [None, None])[1]
+            if _hy is not None and (_hy >= NET_Y_FT) == (landing_y >= NET_Y_FT)                     and abs(landing_y - NET_Y_FT) > KITCHEN_MAX_DIST_FT:
+                landing_y = None
         # receiver = the player about to hit next; their zone WHEN THIS SHOT is
         # struck decides whether a high slow ball is a lob (only vs a net player).
         receiver_zone = None
