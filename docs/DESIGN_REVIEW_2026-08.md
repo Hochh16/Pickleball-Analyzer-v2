@@ -130,6 +130,16 @@ over it, not a separate detector:
 is no longer a check that can fail — it is the definition. Today it is an aspiration that is
 off by 5.
 
+> ### ⚠ CORRECTED 2026-08-02 after prototyping — this claim was OVERSTATED.
+> A timeline alone does **not** give the identity. It also requires the physical constraint
+> **"at most one bounce between consecutive contacts"** (after one bounce the ball must be
+> struck or the point ends). The prototype produced 29 contacts / 15 bounces / 20 volleys —
+> identity off by 6 — precisely because that constraint was absent. Today's
+> `MAX_BOUNCES_PER_INTERVAL = 1` already encodes it.
+> **So the architectural win is narrower than §3 claimed:** it removes the *compensating
+> tuning* and the *serve/rally circularity*, and gives one arbitration point instead of two
+> stages guessing independently. It does not make the identity free. See §9.
+
 Two further consequences worth naming:
 
 - **The circularity dissolves.** Runs are found from event timing alone; serves are then read
@@ -243,3 +253,50 @@ exists in this clip to test against).
   on the shot set).
 - It does not solve cross-video identity, or cross-venue ball recall. Both remain open and
   both are prerequisites for focus areas 2 and 3 respectively.
+
+---
+
+## 9. Step 1 executed — the prototype FAILED its gate (2026-08-02)
+
+Ran `tools/proto_timeline.py` on rally 10 (excerpt frames 1684–2544), where operator
+truth is **12 contacts / 5 volleys** (and therefore 7 bounces by the identity).
+
+| | contacts | bounces | volleys | identity |
+|---|---|---|---|---|
+| operator truth | **12** | 7 | **5** | 12 = 5+7 ✓ |
+| prototype, bbox association | 38 | 6 | 33 | off by −1 |
+| prototype, wrist association | 29 | 15 | 20 | off by −6 |
+| **the EXISTING pipeline** | **12** ✓ | 10 | 3 | off by −1 |
+
+**Per §7's own rule, this stops the rewrite.** Three findings, in order of importance:
+
+**(a) Contact detection is NOT the problem — the existing Stage 5 is already exact here.**
+It finds **12/12**, all associated on the **wrist** (the paddle hand) at 27–156 px. That
+accuracy comes from gates the prototype omitted (proper NMS, teleport-in, same-track
+handling collapse, net-side filter, low-speed and gap rejection — the real run reports
+4237 candidates suppressed to a handful). A from-scratch prototype cannot fairly test the
+architecture, because it throws away the very tuning that makes detection work.
+*Corollary: the honest path is to **refactor the existing detectors to share one
+arbitration**, not to rewrite them.*
+
+**(b) The real error on this rally is the BOUNCE/VOLLEY split, and volleys inherit it 1:1.**
+The pipeline finds **10 bounces where 7 are implied**, and correspondingly **3 volleys where
+5 are truth**. Each spurious bounce converts a real volley into a non-volley. This is the
+coupling of §1 shown in one rally: volley accuracy is fully determined by bounce precision.
+
+**(c) The identity is not free** — see the correction in §3. It needs the one-bounce-per-
+interval physical constraint, which the current code already has.
+
+### Revised recommendation
+
+**Bounce precision is the highest-leverage target**, not the timeline refactor. It is the
+common cause of two of the largest errors in the system:
+- **volleys** (23 vs 17 on the full clip; 3 vs 5 on rally 10) — by definition;
+- **shot type** — the operator's ruling is that *type is decided by where the ball LANDED*,
+  so the landing (a bounce) is the primary signal. **Dinks 36 vs 18 is the single largest
+  count error on `main`**, and it is a type error resting on bounce quality.
+
+So the next work should be **bounce precision**, which serves the shot-type goal the
+operator has already named as the follow-on. The timeline refactor remains worth doing for
+the circularity and the compensating-tuning trap, but it is now a **second** priority and
+should be a refactor of the validated detectors rather than a rewrite.
