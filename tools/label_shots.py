@@ -188,10 +188,34 @@ def score(clip: Path):
     if not csv_path.exists():
         raise SystemExit(f"no labels at {csv_path} — run the build mode first")
     cls = {s["shot_id"]: s for s in load(clip, "classified.json")["shots"]}
-    rows = [r for r in csv.DictReader(csv_path.open(encoding="utf-8"))
-            if (r.get("true_type") or "").strip()]
+    all_rows = list(csv.DictReader(csv_path.open(encoding="utf-8-sig")))
+    # A label of "between pts/shots/points" (or a blank with a note) means the
+    # detection is NOT A SHOT at all -- a feed, a ball rolled back, ball handling.
+    # These are FALSE POSITIVES of shot detection and must be scored separately:
+    # folding them into the type confusion matrix would hide the biggest error class.
+    between = {"between pts", "between shots", "between points", "between point",
+               "between", "not a shot", "none"}
+    junk, rows = [], []
+    for r in all_rows:
+        t = (r.get("true_type") or "").strip().lower()
+        if t in between or (not t and (r.get("notes") or "").strip()):
+            junk.append(r)
+        elif t:
+            rows.append(r)
+    n_lab = len(rows) + len(junk)
+    if n_lab:
+        print(f"\nSHOT DETECTION — is a detected 'shot' a real shot?  ({n_lab} labelled)")
+        print(f"  real shots                          : {len(rows)}")
+        print(f"  NOT a shot (feed / roll / handling) : {len(junk)}"
+              f"   -> {len(junk) / n_lab:.0%} of detections are FALSE POSITIVES")
+        if junk:
+            c = defaultdict(int)
+            for r in junk:
+                c[(cls.get(int(r["shot_id"]), {}).get("shot_type") or "?")] += 1
+            print(f"  the pipeline typed them as: "
+                  f"{', '.join(f'{k} x{v}' for k, v in sorted(c.items()))}")
     if not rows:
-        raise SystemExit("labels.csv has no filled true_type values yet")
+        raise SystemExit("labels.csv has no real-shot true_type values yet")
 
     conf = defaultdict(int)
     vol_ok = vol_n = 0

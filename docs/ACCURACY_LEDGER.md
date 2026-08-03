@@ -103,6 +103,76 @@ what is measured, partial, or not yet available.**
    wrong — trace the 7 actual restart points rather than tuning blind.
 4. **Then** rebuild the report.
 
+## PER-SHOT OPERATOR LABELS (2026-08-03) — the counts were hiding two large errors
+
+The operator labelled the first 30 detected shots individually (`tools/label_shots.py`,
+`_labeling/labels.csv`). **This is the first per-shot ground truth for shot TYPE, and it
+overturns the count-based picture.**
+
+### 1. 30% of detected "shots" are NOT SHOTS
+
+| | n |
+|---|---|
+| real shots | 21 |
+| **NOT a shot** — feeds, balls rolled back at the net, ball handling, picking the ball up | **9 (30%)** |
+
+The pipeline typed those 9 non-shots as **drive x5, dink x2, serve x2** — so between-point
+junk is inflating the shot, dink AND serve counts simultaneously.
+
+**The arithmetic that matters.** We report 99 shots against a truth of 98 and called that
+"+1". If ~30% are junk, only ~69 detections are real, so we are **missing ~29 real
+shots**. The +1 agreement was two large errors cancelling. ⚠ Caveat: shots 1–30 cover
+0:06–1:44, which contains a lot of clip-start dead time; the junk rate over the whole clip
+may be lower. Label another block before treating 30% as the global rate.
+
+### 2. Shot-type accuracy on the REAL shots is 33%, not ~58–73%
+
+| type | n | precision | recall |
+|---|---|---|---|
+| dink | 3 | 40% | 67% |
+| drive | 7 | 30% | 43% |
+| drop | 3 | 50% | 33% |
+| **lob** | 2 | **0%** | **0%** |
+| **reset** | 1 | **0%** | **0%** |
+| **return** | 3 | **0%** | **0%** |
+| serve | 2 | 33% | 50% |
+| **overall** | **21** | **7/21 = 33%** | |
+
+`is_volley` was 4/4 correct (small sample, but the one signal that held up).
+**`return` scores 0% because our taxonomy has no `return` type** — two returns were called
+`serve`. That is a taxonomy gap, not only a classifier error; the ledger counts returns
+separately (14 returns = 14 serves), so Stage 6 should emit it.
+
+### 3. The "in-play" filter would have made things WORSE — do not ship it
+
+The cross-net-exchange test (a shot is in play if an opposite-side shot falls within 1.5 s)
+was validated against these labels for the first time:
+
+- it **killed 9 of the 21 real shots**,
+- and **missed 4 of the 9 junk ones**.
+- precision on junk **36%**, recall **56%**.
+
+Why: **a ball rolled back at the net, or fed to the server, DOES cross the net** — it looks
+exactly like an exchange. And real shots look isolated because their cross-net partner is
+one of the ~29 shots we never detect. Defeated in both directions. This is the filter that
+looked fine on COUNTS (it produced 99 shots) — another case of a count agreeing for the
+wrong reason.
+
+### 4. OPERATOR TYPE RULES (2026-08-03) — implementable, currently not implemented
+
+From the kitchen area: **soft to the baseline = LOB · hard to baseline or transition =
+DRIVE · into the kitchen, or soft into the transition zone, = DINK.** A volley struck near
+the opponent's baseline the operator defines as a **volley drop** (else volley dink) —
+explicitly a fuzzy area he has chosen a convention for. So type is a
+**(hitter zone, landing zone, pace)** table. Our rule only uses landing-distance-from-net
+plus hitter zone, which is why **both lobs were called drives**.
+
+### Labelling-tool follow-ups the operator asked for
+- Needs **broader context**: could not always tell a return-of-serve from a drive from a
+  2 s window. Show the preceding shot / rally context.
+- **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
+- Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
+
 ## BOUNCE RECALL — FIVE THINGS TESTED AND REJECTED (2026-08-02). DO NOT RETRY.
 
 Bounce precision was identified as the highest-leverage target (it defines volleys, and
