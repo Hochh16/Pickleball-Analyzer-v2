@@ -173,6 +173,62 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## RALLY END + 3-D FIT — the dependency chain resolved (2026-08-03)
+
+### 3-D projectile fit is NOT the unlock — the operator was right, it is camera-blocked
+
+I proposed the 3-D/parabola fit as the remaining option. **That was wrong** — I cited the
+2026-07-19 note recommending it without checking the 2026-07-20 investigation that
+SUPERSEDED it (`stages/ball_trajectory/contract.md` "Phase 2 (height) — investigation
+result: MARGINAL, precision-floored"). What it actually found:
+- **apex height IS robustly recoverable** (3–7 ft) — keep as a lob feature;
+- **bounce-vs-volley is at the noise floor** — z=0 vs z≈1–2 ft needs ~0.5 ft resolution,
+  the method delivers ±0.5–1 ft. Self-calibration made it WORSE (7/9 → 3/9).
+- its own conclusion: *"monocular-precision-limited on this low camera angle… highest
+  real leverage is (a) better INPUTS or (b) an OPERATOR camera-angle change — not more
+  trajectory math."*
+
+**Do not spend on 3-D height without a second camera / higher mount.**
+
+### The rally-end RULE is correct; our INPUTS cannot support it
+
+Operator's definition (2026-08-03) — a rally ends on **two bounces**, a **first bounce
+outside the court**, or a **net hit**; plus the serve exception (a serve must land in the
+diagonal service box, kitchen line to baseline, else the rally is just the bad serve).
+Rarely a catch. This is right, and it is mechanically checkable. Two things blocked it:
+
+**1. A double bounce was IMPOSSIBLE to detect by construction.**
+`MAX_BOUNCES_PER_INTERVAL = 1` — its comment dismisses the second bounce as *"after the
+rally is already over"*, when that second bounce IS the rally-end signal. At cap 1 we found
+**zero** double bounces. At cap 2, 25 appear and 13/14 rallies get a candidate.
+
+**2. But those candidates are not real double bounces.** Applying physics — a genuine 2nd
+bounce follows the 1st in ~0.4–1.0 s, on the SAME side, a few feet along:
+
+| | candidates | median gap | same side | physically plausible |
+|---|---|---|---|---|
+| current recall (71%) | 30 | **2.17 s** | 12/30 | **1** → covers 1/14 rallies |
+| with far-side fix | 31 | **1.35 s** | 14/31 | **6** → covers 4/14 rallies |
+
+**Root cause: a bounce pair with "no shot between" usually means we MISSED the shot
+between them.** At 71% shot recall that happens constantly. Double-bounce detection is
+therefore gated on SHOT RECALL, not on bounce tuning.
+
+### The chain, and why the far-side fix is upstream of everything
+
+```
+far-side player retention  ->  shot recall (recovers 4/4 opponent misses)
+        -> double-bounce detection becomes physical (1 -> 6 plausible)
+        -> rally END locatable
+        -> between-point balls FLAGGABLE by rally structure
+        -> clean stats + serve anchoring
+```
+Each step measurably improves the next. The intermediate state looks WORSE on raw counts
+(shots 83 -> 121 vs truth 98) because between-point balls are counted until flagging works
+— which is exactly the bootstrap the operator anticipated when he said to fix false
+positives first, then recall. The order has to invert here: **recall unlocks the machinery
+that makes flagging possible.**
+
 ## BETWEEN-POINT BALLS — the operator's two pose hypotheses TESTED AND REJECTED (2026-08-03)
 
 A second, ENRICHED operator labelling round (22 isolated candidates from 1:45 on;
