@@ -173,6 +173,51 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## RECALL MEASURED (2026-08-03) — and it is the FAR SIDE
+
+The operator marked every shot in a continuous 0:40–1:45 render (`label_shots.py
+--continuous`, `_labeling/missed_shots.csv`). First direct recall measurement:
+
+| | |
+|---|---|
+| real shots in span | 21 |
+| detected | 15 → **recall 71%** |
+| precision | 15/17 → **88%** (was 70% before the ground-ball filter) |
+
+**4 of the 6 misses are OPPONENTS.** Testing the stashed Stage 2.5 play-envelope fix
+against them: **it recovers 4 of 4 opponent misses** (0:47 serve, 1:08 dink, 1:20
+return, 1:38 volley drive). The two it does not recover are near-side (1:34 user serve,
+1:38 partner lob). **This validates the day-one far-side diagnosis with per-shot truth.**
+
+**Why it still cannot land:** clip-wide it takes shots 83 → 121 (truth 98), mean error
+25.6% → 42.4%, and it re-introduces the 0:55 ball the operator identified as *"the
+opponent throwing it back to my partner"*. The residual junk class is **airborne
+between-point balls (throws / feeds)**, which the ground-projection filter cannot catch
+by construction — a thrown ball really is in flight.
+
+### Signals tested for THROWN/FED balls — all UNDERPOWERED, none adopted
+
+Operator's hypothesis (2026-08-03), and a good one: *(a)* a thrown ball leaves the HAND,
+not the paddle; *(b)* the RECEIVER handles a fed ball differently — they catch it, or do
+not swing through. He explicitly warned that raw speed will not work ("a fed ball can be
+thrown quickly and a paddle shot can be slow"), and the data confirms that warning.
+
+| signal | real | junk | verdict |
+|---|---|---|---|
+| ball-to-wrist px at contact | med 77 | med 148 | **reversed** overall (rolling balls sit far from anyone). The 3 actual THROWS read 13/50/65 — closer than real, i.e. directionally right for (a), but **n=3** |
+| hitter wrist speed px/f | 1.4–36.4 | 2.3–56.1 | fully overlapping, exactly as the operator predicted |
+| **receiver swing-through** (b) | med **14.3** | med **15.3** | does not separate — but only **5** junk had usable pose |
+| ball comes to rest afterwards | med 125 px | med 269 px | **reversed** — junk travels MORE (rolling/fed balls keep going). My idea, not the operator's; his (b) is about the receiver's POSE, not the ball |
+
+**Pose coverage is NOT the blocker:** wrist data exists at ±6 frames for **83%** of shots
+(user 100%, partner 81%, opp_a 72%, opp_b 75%). A pose-based test is measurable; we
+simply lack labelled throws to validate one.
+
+**Status: not enough labelled feeds (3–5) to separate signal from noise.** Do not build
+on this sample — that is precisely how the in-play filter got through, and the operator's
+labels later showed it killed 9 of 21 real shots. Next step is a small ENRICHED labelling
+set (isolated shots in the unlabelled region, ~40% junk) rather than labelling everything.
+
 ## BOUNCE RECALL — FIVE THINGS TESTED AND REJECTED (2026-08-02). DO NOT RETRY.
 
 Bounce precision was identified as the highest-leverage target (it defines volleys, and
