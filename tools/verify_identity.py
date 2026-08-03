@@ -46,7 +46,7 @@ def load(clip: Path, name: str):
     return json.load(open(clip / name, encoding="utf-8"))
 
 
-def draw_court(img, court: dict) -> None:
+def draw_court(img, court: dict, envelope: bool = True) -> None:
     """Project THE USER'S court onto the frame.
 
     Non-negotiable: at a multi-court venue you cannot tell by eye which court is
@@ -78,12 +78,17 @@ def draw_court(img, court: dict) -> None:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, white, 2)
     cv2.putText(img, "NET", c2i(0.3, ln / 2 - 0.8),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, net_col, 2)
-    # the operator's play envelope — players legitimately serve from behind the
-    # baseline and chase wide, so this, not the rectangle, bounds "on our court"
-    ex, ey = 5.0, 15.0
-    env = [(-ex, -ey), (w + ex, -ey), (w + ex, ln + ey), (-ex, ln + ey)]
-    for a, b in zip(env, env[1:] + env[:1]):
-        line(a, b, (120, 255, 120), 2)
+    # The operator's PLAYER play envelope — players legitimately serve from behind the
+    # baseline and chase wide, so this, not the rectangle, bounds "is this person on
+    # our court". It does NOT apply to the BALL: operator 2026-08-02, "the ball must
+    # bounce within the court parameters" (22x20 each side) — anything outside is OUT.
+    # So it is suppressed wherever the question is about the ball (e.g. shot labelling),
+    # since showing it there invites judging a landing against the wrong boundary.
+    if envelope:
+        ex, ey = 5.0, 15.0
+        env = [(-ex, -ey), (w + ex, -ey), (w + ex, ln + ey), (-ex, ln + ey)]
+        for a, b in zip(env, env[1:] + env[:1]):
+            line(a, b, (120, 255, 120), 2)
 
 
 def tc(frame: int, fps: float) -> str:
