@@ -1,31 +1,23 @@
-shot_no,shot_id,time,hitter_role,hitter_side,true_type,true_volley,true_in,notes
-1,0,00:06.2,partner,near,drop,,y,next shot was volley by opponent at :03
-2,1,00:06.8,opp_b,far,drop,y,y,a volley shot hit near opponents baseline is a volley drop. (otherwise called volley dink). This is a fuzzy area so am defining it this way.
-3,2,00:08.1,partner,near,lob,,y,
-4,3,00:13.0,opp_b,far,drop,,y,next shot was volley by me (near)
-5,4,00:15.6,partner,near,dink,n,y,"in same time frame opponent hit dink to me, and I hit dink back. Partner was not involved."
-6,5,00:18.1,opp_b,far,dink,n,y,"at end of clip, after opponent hit dink to me, I hit backhand dink into the net"
-7,6,00:21.1,partner,near,between pts,,,rolling at net
-8,7,00:21.8,opp_b,far,between pts,,,rolling at net
-9,8,00:23.7,partner,near,between pts,,,partner hitting ball back to opponent between serves
-10,9,00:24.8,opp_a,far,between pts,,,opponent picking up ball after sent to them
-11,10,00:27.3,partner,near,,,,opponent getting ready to serve. Video cut off just before he serves
-12,11,00:33.9,partner,near,return,,y,
-13,12,00:42.2,user,near,return,,,return of server by opponent (far) that was hit into the net
-14,13,00:44.2,opp_b,far,between pts,,,opponent throwing ball to their partner to serve. Video cut off just as opponent was to serve.
-15,14,00:48.6,user,near,return,,y,which looks like it went out 
-16,15,01:01.5,partner,near,between pts,,,don't see a shot. 
-17,16,01:06.8,opp_a,far,serve,,y,
-18,17,01:07.6,partner,near,drive,,,possibly a return of serve but video has gap so not sure. Then opponent hit backhand into the net.
-19,18,01:12.3,opp_a,far,between shots,,,ball at net and opponent feeding ball to partner for next serve
-20,19,01:16.3,partner,near,serve,,y,
-21,20,01:21.5,user,near,drive,,y,
-22,21,01:22.5,opp_a,far,drive,y,y,contact by opponent hitting drive. 
-23,22,01:23.0,user,near,reset,,,reset. Hit too hard and pops up to opponent at kitchen
-24,23,01:23.9,opp_a,far,drive,,y,bounces in. I miss it. 
-25,24,01:29.5,user,near,between points,,,bouncing ball at baseline before serve
-26,25,01:35.5,opp_a,far,drive,,y,
-27,26,01:37.4,user,near,drive,,y,"backhand drive by me. After that, Video also shows volley at kitchen by opponent."
-28,27,01:41.2,opp_b,far,drive,,,drive by opponent.
-29,28,01:42.5,partner,near,dink,volley,,
-30,29,01:44.0,opp_a,far,lob,,,end of video segment shows partner hitting volley drive back to opponent
+shot_no,frame,shot_id,time,hitter_role,hitter_side,true_type,true_volley,true_in,notes
+36,6612,35,01:50.2,opp_b,far,drive,,,backhand drive into the net
+37,6760,36,01:52.7,user,near,between points,,,opponent picked up ball and hit it to user/partner with paddle
+41,7727,40,02:08.8,user,near,serve,,,
+49,8650,48,02:24.2,user,near,between points,,,"circle is on my paddle handle, but I don't have the ball. Then at same timeframe it switches to opponent picking up ball on side of net. No paddle used or ball thrown"
+50,8788,49,02:26.5,opp_a,far,between points,,,opponent hits ball with paddle to my near side
+51,8959,50,02:29.3,user,near,serve,,,
+57,9559,56,02:39.3,partner,near,between points,,,partner picks up and hits ball with paddle to opponents
+58,9917,57,02:45.3,opp_a,far,serve,,,
+59,10216,58,02:50.3,user,near,return,,,
+65,10802,64,03:00.0,partner,near,drive,,,opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball.
+66,11189,65,03:06.5,opp_a,far,between points,,,opponent hitting ball to partner (difficult to see. Could be throwing it)
+75,13186,74,03:39.8,user,near,serve,,,opponent serving the ball. And also includes user returning the serve and ends with oppponent driving ball back
+78,13980,77,03:53.0,partner,near,between points,,,partner hitting ball back using paddle
+79,14158,78,03:56.0,opp_b,far,between points,,,opponent stops / catches ball with paddle 
+80,14354,79,03:59.2,user,near,serve,,,"looks like serve by opponent however, there is no circle around anything during this segment"
+81,15128,80,04:12.1,user,near,drive,,,"circle jumps around a bit, but shot is a drive by opponent and it is missed by user/partner"
+82,15600,81,04:20.0,partner,near,between shots,,,"during this segment it is between shots and walking to the ball. However, the circle is around a ball being picked up and hit with paddle by a player from the next court.  Their ball rolled onto our court. "
+83,15710,82,04:21.8,opp_b,far,not ours,,,looks like the contact is due to the person on the other court catching/hitting the ball that they hit onto our court
+84,16050,83,04:27.5,partner,near,between points,,,partner hitting ball with paddle to opponents between points
+85,17023,84,04:43.7,partner,near,drive,,,looks like opponent may have served it but not enough video to tell. It's hit to my partner who drives it with a backhand and ends with opponent about to drive it back.
+88,17656,87,04:54.3,opp_b,far,,,,looks like shot on other court
+89,17884,88,04:58.1,user,near,serve,,,

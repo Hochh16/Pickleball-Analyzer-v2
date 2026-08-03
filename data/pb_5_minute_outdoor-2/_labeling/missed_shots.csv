@@ -1,0 +1,10 @@
+time,who,true_type,notes
+42.2,,,not a shot. Green circle around something near user that is not a ball
+44.25,,,not a shot. Green circle around Ball being thrown between far side partners
+47.25,opponent,serve,
+01:08.2,opponent,dink,opponent hit backhand dink into the net. End of point
+01:20.3,opponent,return,
+01:21.7,partner,drive,"correctly identified who and time, however, the green circle was around my ankle and not the ball"
+01:34.2,user,serve,
+01:38.1,opponent,volley drive,
+01:38.8,partner,lob,

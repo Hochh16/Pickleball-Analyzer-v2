@@ -173,6 +173,61 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## BETWEEN-POINT BALLS — the operator's two pose hypotheses TESTED AND REJECTED (2026-08-03)
+
+A second, ENRICHED operator labelling round (22 isolated candidates from 1:45 on;
+`_labeling/labels.csv`) gave 11 real / 11 junk — 50% junk, so the enrichment worked.
+The composition kills both hypotheses, for reasons that are physical, not statistical.
+
+### What the between-point balls actually ARE
+
+| delivery | n | consequence |
+|---|---|---|
+| **hit WITH A PADDLE** | **7** | hypothesis (a) — thrown-leaves-the-hand — cannot catch these; they *are* paddle shots |
+| thrown (or possibly) | 2 | (a) applies, but this is the minority |
+| **ADJACENT-COURT ball** | **3** | a completely different failure — see below |
+
+### Hypothesis (a) — thrown ball leaves the HAND, not the paddle
+Dead on arrival: **7 of 11 feeds are struck with a paddle** ("opponent picked up ball and
+hit it to user/partner with paddle", "partner picks up and hits ball with paddle").
+A hand-vs-paddle test cannot separate a paddle-fed ball from a paddle-struck shot.
+
+### Hypothesis (b) — the RECEIVER catches it or does not swing through
+Tested two ways on the combined label set (32 real / 20 junk):
+
+| measure | REAL | JUNK | verdict |
+|---|---|---|---|
+| receiver wrist displacement | med 14.3 | med 12.7 | overlapping |
+| receiver **FORWARD** swing (wrist motion projected on the outgoing ball direction — the operator's actual wording, "little forward motion") | med 9.00 | med 5.74 | overlapping; **every threshold costs as many real shots as it catches junk** (e.g. <3 catches 4/12 junk, costs 4/21 real) |
+
+**The physical reason it cannot work:** a real **block, reset or dink IS a non-swing
+shot.** "Didn't swing through" does not distinguish a feed from a soft defensive shot —
+the two are the same gesture. This is a property of the sport, not of our pose data
+(coverage is 83% at the needed frames, so data is not the limit).
+
+### What the labels DID surface
+
+1. **ADJACENT-COURT contamination is live: 3 of 11 junk.** *"a ball being picked up and hit
+   with paddle by a player from the NEXT COURT — their ball rolled onto our court"*,
+   *"looks like shot on other court"*. Known issue C1, still biting.
+2. **5 near/far ATTRIBUTION errors** — we say user/partner (near), the operator says
+   opponent. Independent confirmation of the far-side gap that the play-envelope fix
+   addresses (it recovers 4 of 4 opponent misses).
+3. **4 ball-track failures flagged by eye:** *"circle is on my paddle handle, but I don't
+   have the ball"*, *"no circle around anything during this segment"*, *"circle jumps
+   around a bit"*. Stage 4 errors visible to the operator.
+
+### Conclusion — stop trying to classify feeds PER SHOT
+
+A paddle-fed between-point ball is, physically, a real paddle shot. The only thing making
+it "not a shot" is GAME CONTEXT (it happens between points). Three independent per-shot
+signals have now failed on it (ground projection catches only the ground-level subset;
+hand-vs-paddle; receiver swing). **Recommended: stop deleting them and FLAG them instead**
+— `is_between_point`, excluded from statistics but retained and rendered, per the original
+`SERVE_ANCHORED_RALLIES_DESIGN` §2c ("logged, never silently removed"). That converts an
+unsolved per-shot classification problem into a rally-segmentation one, where the operator's
+dead-time framing applies.
+
 ## RECALL MEASURED (2026-08-03) — and it is the FAR SIDE
 
 The operator marked every shot in a continuous 0:40–1:45 render (`label_shots.py
