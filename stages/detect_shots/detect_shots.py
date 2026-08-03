@@ -29,7 +29,12 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.3.0"  # 0.2.0: real-ball adaptations (see contract "Real-ball
+STAGE_VERSION = "0.4.0"  # 0.3.0 -> 0.4.0: GROUND-BALL rejection. Operator per-shot
+                         # labels showed 30% of detected "shots" were balls rolled at
+                         # the net, picked up, or bounced pre-serve. The ground
+                         # homography is valid only at z=0, so an airborne struck ball
+                         # projects far off court while a ground ball does not.
+                         # 0.2.0: real-ball adaptations (see contract "Real-ball
                          # adaptations"). 0.3.0: adjacent-court contamination gates
                          # (serve-run-length + impulse teleport-in), real ball only.
 
@@ -76,6 +81,17 @@ POINT_DEAD_GAP_S = 3.0           # dead time after an un-returned shot = the poi
 # serve even when its point-end went undetected (the mutual constraint alone over-rejects
 # whenever a return-timing point-end is missed). Recovers far-side / missed-end serves.
 POINT_MIN_INTER_SERVE_S = 10.0
+# GROUND-BALL rejection (operator per-shot labels, 2026-08-03). 30% of detected
+# "shots" were not shots at all -- balls rolled at the net, a ball picked up, a ball
+# bounced before serving. They are separable on PHYSICS, not on rally structure: the
+# ground homography is valid only at z=0, so an airborne struck ball projects far off
+# the court while a ball ON the ground projects sensibly. Real shots measured <= 0.63
+# grounded; the junk this catches starts at 0.76.
+GROUNDED_WINDOW_S = 1.0
+GROUNDED_MAX_FRAC = 0.70    # >= this share of samples on the ground => not a shot
+GROUND_PLAUSIBLE_MARGIN_FT = 8.0
+COURT_WIDTH_FT = 20.0
+COURT_LENGTH_FT = 44.0
 REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresholds scale by frame_width/this
 REFERENCE_FPS = 30.0  # fps the frame-count windows were tuned at; they scale by fps/this
 
@@ -252,6 +268,38 @@ def project_to_court(M: np.ndarray, px: float, py: float) -> Tuple[float, float]
     if abs(v[2]) < EPS or not np.all(np.isfinite(v)):
         return float("nan"), float("nan")
     return float(v[0] / v[2]), float(v[1] / v[2])
+
+
+def grounded_fraction(M: np.ndarray, fx, fy, known, frame: int, half_window: int,
+                      min_samples: int = 6) -> Optional[float]:
+    """Fraction of nearby ball samples whose GROUND projection is plausible.
+
+    The discriminator for "the ball is on the court surface, not in flight". The
+    ground homography is only valid at z=0: a ball in the AIR projects far off the
+    court (the ledger measured court_y 75-150 ft for airborne balls), while a ball
+    ON the ground projects sensibly. So a high fraction means the ball was never
+    really airborne through this event -- it was rolling, sitting, or being bounced.
+
+    Measured against operator per-shot labels (2026-08-03, 21 real shots vs 9
+    labelled not-a-shot): real shots reach at most **0.63**; the between-point balls
+    it catches start at **0.76** -- a genuine gap, not a tuned edge. Catches balls
+    ROLLED at the net, a ball being picked up, and pre-serve bouncing. It does NOT
+    catch a ball THROWN to the server (that really is airborne) -- see KNOWN_ISSUES.
+
+    Returns None when too few samples exist to judge (never reject on no evidence).
+    """
+    lo, hi = max(0, frame - half_window), min(len(fx) - 1, frame + half_window)
+    n = ok = 0
+    for i in range(lo, hi + 1):
+        if not known[i]:
+            continue
+        n += 1
+        cx, cy = project_to_court(M, float(fx[i]), float(fy[i]))
+        if (math.isfinite(cx) and math.isfinite(cy)
+                and -GROUND_PLAUSIBLE_MARGIN_FT <= cx <= COURT_WIDTH_FT + GROUND_PLAUSIBLE_MARGIN_FT
+                and -GROUND_PLAUSIBLE_MARGIN_FT <= cy <= COURT_LENGTH_FT + GROUND_PLAUSIBLE_MARGIN_FT):
+            ok += 1
+    return (ok / n) if n >= min_samples else None
 
 
 # --- Core detection ----------------------------------------------------------
@@ -806,6 +854,22 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     if params.get("handling_filter"):
         shots, n_same_track = reject_same_track_repeats(shots, params["rally_gap_frames"])
     shots.sort(key=lambda s: s["frame"])
+    # Drop GROUND BALLS: events where the ball never actually flew (rolled at the net,
+    # picked up, bounced before a serve). Physics-based, so it needs no knowledge of
+    # rally boundaries -- unlike the cross-net "in-play" test, which the same operator
+    # labels showed kills 9 of 21 REAL shots and misses 4 of 9 junk ones, because a
+    # ball rolled back at the net does cross the net.
+    n_ground_ball = 0
+    if params.get("contamination_filter"):
+        kept = []
+        for s in shots:
+            gf = grounded_fraction(court_M, fx, fy, known, int(s["frame"]),
+                                   params["grounded_window_frames"])
+            if gf is not None and gf >= params["grounded_max_frac"]:
+                n_ground_ball += 1
+                continue
+            kept.append(s)
+        shots = kept
     # Unified point-boundary detection (operator method): re-derive is_serve + flag
     # between-point balls from the SERVE->...->POINT-END structure (combines depth,
     # return-timing, dead-time + the one-serve-per-point constraint). Real ball only.
@@ -841,6 +905,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_rejected_serve_blip": n_rejected_serve_blip,
         "n_rejected_teleport_in": n_rejected_teleport,
         "n_serve_deduped": n_serve_dedup,
+        "n_rejected_ground_ball": n_ground_ball,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
     }
@@ -949,6 +1014,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "point_return_frames": int(round(POINT_RETURN_S * float(fps))),
         "point_dead_gap_frames": int(round(POINT_DEAD_GAP_S * float(fps))),
         "point_min_inter_serve_frames": int(round(POINT_MIN_INTER_SERVE_S * float(fps))),
+        "grounded_window_frames": int(round(GROUNDED_WINDOW_S * float(fps))),
+        "grounded_max_frac": GROUNDED_MAX_FRAC,
         "net_y_ft": court["net_y_ft"],
         "resolution_scale": round(res_scale, 4),
         "reference_width_px": REFERENCE_WIDTH_PX,

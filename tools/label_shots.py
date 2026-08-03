@@ -168,11 +168,14 @@ def build(clip: Path, args):
     csv_path = out_dir / "labels.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["shot_no", "shot_id", "time", "hitter_role", "hitter_side",
-                    "true_type", "true_volley", "true_in", "notes"])
+        # `frame` is the STABLE key. shot_id is assigned by enumeration, so any
+        # change to detection renumbers every shot and silently invalidates labels
+        # keyed on it -- that bit us on 2026-08-03. Always match on frame.
+        w.writerow(["shot_no", "frame", "shot_id", "time", "hitter_role",
+                    "hitter_side", "true_type", "true_volley", "true_in", "notes"])
         for pos, s in sel:
             t = s["frame"] / fps
-            w.writerow([pos, s["shot_id"], f"{int(t // 60)}:{t % 60:04.1f}",
+            w.writerow([pos, s["frame"], s["shot_id"], f"{int(t // 60)}:{t % 60:04.1f}",
                         roles.get(s["track_id"], "?"), s.get("hitter_side", ""),
                         "", "", "", ""])
     print(f"\nwrote {out_dir / 'reel.mp4'}  ({len(sel)} shots)")
@@ -187,7 +190,31 @@ def score(clip: Path):
     csv_path = clip / "_labeling" / "labels.csv"
     if not csv_path.exists():
         raise SystemExit(f"no labels at {csv_path} — run the build mode first")
-    cls = {s["shot_id"]: s for s in load(clip, "classified.json")["shots"]}
+    cls_shots = load(clip, "classified.json")["shots"]
+    shots = {s["shot_id"]: s for s in load(clip, "shots.json")["shots"]}
+    by_frame = {}
+    for c in cls_shots:
+        fr = shots.get(c["shot_id"], {}).get("frame")
+        if fr is not None:
+            by_frame[int(fr)] = c
+
+    def lookup(row):
+        """Find our classification for a labelled row. Match on FRAME (stable);
+        fall back to shot_id only for label files written before the frame column
+        existed -- shot_id is re-enumerated whenever detection changes."""
+        fr = (row.get("frame") or "").strip()
+        if fr:
+            f = int(float(fr))
+            best = min(by_frame, key=lambda k: abs(k - f), default=None)
+            return by_frame.get(best, {}) if best is not None and abs(best - f) <= 3 else {}
+        t = (row.get("time") or "").strip()
+        if t and ":" in t:
+            m, sec = t.split(":")
+            f = int(round((int(m) * 60 + float(sec)) * 60.0))
+            best = min(by_frame, key=lambda k: abs(k - f), default=None)
+            return by_frame.get(best, {}) if best is not None and abs(best - f) <= 4 else {}
+        return {}
+
     all_rows = list(csv.DictReader(csv_path.open(encoding="utf-8-sig")))
     # A label of "between pts/shots/points" (or a blank with a note) means the
     # detection is NOT A SHOT at all -- a feed, a ball rolled back, ball handling.
@@ -211,7 +238,7 @@ def score(clip: Path):
         if junk:
             c = defaultdict(int)
             for r in junk:
-                c[(cls.get(int(r["shot_id"]), {}).get("shot_type") or "?")] += 1
+                c[(lookup(r).get("shot_type") or "NOT DETECTED")] += 1
             print(f"  the pipeline typed them as: "
                   f"{', '.join(f'{k} x{v}' for k, v in sorted(c.items()))}")
     if not rows:
@@ -220,14 +247,14 @@ def score(clip: Path):
     conf = defaultdict(int)
     vol_ok = vol_n = 0
     for r in rows:
-        sid = int(r["shot_id"])
         truth = r["true_type"].strip().lower()
-        pred = (cls.get(sid, {}).get("shot_type") or "missing").lower()
+        got = lookup(r)
+        pred = (got.get("shot_type") or "NOT-DETECTED").lower()
         conf[(truth, pred)] += 1
         tv = (r.get("true_volley") or "").strip().lower()
         if tv in ("y", "n"):
             vol_n += 1
-            if (tv == "y") == bool(cls.get(sid, {}).get("is_volley")):
+            if (tv == "y") == bool(got.get("is_volley")):
                 vol_ok += 1
 
     types = sorted({t for t, _ in conf} | {p for _, p in conf})
