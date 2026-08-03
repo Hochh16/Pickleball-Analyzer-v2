@@ -103,6 +103,39 @@ what is measured, partial, or not yet available.**
    wrong — trace the 7 actual restart points rather than tuning blind.
 4. **Then** rebuild the report.
 
+## BOUNCE RECALL — FIVE THINGS TESTED AND REJECTED (2026-08-02). DO NOT RETRY.
+
+Bounce precision was identified as the highest-leverage target (it defines volleys, and
+the operator's ruling makes the LANDING the primary shot-type signal). The deficit is
+**71 bounces vs 81 truth**, i.e. ~10 missing, with 23 non-volley shots carrying no
+landing. Five candidate causes were measured on `pb_5_minute_outdoor-2`. **All five are
+NOT the cause** — recall is not threshold-limited:
+
+| # | hypothesis | result | verdict |
+|---|---|---|---|
+| 1 | the one-per-interval cap keeps the WRONG bounce | in **33/33** intervals with a choice, the most-confident candidate **is** the earliest — i.e. already the physically correct landing | cap is sound |
+| 2 | multi-candidate intervals hide a MISSED SHOT (so 2 landings are real and one is deleted) | single-candidate intervals median gap **1.49 s** (a normal exchange); multi-candidate **3.8–7.9 s** → they are DEAD TIME, not missed shots | not the cause |
+| 3 | the away-from-camera confound cancels the bounce signature (per the 2026-07-21 finding) | missing-landing rate **near-side 27%** vs **far-side 34%** — roughly equal, and if anything the opposite of the prediction | not dominant here |
+| 4 | `BOUNCE_MAX_OUT_OF_COURT_FT = 8.0` rejects real out-balls | widening to 12/16 ft gained **+1 bounce**; mean error unchanged | no effect — and see the operator rule below |
+| 5 | occlusion — the ball is invisible at the bounce | intervals with NO bounce have **HIGHER** ball visibility (median **92%**) than those with one (**83%**) | **not the cause** |
+
+Prominence was also swept (9.0 → 6.0 → 4.5 → 3.0 px): bounces 71 → 74, identity gap +5 →
++2, but **mean error got WORSE** (22.9% → 23.1%) as false dinks rose. The 2026-07-20 note
+"do NOT globally lower the bounce prominence" still holds.
+
+> **OPERATOR RULE (2026-08-02):** the **15 ft beyond-the-baseline envelope applies to
+> PLAYERS ONLY** — where they may run. **The BALL must bounce within the court
+> parameters.** So the ball's out-of-court margin must NOT be widened to match the player
+> envelope; if anything it wants tightening. (Corrects an assumption made while testing
+> hypothesis 4.) See [[project_pickleball_domain_rules]].
+
+**Conclusion:** the ~10 missing bounces sit in intervals where the ball is clearly
+visible, the cap is choosing correctly, and no threshold recovers them. They need a
+DIFFERENT SIGNAL, not tuning — the documented candidate is the deferred 3-D
+projectile/parabola trajectory fit, which the 2026-07-19 analysis already flagged as
+addressing soft-vs-drive, volley detection AND speed at once. Do not spend more time on
+thresholds here.
+
 ## IDENTITY VALIDATED BY RENDER (2026-08-01) — root cause is the FAR side, not user/partner
 
 The 2026-07-27 handoff named user/partner identity (Stage 2.5) as the next foundation,
