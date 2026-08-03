@@ -285,6 +285,125 @@ def score(clip: Path):
     print()
 
 
+
+def continuous(clip: Path, args):
+    """Render a CONTINUOUS span with every DETECTED shot flagged, to measure RECALL.
+
+    The labelling reel can only show shots we FOUND, so it can never reveal the ones
+    we MISS -- and missing shots are currently the larger error (~15 of 98, including
+    6 of the operator's 14 serves). This renders real time instead: a running clock,
+    the ball, and a loud flash + counter on every detection. Anything the operator
+    sees struck with NO flag on screen is a shot we never detected; they note its
+    timestamp in missed_shots.csv.
+
+    Written at HALF the source frame rate so it plays at 0.5x -- a paddle strike at
+    60fps is a few frames, and marking it at real speed is guesswork.
+    """
+    shots = sorted(load(clip, "shots.json")["shots"], key=lambda s: s["frame"])
+    fps = float(load(clip, "shots.json").get("fps") or 60.0)
+    court = load(clip, "court.json")
+    roles = {int(t): i["role"] for t, i in
+             load(clip, "track_roles.json")["track_roles"].items()}
+    import pandas as pd
+    ball = pd.read_parquet(clip / "ball.parquet").set_index("frame_idx")
+
+    def tosec(t):
+        if ":" in str(t):
+            m, sec = str(t).split(":")
+            return int(m) * 60 + float(sec)
+        return float(t)
+
+    a, b = args.continuous.split("-")
+    f0, f1 = int(tosec(a) * fps), int(tosec(b) * fps)
+    hits = {int(s["frame"]): s for s in shots if f0 <= s["frame"] <= f1}
+    print(f"span {a}..{b}  ({(f1 - f0) / fps:.0f}s)  {len(hits)} detected shots inside")
+
+    out_dir = clip / "_labeling"
+    out_dir.mkdir(exist_ok=True)
+    cap = cv2.VideoCapture(str(clip / "video.mp4"))
+    W = args.width
+    src_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 3840
+    src_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 2160
+    H = int(src_h * W / src_w)
+    raw = out_dir / "_cont_raw.mp4"
+    vw = cv2.VideoWriter(str(raw), cv2.VideoWriter_fourcc(*"mp4v"), fps / 2.0, (W, H))
+
+    trail = deque(maxlen=14)
+    recent = deque(maxlen=4)
+    n = 0
+    f = 0
+    while f <= f1:
+        if f < f0:
+            if not cap.grab():
+                break
+            f += 1
+            continue
+        ok, img = cap.read()
+        if not ok:
+            break
+        draw_court(img, court, envelope=False)
+        if f in ball.index:
+            r = ball.loc[f]
+            if bool(r["visible"]) and not np.isnan(r["pixel_x"]):
+                trail.append((int(r["pixel_x"]), int(r["pixel_y"])))
+        for tx, ty in trail:
+            cv2.circle(img, (tx, ty), 5, (0, 140, 255), -1)
+        if trail:
+            cv2.circle(img, trail[-1], 20, (0, 0, 255), 4)
+        flash = None
+        for d in range(-3, 4):
+            if f + d in hits:
+                flash = hits[f + d]
+                break
+        if flash is not None and f == flash["frame"]:
+            n += 1
+            t = flash["frame"] / fps
+            recent.append(f"#{n} {int(t // 60)}:{t % 60:04.1f} "
+                          f"{roles.get(flash['track_id'], '?')}")
+        if flash is not None:
+            cv2.circle(img, tuple(int(v) for v in flash["impact_pixel_xy"]),
+                       80, (0, 255, 0), 8)
+        small = cv2.resize(img, (W, H))
+        t = f / fps
+        bar = np.zeros((84, W, 3), np.uint8)
+        cv2.putText(bar, f"{int(t // 60)}:{t % 60:05.2f}", (10, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.25, (255, 255, 255), 3)
+        cv2.putText(bar, "GREEN RING = shot WE detected.  No ring on a real strike"
+                         " = MISSED - note the time.", (250, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.putText(bar, " | ".join(recent), (250, 62),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+        vw.write(np.vstack([bar, small[:H - 84]]))
+        f += 1
+    cap.release()
+    vw.release()
+
+    final = out_dir / "continuous.mp4"
+    try:
+        import subprocess
+        import imageio_ffmpeg
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-i", str(raw),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(final)],
+                       check=True, capture_output=True)
+        raw.unlink()
+    except Exception as e:
+        raw.replace(final)
+        print(f"  (H.264 re-encode unavailable: {e})")
+
+    miss = out_dir / "missed_shots.csv"
+    if not miss.exists():
+        with miss.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["time", "who", "true_type", "notes"])
+            for _ in range(15):
+                w.writerow(["", "", "", ""])
+    print(f"\nwrote {final}  (plays at 0.5x)")
+    print(f"wrote {miss}  - add one row per shot you see with NO green ring")
+    print(f"\n{len(hits)} shots are flagged in this span. Anything struck without "
+          f"a ring is a recall miss.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clip", required=True)
@@ -298,9 +417,16 @@ def main():
     ap.add_argument("--show-prediction", action="store_true",
                     help="overlay our predicted type (biases the label — off by default)")
     ap.add_argument("--score", action="store_true", help="score a filled labels.csv")
+    ap.add_argument("--continuous", default="",
+                    help="render a continuous span to measure RECALL, e.g. '0:40-1:45'")
     args = ap.parse_args()
     clip = Path(args.clip)
-    score(clip) if args.score else build(clip, args)
+    if args.score:
+        score(clip)
+    elif args.continuous:
+        continuous(clip, args)
+    else:
+        build(clip, args)
 
 
 if __name__ == "__main__":
