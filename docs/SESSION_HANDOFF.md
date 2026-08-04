@@ -1,3 +1,83 @@
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-04)
+
+## 2026-08-04 — READ FIRST: NEXT ACTION IS BALL LABELLING (indoor, 4K/60)
+
+### Start here tomorrow
+
+Five NEW indoor clips at the required capture standard (**4K / 60 fps**) are
+materialised and ready. **Label two of them, then the retrain can run.**
+
+```
+python tools/label_ball.py --video data/indoor_B1_3min/video.mp4 --out data/indoor_B1_3min/ball_labels.json
+python tools/label_ball.py --video data/indoor_C1_3min/video.mp4 --out data/indoor_C1_3min/ball_labels.json
+```
+
+Left-click = ball here (advances) · Spacebar/right-click = not visible · Backspace =
+undo · Esc = save+quit. Auto-saves every 25 labels and RESUMES if relaunched with the
+same `--out`, so it can be done in sittings.
+
+- **Keep the default `--sample-every 3`.** `densify_labels` interpolates the ball
+  between consecutive visible labels up to 4 frames apart, so labelling every 3rd
+  frame yields **~2.7x that many visible training samples**. Labelling sparser than
+  every 4th frame loses the multiplier entirely.
+- **Target ~1000 labels per clip** (≈1,860 samples, ≈1,350 visible each). Two clips
+  ≈ **2,700 visible indoor samples vs the 1,354 that exist today — roughly 3x.**
+- **Spread across the clip**, don't label one contiguous block: varied ball positions,
+  speeds and occlusions matter more than density.
+- **Do NOT label `indoor_A_5min`** — it is the held-out unseen test clip.
+
+Court calibration is NOT needed for ball labelling (only the video). It is needed
+later to run the full pipeline on these clips.
+
+### Why this, and why it is measurable
+
+Indoor ball recall is **0.61 against a 0.80 bar** and the July analysis concluded it is
+a DATA problem, not a technique problem. This is the one workstream where measurement is
+objective — per-venue recall against labelled frames, a defined threshold, a held-out
+clip — unlike shot type, where per-type samples are n=1-3 and two principled rule fixes
+produced no measurable movement (34% -> 38%, all of it from adding `return`).
+
+### Clip inventory (materialised into data/ as hardlinks, no disk cost)
+
+| folder | source | length | use |
+|---|---|---|---|
+| `indoor_A_5min` | PB 5 min indoor 1 court A | 5.1 min | **HELD OUT — do not label** |
+| `indoor_B1_3min` | PB 3 min indoor 1 court B | 3.1 min | **label this** |
+| `indoor_C1_3min` | PB 3 min indoor 1 court C | 3.0 min | **label this** |
+| `indoor_B2_3min` | PB 3 min indoor 2 Court B | 3.3 min | reserve |
+| `indoor_C2_3min` | PB 3 min indoor 2 court C | 3.1 min | reserve |
+
+Operator note: these are the **same indoor court**, different angles and some different
+players. So the held-out clip tests ANGLE/PLAYER generalisation, **not** new-venue
+generalisation. Fixing indoor recall here is still worth it (it is where the operator
+plays); cross-venue remains a later question needing a different facility.
+
+⚠ **`indoor_b` and `indoor_c` (lowercase) are 30 fps / 1080p — SUPERSEDED, do not
+train on them.** They were captured before the 4K/60 standard. Their 3,279 visible
+labels are not usable: the v4 breakthrough came from the capture change to 4K/60, and
+at 1080p the ball is ~half the pixels (cf. the "512x288 trap").
+
+### After labelling (my side, then one Colab step)
+
+1. `python -m stages.finetune_ball_model.prepare_v4 data/<clip> --clip <clip>` — 720p
+   frame cache + manifest.
+2. Add the clips to `CLIPS` in `tools/build_v4_train_bundle.py`, rebuild the bundle.
+3. Colab: warm-start from the 0.90 baseline, all venues, **`indoor_A_5min` held out
+   entirely**. **GATE: home (pb_2min) must NOT regress** — Run-2 showed multi-venue
+   training costs same-court precision (home fp 0.018 -> 0.10-0.24 for >=0.90 recall);
+   the fp-capped selection exists for this.
+4. `reality_check_v4.ipynb` — per-venue recall, target >= 0.80 each.
+
+### State of the pipeline (unchanged by the above)
+
+`tools/score_acceptance.py` is the one-command scorecard. Current: **shots 121 vs 98,
+mean error 38%** — high because between-point balls are counted, which is an ACCEPTED,
+documented limitation (KNOWN_ISSUES "Stage 7 - RALLY END is undetectable"). Serves
+**12/14**. Bounces 77 vs 81, the best recorded. Do not chase the counts without reading
+that entry first — six rally-end routes are recorded as measured-and-failed.
+
+---
+
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-01)
 
 ## 2026-08-01 — READ FIRST: identity RENDER-VALIDATED; the foundation gap is the FAR SIDE

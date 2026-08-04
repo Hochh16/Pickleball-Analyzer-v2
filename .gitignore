@@ -67,3 +67,4 @@ data/models/dettor_savedmodel/
 
 # Setup-wizard video drop folder (local clips, like data/)
 /videos/
+data/indoor_*/video.mp4
