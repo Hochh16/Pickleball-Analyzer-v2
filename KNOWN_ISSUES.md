@@ -63,6 +63,38 @@ and (b) improving **shot recall** past 71%, which is what makes double-bounce de
 physical (measured: plausible double bounces 1 -> 6 when far-side players are retained).
 Do NOT retry the six routes in the table above.
 
+## Stage 5 - Two serves missed at 1:04 and 1:33 (OPEN lead: adjacent-court players)
+
+**Observed:** 2026-08-03, after the Stage 2.5 play envelope landed. Serve detection is
+**12/14** against operator truth. The two failures have DIFFERENT causes:
+
+| serve | what happened | cause |
+|---|---|---|
+| **1:04** | the shot IS detected (1:01.5, partner, 25.3 ft from net, 6.5 s gap — it passes both the depth and gap tests) but the serve rule rejects it | serve LOGIC |
+| **1:33** | **no shot detected at all** within 2.5 s | shot DETECTION |
+
+**Operator observation (the lead):** *"both are very clear serves by my partner and then
+myself. And all players are positioned exactly as the rule states. There are people
+playing on the court BEHIND the opponents so perhaps that is the cause."*
+
+That is a plausible and specific hypothesis, and it is consistent with independent
+evidence from the same session: **3 of 11 labelled between-point balls were adjacent-court
+balls** (*"a ball being picked up and hit with paddle by a player from the NEXT COURT —
+their ball rolled onto our court"*, *"looks like shot on other court"*). So adjacent-court
+activity is demonstrably reaching our data. Two mechanisms could produce these misses:
+- the **ball tracker** locks onto the neighbouring court's ball at that moment (would
+  explain 1:33, where no shot is detected at all);
+- extra far-side **tracks** perturb role assignment or the deep-player count.
+
+**Operator decision: move on.** Two cases is too thin to tune against — that is how the
+in-play filter got built and later killed. Re-examine when more videos are analysed and
+the pattern either repeats or does not.
+
+**Also open, larger than the 2 misses:** **5 FALSE serves** (0:13, 0:55, 1:35, 2:24, 4:27)
+— detected serve count is 17 vs truth 14. **0:55 and 2:24 are balls the operator already
+labelled as FEEDS**, so 2 of the 5 are the accepted between-point limitation surfacing in
+the serve count, not a separate serve bug.
+
 ## Stage 5 - A FAULTED serve is indistinguishable from a FEED (operator-accepted, deferred)
 
 **Observed:** 2026-08-01, `pb_5_minute_outdoor-2`, while building the in-play /
