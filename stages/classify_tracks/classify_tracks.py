@@ -29,13 +29,25 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.1.0"
+STAGE_VERSION = "0.2.0"
 
 # --- Config -----------------------------------------------------------------
 NOISE_MIN_LIFETIME_S = 1.0
-NOISE_COURT_Y_MIN_FT = -8.0
-NOISE_COURT_Y_MAX_FT = 44.0
-NOISE_MIN_IN_COURT_FRAC = 0.15
+# PLAY ENVELOPE (operator, 2026-08-01) -- players are NOT confined to the 20x44 court.
+# They serve from BEHIND the baseline and chase balls wide, so the court rectangle is
+# the wrong boundary for "is this person playing on our court". Real envelope: 5 ft
+# beyond each sideline, 15 ft beyond each baseline.
+#
+# The old rule cut at the baseline (`med_y <= 44`) and additionally required a floor on
+# `in_court_frac` -- computed against the strict rectangle. Together those discarded
+# far-side SERVERS by construction: standing behind the baseline means out-of-rectangle.
+# Measured on pb_5_minute_outdoor-2: at every operator-identified opponent serve (0:47,
+# 3:39, 4:05, 4:43) BOTH opponents were detected 1-10 ft behind the far baseline
+# (court_y 45-54) and BOTH were classified `noise`. Adjacent-court people separate
+# cleanly beyond the envelope (measured 59-115 ft).
+PLAY_MARGIN_SIDE_FT = 5.0
+PLAY_MARGIN_BASELINE_FT = 15.0
+NOISE_MIN_IN_ENVELOPE_FRAC = 0.15
 HEIGHT_PCTL = 75            # percentile of bbox height (approx standing)
 HEIGHT_TOL_FT = 0.9         # height-similarity tolerance
 SIMULTANEITY_MAX = 0.30     # frame-overlap with the user => can't be the user
@@ -81,6 +93,11 @@ def load_court(path: Path) -> dict:
     return {
         "width_ft": float(width), "length_ft": float(length),
         "net_y": float(length) / 2.0,
+        # the region a player may legitimately occupy (see PLAY_MARGIN_* above)
+        "env_x_min": -PLAY_MARGIN_SIDE_FT,
+        "env_x_max": float(width) + PLAY_MARGIN_SIDE_FT,
+        "env_y_min": -PLAY_MARGIN_BASELINE_FT,
+        "env_y_max": float(length) + PLAY_MARGIN_BASELINE_FT,
         "ppf_near": derived.get("pixels_per_foot_at_near_baseline"),
         "ppf_far": derived.get("pixels_per_foot_at_far_baseline"),
         "fps": video.get("fps") or 30.0,
@@ -122,6 +139,14 @@ def summarize_tracks(df: pd.DataFrame, court: dict) -> Dict[int, dict]:
             "lifetime_s": (f1 - f0 + 1) / court["fps"],
             "med_x": med_x, "med_y": med_y,
             "in_court_frac": float(t["in_court"].mean()),
+            # share of the track spent inside the PLAY ENVELOPE. Replaces
+            # in_court_frac for the noise test: `in_court` is measured against the
+            # strict 20x44 rectangle, which a player serving from behind the
+            # baseline fails by definition.
+            "in_env_frac": float((
+                (cx >= court["env_x_min"]) & (cx <= court["env_x_max"])
+                & (cy >= court["env_y_min"]) & (cy <= court["env_y_max"])
+            ).mean()) if len(cy) else 0.0,
             "is_user_frac": float(t["is_user"].mean()),
             "height_ft": height_ft,
             "frame_set": set(int(f) for f in frames),
@@ -361,12 +386,22 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     tracks = summarize_tracks(df, court)
     role: Dict[int, dict] = {}  # tid -> {role, confidence, basis}
 
-    # 1. Noise
+    # 1. Noise — judged against the PLAY ENVELOPE, not the court rectangle, so that a
+    #    player serving from behind the baseline is kept (see PLAY_MARGIN_* above).
+    n_behind_baseline = 0
     for tid, tr in tracks.items():
+        in_env = (court["env_x_min"] <= tr["med_x"] <= court["env_x_max"]
+                  and court["env_y_min"] <= tr["med_y"] <= court["env_y_max"])
         if (tr["lifetime_s"] < NOISE_MIN_LIFETIME_S
-                or not (NOISE_COURT_Y_MIN_FT <= tr["med_y"] <= NOISE_COURT_Y_MAX_FT)
-                or tr["in_court_frac"] < NOISE_MIN_IN_COURT_FRAC):
-            role[tid] = {"role": "noise", "confidence": 0.9, "basis": "out-of-court/short"}
+                or not in_env
+                or tr["in_env_frac"] < NOISE_MIN_IN_ENVELOPE_FRAC):
+            role[tid] = {"role": "noise", "confidence": 0.9, "basis": "out-of-envelope/short"}
+        elif not (0.0 <= tr["med_y"] <= court["length_ft"]):
+            n_behind_baseline += 1
+    if n_behind_baseline:
+        log.info("play envelope: kept %d track(s) whose median sits BEHIND a baseline "
+                 "(serving / chasing) that the old court-rectangle rule discarded",
+                 n_behind_baseline)
 
     live = [tr for tid, tr in tracks.items() if tid not in role]
     near = [tr for tr in live if tr["med_y"] < court["net_y"]]
@@ -475,6 +510,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     #    color is noisier than near-side (cap below the near-side 0.95). The
     #    per-frame side, when a stat needs it, is derived downstream from position.
     #    See SYSTEM_DESIGN.md foundation #2.
+    n_third_person = 0
     if far:
         far_by_len = sorted(far, key=lambda t: -t["n"])
         a_anchor = far_by_len[0]
@@ -517,6 +553,19 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             sim_a = len(tr["frame_set"] & a_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX
             sim_b = (b_anchor is not None
                      and len(tr["frame_set"] & b_frames) / max(1, tr["n"]) > SIMULTANEITY_MAX)
+            if sim_a and sim_b:
+                # THERE ARE ONLY TWO OPPONENTS. A track that coexists with BOTH
+                # established identities is a THIRD person on the far side -- an
+                # adjacent-court player or a bystander, never an opponent fragment
+                # (a fragment of opp_a cannot overlap opp_a's own frames, so it
+                # trips exactly one of these tests, not both). This is the same
+                # can't-be-two-places constraint the near side already relies on;
+                # without it every far track inside the play envelope was forced
+                # into opp_a/opp_b and contamination flowed straight downstream.
+                role[tid] = {"role": "noise", "confidence": 0.8,
+                             "basis": "third-person-far-side"}
+                n_third_person += 1
+                continue
             if sim_a and not sim_b and b_anchor is not None:
                 role[tid] = {"role": "opp_b", "confidence": 0.6, "basis": "simultaneous-with-opp_a"}
                 _note_opp("opp_b", tr, f); continue
@@ -567,6 +616,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "n_noise": len(noise_ids),
         "user_frame_coverage": round(user_cov, 4),
         "user_frame_coverage_was_is_user": round(was_is_user, 4),
+        "n_behind_baseline_kept": n_behind_baseline,
+        "n_third_person_far_rejected": n_third_person,
     }
     log.info(f"roles: user={len(roles_agg['user']['track_ids'])} tracks/"
              f"{roles_agg['user']['n_frames']}f, "
@@ -576,6 +627,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"noise={len(noise_ids)}")
     log.info(f"user coverage {was_is_user:.1%} ({seed_basis} seed) -> "
              f"{user_cov:.1%} (roles)")
+    if n_third_person:
+        log.info("far side: rejected %d track(s) as a THIRD person (coexist with both "
+                 "opponent identities; only two opponents exist)", n_third_person)
 
     out_doc = {
         "schema_version": SCHEMA_VERSION,
@@ -585,6 +639,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "stats": stats,
         "params": {
             "noise_min_lifetime_s": NOISE_MIN_LIFETIME_S,
+            "play_margin_side_ft": PLAY_MARGIN_SIDE_FT,
+            "play_margin_baseline_ft": PLAY_MARGIN_BASELINE_FT,
+            "play_envelope_x_ft": [court["env_x_min"], court["env_x_max"]],
+            "play_envelope_y_ft": [court["env_y_min"], court["env_y_max"]],
+            "noise_min_in_envelope_frac": NOISE_MIN_IN_ENVELOPE_FRAC,
             "simultaneity_max": SIMULTANEITY_MAX,
             "continuity_max_gap_s": CONTINUITY_MAX_GAP_S,
             "continuity_max_dist_ft": CONTINUITY_MAX_DIST_FT,

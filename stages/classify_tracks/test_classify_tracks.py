@@ -96,17 +96,30 @@ def cond_roles_and_sides(d: dict, med_y: dict, net_y: float) -> bool:
     return True
 
 
-def cond_noise_rejection(d: dict, med_y: dict) -> bool:
-    # adjacent-court tracks (median y beyond the far baseline) must be noise
-    adj = [t for t, y in med_y.items() if y > 44.0]
-    if not adj:
-        _pass("no adjacent-court (y>44) tracks present; vacuously OK")
+def cond_noise_rejection(d: dict, df: pd.DataFrame, court: dict) -> bool:
+    """Adjacent-court tracks must be noise — judged against the PLAY ENVELOPE.
+
+    This used to assert `median court_y > 44 => noise`, i.e. anyone past the baseline
+    is on another court. That is false: players serve from BEHIND the baseline, so the
+    old assertion required the stage to discard its own opponents (v0.2.0 contract
+    note). The invariant is now the envelope the operator actually plays in.
+    """
+    outside = [int(t) for t, g in df.groupby("track_id")
+               if not (court["env_x_min"] <= g["court_x_ft"].median() <= court["env_x_max"]
+                       and court["env_y_min"] <= g["court_y_ft"].median() <= court["env_y_max"])]
+    if not outside:
+        _pass("no out-of-envelope tracks present; vacuously OK")
         return True
-    bad = [t for t in adj if d["track_roles"].get(str(t), {}).get("role") != "noise"]
+    bad = [t for t in outside
+           if d["track_roles"].get(str(t), {}).get("role") != "noise"]
     if bad:
-        _fail(f"adjacent-court tracks (y>44) not marked noise: {bad[:10]}")
+        _fail(f"tracks outside the play envelope "
+              f"(x {court['env_x_min']:.0f}..{court['env_x_max']:.0f}, "
+              f"y {court['env_y_min']:.0f}..{court['env_y_max']:.0f} ft) "
+              f"not marked noise: {bad[:10]}")
         return False
-    _pass(f"all {len(adj)} adjacent-court (y>44) tracks marked noise")
+    _pass(f"all {len(outside)} out-of-envelope tracks marked noise "
+          f"(envelope y {court['env_y_min']:.0f}..{court['env_y_max']:.0f} ft)")
     return True
 
 
@@ -190,7 +203,7 @@ def run_smoke_test() -> int:
         cond_schema(d),
         cond_click_agreement(d, df),
         cond_roles_and_sides(d, med_y, court["net_y"]),
-        cond_noise_rejection(d, med_y),
+        cond_noise_rejection(d, df, court),
         cond_coverage(d),
         cond_geometric_agreement(d, df),
     ]

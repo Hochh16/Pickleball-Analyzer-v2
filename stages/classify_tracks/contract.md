@@ -1,6 +1,8 @@
 # Stage 2.5 — Classify Tracks (player roles)
 
-**Status:** Contract APPROVED (2026-05-22), v1 IMPLEMENTED. NEW stage (not in
+**Status:** Contract APPROVED (2026-05-22), v1 IMPLEMENTED; **v0.2.0 (2026-08-01)
+noise judged against the operator's PLAY ENVELOPE, not the court rectangle** — see
+the Method §2 note. NEW stage (not in
 the original 11); runs after Stage 2, consumed by Stages 6+. Re-ID is multi-cue
 (click-anchored motion continuity + perspective-normalized height [+ multi-region
 clothing color]), so matching team kit doesn't break user/partner separation.
@@ -113,8 +115,29 @@ stays as the raw click-seed; the authoritative role is here.
    pixels-per-foot at the track's court position) and, if video is available,
    upper- and lower-body HSV color histograms.
 2. **Noise filter.** Mark `noise` if any: lifetime below a floor (e.g. < ~1 s),
-   OR median `court_y_ft` outside `[-8, 44]` (adjacent-court / behind-gym),
-   OR `in_court` fraction below a floor. (The data has 835 tracks; ~18 survive.)
+   OR median position outside the **PLAY ENVELOPE**, OR `in_env` fraction below a floor.
+   > **v0.2.0 (2026-08-01) — THE PLAY ENVELOPE (operator).** **Players are NOT confined
+   > to the 20×44 court.** They serve from BEHIND the baseline and chase balls wide, so
+   > the court rectangle is the wrong boundary for "is this person playing on our court".
+   > Operator's real envelope: **5 ft beyond each sideline, 15 ft beyond each baseline**
+   > → `court_x ∈ [-5, 25]`, `court_y ∈ [-15, 59]` (`PLAY_MARGIN_SIDE_FT`,
+   > `PLAY_MARGIN_BASELINE_FT`).
+   >
+   > The previous rule cut at `med_y ≤ 44` **and** floored `in_court_frac` — measured
+   > against the strict rectangle — so a player serving from behind the baseline failed
+   > BOTH tests. It discarded far-side servers **by construction**. Measured on
+   > `pb_5_minute_outdoor-2`: at every operator-identified opponent serve (0:47, 3:39,
+   > 4:05, 4:43) **both opponents were detected at court_y 45–54 and both were `noise`**,
+   > leaving the serve to be attributed to a near-side player. Adjacent-court people
+   > separate cleanly beyond the envelope (measured **59–115 ft**).
+   >
+   > `in_court_frac` floor → **`in_env_frac`** floor (same 0.15), so the noise rejection
+   > the floor provided is kept without excluding servers. `stats` gains
+   > `n_behind_baseline_kept`; `params` gains the envelope bounds.
+   >
+   > ⚠ **Known cost:** the envelope is generous by design, so at a multi-court venue it
+   > can overlap a neighbouring court (kept tracks 83 → 131 on this clip). Opponent-role
+   > contamination is therefore the live risk — see the follow-up below.
 3. **Side split.** Net at `length_ft/2` (= 22). Non-noise tracks with median
    `court_y_ft` < 22 → **near side** (user/partner pool); ≥ 22 → **far side**
    (opponent pool). (`user_baseline` confirms near = user's side.)
@@ -259,12 +282,27 @@ consistency + the core value metric:
 - **Multi-region clothing-color matching is not yet implemented** (v1 is
   video-free). Add it to strengthen user/partner and opponent separation in the
   different-colour case; height + continuity already cover the matching-kit case.
-- **Opponent roles are contaminated.** Far-side adjacent-court players (court_y
-  in 22–44, on a court behind) survive the noise filter, so `opp_a`/
-  `opp_b` collect many extra tracks (~19 each on test_clip). Tighten with a
-  per-track in-court-fraction threshold, far-side simultaneity/continuity (like
-  the near side), or appearance once color matching exists. Opponent confidence
-  is low (0.5) to reflect this.
+- **Opponent roles are contaminated — NOW THE TOP FOLLOW-UP.** Far-side adjacent-court
+  players survive the noise filter, so `opp_a`/`opp_b` collect many extra tracks (~19
+  each on test_clip). Tighten with far-side simultaneity/continuity (like the near
+  side), or appearance. Opponent confidence is low (0.5) to reflect this.
+  > **Raised in priority by v0.2.0.** The play envelope is generous by design (it must
+  > be, or servers are lost), so at a multi-court venue it can overlap a neighbouring
+  > court: kept tracks went **83 → 131** on `pb_5_minute_outdoor-2`. Because EVERY
+  > non-noise far track is assigned to `opp_a` or `opp_b`, contamination now flows
+  > straight through. **Downstream blast radius (SYSTEM_DESIGN §0 rule 2):** an
+  > adjacent-court figure reads `dist_from_net` 21.8–33.8 ft, which satisfies Stage 5's
+  > serve rule ("struck from behind the baseline, ≥21 ft"), so a contaminating track can
+  > **steal serve status** — first far-side run gave shots 99→118 (truth 98) and serves
+  > 13→15. The envelope fix is still correct (it recovers the real servers); the
+  > contamination filter is the necessary companion.
+- **Near-side identity confidence is thin, and unvalidated.** On
+  `pb_5_minute_outdoor-2`, **72% of `user` frames come from two tracks assigned at
+  confidence 0.53–0.56** via `appearance+height` (tid 1452 covering 1:28–4:19, tid
+  4127 covering 4:23–5:14), and the starting-corner seed emits an ambiguity warning
+  (`dx=0.2ft`). Render validation (2026-08-01, `tools/verify_identity.py`) confirmed
+  the roles are **not** flipped there, so this is latent risk rather than a known
+  error — but a stronger anchor than a 12 s opening-window corner read is wanted.
 
 ## Architecture note
 

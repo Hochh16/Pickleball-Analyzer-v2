@@ -18,6 +18,51 @@ Issues observed during development that are not yet resolved, with notes on
 when/where they should be addressed. Update as issues are resolved or as new
 ones are discovered.
 
+## Stage 7 - RALLY END is undetectable; between-point balls are counted (ACCEPTED, 2026-08-03)
+
+**Status: ACCEPTED LIMITATION, operator decision 2026-08-03.** Deliberately parked so
+the rest of the work can proceed. Come back to it — it is not solved, only quantified.
+
+**The problem.** Shot counts include between-point balls (feeds, balls rolled back at the
+net, ball handling, a ball picked up). On the operator-labelled sample these are **~30% of
+detected "shots"** in one block and **50%** in a deliberately enriched block. They inflate
+shots, dinks, volleys and serves simultaneously.
+
+**Why it is not fixed.** Removing them requires knowing where a rally ENDS. The operator's
+definition is correct and complete — a rally ends on **two bounces**, a **first bounce
+outside the court**, or a **net hit** (plus the serve exception: a serve must land in the
+diagonal service box, else the rally is just the bad serve). Every route to detecting that
+has been measured and failed:
+
+| route | result | why |
+|---|---|---|
+| **net hit** | **no detector exists** | Deferred July 2026 as camera-limited. Operator: *"a very common way of a rally ending"* — so this alone caps any rally-end approach |
+| **double bounce** | 1 physically plausible candidate in the whole clip | A bounce pair with "no shot between" usually means we MISSED the shot between them. Gated on shot recall (71%), not on bounce tuning |
+| **out-bounce** | 29 candidates for 14 rallies | Too noisy to select from |
+| **ball-comes-to-rest** | reversed (junk travels MORE) | Rolling/fed balls keep moving |
+| **cross-net "in-play" test** | precision 36% / recall 56% | Kills 9 of 21 real shots; a ball rolled at the net DOES cross the net |
+| **player FORMATION window** | precision 44% / **recall 20%** | Feeds happen right after the point ends, while players are still at the kitchen — BEFORE anyone walks back to serve position. The window opens too late |
+
+**Per-shot classification is also dead** (see "BETWEEN-POINT BALLS" in ACCURACY_LEDGER):
+**7 of 11 feeds are struck WITH A PADDLE**, so they are physically real paddle shots — only
+GAME CONTEXT makes them not count. Hand-vs-paddle and receiver-swing signals both overlap;
+a real block/reset/dink is itself a non-swing shot.
+
+**What IS solved and should not be re-litigated:** ground-level between-point balls (rolled,
+picked up, bounced pre-serve) ARE removed by the Stage 5 v0.4.0 ground-ball filter — 6 of 9
+on the labelled block with zero real shots lost. What remains is the AIRBORNE, paddle-struck
+subset.
+
+**Blast radius (SYSTEM_DESIGN §0 rule 2):** shot / dink / volley / serve counts run high by
+the number of between-point balls; every rate computed over them inherits it. The USAPA
+rating is per-user, so it is affected wherever the user is the one feeding.
+
+**Where to resume.** The two candidates not yet exhausted are (a) a **net-hit detector**,
+which would unlock the single most common ending and is the highest-value missing piece,
+and (b) improving **shot recall** past 71%, which is what makes double-bounce detection
+physical (measured: plausible double bounces 1 -> 6 when far-side players are retained).
+Do NOT retry the six routes in the table above.
+
 ## Stage 5 - A FAULTED serve is indistinguishable from a FEED (operator-accepted, deferred)
 
 **Observed:** 2026-08-01, `pb_5_minute_outdoor-2`, while building the in-play /
