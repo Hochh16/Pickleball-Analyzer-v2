@@ -39,7 +39,11 @@ REQUIRED_CLS_KEYS = {
     "stroke_side", "stroke_side_confidence", "shot_type", "shot_type_confidence",
     "is_volley", "is_volley_confidence", "features",
 }
-SHOT_TYPES = {"serve", "drive", "dink", "drop", "lob", "overhead", "reset", "unknown"}
+# `return` added 2026-08-03: the return of serve is its own category (the
+# operator counts 14 serves = 14 rallies = 14 returns). "overhead" is kept here
+# only for backward compatibility -- it is a STROKE, not a tactical type.
+SHOT_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "overhead",
+              "reset", "unknown"}
 STROKE_SIDES = {"forehand", "backhand", "unknown"}
 
 

@@ -26,7 +26,12 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.6.0"  # 0.5.0 -> 0.6.0: a landing must be on the OPPOSITE side of
+STAGE_VERSION = "0.7.0"  # 0.6.0 -> 0.7.0: RETURN OF SERVE is now its own shot type.
+                         # Structural (the shot after the serve, from the other side),
+                         # not a new signal. Previously every return scored as a drive:
+                         # 0/4 on the operator's labels; now 3/4, and the clip yields 15
+                         # returns vs the operator's truth of 14.
+                         # 0.5.0 -> 0.6.0: a landing must be on the OPPOSITE side of
                          # the net (net hits excepted). 23% of landings were same-side
                          # mis-associations -- ball-handling bounces typed as landings.
                          # 0.4.0 -> 0.5.0: REMOVED the landing-path "speed guard"
@@ -103,7 +108,7 @@ BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
 LANDMARK_VIS_FLOOR = 0.5
 NET_Y_FT = 22.0
 
-SHOT_TYPES = {"serve", "drive", "dink", "drop", "lob", "reset", "unknown"}
+SHOT_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "reset", "unknown"}
 # 'overhead' is a STROKE (above-the-head contact), recorded on stroke_side, not a
 # tactical shot type. Stroke axis: forehand / backhand / overhead / unknown.
 STROKE_SIDES = {"forehand", "backhand", "overhead", "unknown"}
@@ -521,6 +526,7 @@ def bounced_between(by, bknown, f0: int, f1: int,
 # --- Classification ----------------------------------------------------------
 
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
+                  is_return=False,
                   landing_y=None, receiver_zone=None, is_volley=False,
                   drive_min=DRIVE_MIN_SPEED_FTPS, dink_max=DINK_MAX_SPEED_FTPS):
     """Fused rule classifier for the TACTICAL shot type. The airborne ball's
@@ -539,6 +545,14 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     drive/put-away here. Returns (type, confidence)."""
     if is_serve:
         return "serve", 0.95
+    # RETURN OF SERVE — structural, not a signal we have to detect. The return is
+    # the shot that answers the serve: the next contact, from the OTHER side of the
+    # net. The operator counts returns as their own category (the ledger's identity
+    # is 14 serves = 14 rallies = 14 returns), and Stage 6 previously had no such
+    # type, so every return was scored as a `drive` -- 4 of 4 wrong on the operator's
+    # labelled set, purely a taxonomy gap rather than a classification failure.
+    if is_return:
+        return "return", 0.9
     # --- Volley (ball taken out of the air; no bounce, so no landing signal).
     #     Operator rules: classify from the hitter's zone + speed. At the kitchen a
     #     slow air-ball is a dink, a fast one a speed-up drive; taken out of the air
@@ -767,8 +781,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             d_min, d_max = DRIVE_MIN_SPEED_FTPS, DINK_MAX_SPEED_FTPS
             speed_source = "ppf_instantaneous"
 
+        # a return answers the serve: previous shot was the serve AND this contact is
+        # on the opposite side of the net (the receiving team plays it back).
+        prev = shots[i - 1] if i > 0 else None
+        is_return = bool(prev is not None and prev.get("is_serve")
+                         and prev.get("hitter_side") and s.get("hitter_side")
+                         and prev["hitter_side"] != s["hitter_side"])
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
-                                             speed_for_type, pre_ftps, zone, landing_y,
+                                             speed_for_type, pre_ftps, zone,
+                                             is_return, landing_y,
                                              receiver_zone, is_volley,
                                              drive_min=d_min, dink_max=d_max)
 
