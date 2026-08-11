@@ -15,8 +15,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "pb_v4_upload.zip"
+# The bundle carries EVERY clip; the notebook decides which are train vs held-out.
+# indoor_B1/C1 added 2026-08-04 (operator labelled 1,555 frames each -> 3,407 + 3,629
+# visible samples after densification). They are a DIFFERENT INDOOR FACILITY from
+# pb_3min_indoor -- dark walls and blue courts ("PICKLR") vs a bright white-ceilinged
+# gym with green courts -- so holding pb_3min_indoor out is a TRUE UNSEEN-VENUE test,
+# not merely a different camera angle. Indoor visible samples 1,354 -> 8,390 (6.2x),
+# taking indoor from ~13% of the training set to ~44%.
 CLIPS = ["pb_2min", "pb_3min", "pb_4min", "pb_5min",
-         "pb_3min_court2", "pb_3min_indoor"]
+         "pb_3min_court2", "pb_3min_indoor",
+         "indoor_B1_3min", "indoor_C1_3min"]
 REPO_FILES = ["stages/__init__.py",
               "stages/track_ball/__init__.py",
               "stages/track_ball/_tracknet_model.py"]
