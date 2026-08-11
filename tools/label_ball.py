@@ -1,4 +1,4 @@
-"""
+r"""
 Stage 4.5 labeling tool — desktop UI for clicking ball locations
 in video frames.
 
@@ -118,23 +118,78 @@ def save_labels(out_path: Path, data: dict) -> None:
 # ---------- Video access ----------
 
 class VideoReader:
-    """Wraps cv2.VideoCapture with a simple frame-index API."""
+    """Frame-EXACT sequential reader.
+
+    ⚠ DO NOT reintroduce `cap.set(CAP_PROP_POS_FRAMES, idx)` per frame. It is NOT
+    frame-accurate on long-GOP H.264 (which 4K/60 phone footage is): OpenCV seeks to
+    a nearby keyframe and the returned frame drifts from the requested index, with
+    the error GROWING deeper into the file. Measured on data/indoor_B1_3min:
+
+        requested 300 -> got 299   (-1)
+        requested 1200 -> got 1204 (+4)
+        requested 2400 -> got 2404 (+4)
+        requested 3600 -> got 3606 (+6)
+        requested 4500 -> got 4508 (+8)
+
+    That silently corrupted 3,100 operator labels (2026-08-11): the tool DISPLAYED
+    frame N+k, the operator clicked the ball accurately, and the click was recorded
+    against frame N. At 60fps a struck ball moves 40-80px in 8 frames, so the stored
+    position missed the ball entirely. Label error grew with depth into the file
+    (median 4-9px in the first quarter, 46-51px in the last) and scattered in sign,
+    which is the signature of a TIMING error, not a coordinate one. The trained model
+    then failed on indoor AND regressed on the home clip, because it was being taught
+    that blank wall is a ball.
+
+    This reader decodes SEQUENTIALLY, so the frame index is exact by construction.
+    Labelling walks forward through frames, so the common case costs a few decodes.
+    A small ring buffer serves Backspace; a jump backwards beyond it rewinds and
+    re-decodes (correct, just slower).
+    """
+
+    BACK_CACHE = 64   # frames kept for backward navigation
+
     def __init__(self, path: Path):
-        self.cap = cv2.VideoCapture(str(path))
+        self.path = str(path)
+        self.cap = cv2.VideoCapture(self.path)
         if not self.cap.isOpened():
             fail(f"could not open {path}")
         self.n_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self._next = 0            # index the next cap.read() will return
+        self._cache = {}          # idx -> frame, for Backspace
+        self._order = []
+
+    def _rewind(self):
+        self.cap.release()
+        self.cap = cv2.VideoCapture(self.path)
+        self._next = 0
+
+    def _remember(self, idx, frame):
+        self._cache[idx] = frame
+        self._order.append(idx)
+        while len(self._order) > self.BACK_CACHE:
+            self._cache.pop(self._order.pop(0), None)
 
     def read_frame(self, idx: int):
         if idx < 0 or idx >= self.n_frames:
             return None
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ok, frame = self.cap.read()
-        if not ok:
-            return None
+        if idx in self._cache:
+            return self._cache[idx]
+        if idx < self._next:
+            self._rewind()
+        frame = None
+        while self._next <= idx:
+            ok, fr = self.cap.read()
+            if not ok:
+                return None
+            cur = self._next
+            self._next += 1
+            if cur == idx:
+                frame = fr
+        if frame is not None:
+            self._remember(idx, frame)
         return frame
 
     def release(self):
