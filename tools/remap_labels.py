@@ -47,9 +47,16 @@ def resolve_drift(orig: list[int], dense: dict) -> dict[int, int]:
 
 def run(folder: Path, apply: bool) -> int:
     src = folder / "ball_labels.PRE_REMAP.json"
+    cur = folder / "ball_labels.json"
     if not src.exists():
-        print(f"{folder.name}: no ball_labels.PRE_REMAP.json (nothing to remap from)")
-        return 1
+        # first remap of this clip: snapshot the operator's original file, once. If it
+        # has already been remapped without a snapshot the originals are unrecoverable,
+        # so refuse rather than remap a remap.
+        if json.loads(cur.read_text(encoding="utf-8")).get("remap_note"):
+            print(f"{folder.name}: already remapped but no PRE_REMAP snapshot; refusing")
+            return 1
+        src.write_bytes(cur.read_bytes())
+        print(f"{folder.name}: saved originals -> {src.name}")
     dense_p = folder / "_drift_dense.json"
     if not dense_p.exists():
         print(f"{folder.name}: run tools.measure_seek_drift first")

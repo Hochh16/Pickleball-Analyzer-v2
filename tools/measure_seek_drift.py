@@ -75,10 +75,16 @@ def measure(folder: Path, out: Path) -> int:
         return 1
 
     cache = SigCache(folder)
-    cap = cv2.VideoCapture(str(folder / "video.mp4"))
+    # not every clip keeps a local copy; the label file records where it was labeled
+    # from, and THAT is the file whose seek behaviour produced the drift
+    video = folder / "video.mp4"
+    if not video.exists():
+        video = Path(doc.get("video_path", ""))
+    cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
-        print(f"{folder.name}: cannot open video")
+        print(f"{folder.name}: cannot open video ({video})")
         return 1
+    print(f"{folder.name}: measuring against {video}")
 
     drift, ambiguous, misses = {}, [], 0
     for n, idx in enumerate(wanted):

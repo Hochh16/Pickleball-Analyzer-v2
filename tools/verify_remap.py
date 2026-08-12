@@ -72,12 +72,34 @@ def label_bar(w: int, text: str, colour) -> np.ndarray:
     return bar
 
 
-def build(folder: Path, n: int, seed: int, out: Path) -> int:
+def ball_speed(labels: list[dict]) -> dict[int, float]:
+    """Original-frame -> px/frame, from the neighbouring labels of the same click run."""
+    pts = sorted(((int(l.get("remapped_from", l["frame_idx"])), l["pixel_x"], l["pixel_y"])
+                  for l in labels), key=lambda p: p[0])
+    out: dict[int, float] = {}
+    for i, (f, x, y) in enumerate(pts):
+        best = 0.0
+        for j in (i - 1, i + 1):
+            if 0 <= j < len(pts):
+                g, gx, gy = pts[j]
+                if 0 < abs(g - f) <= 6:
+                    best = max(best, float(np.hypot(gx - x, gy - y) / abs(g - f)))
+        out[f] = best
+    return out
+
+
+def build(folder: Path, n: int, seed: int, out: Path, fastest: bool = True) -> int:
     doc, labels = load_labels(folder)
     moved = [l for l in labels if l.get("drift")]
     if not moved:
         print(f"{folder.name}: no label was moved; nothing to verify.")
         return 1
+
+    # A small drift on a SLOW ball is invisible by eye, so a random sample can be
+    # unreadable even when the remap is right. Ranking by ball speed puts the frames
+    # where a one-frame error displaces the ball most -- the only ones that actually
+    # decide the question -- in front of the operator.
+    speed = ball_speed(labels)
 
     # stratify across the distinct drift values so every regime of the curve is shown,
     # not just the dense middle of the clip
@@ -85,12 +107,17 @@ def build(folder: Path, n: int, seed: int, out: Path) -> int:
     for l in moved:
         by_drift.setdefault(int(l["drift"]), []).append(l)
     rng = random.Random(seed)
+    for d, pool in by_drift.items():
+        if fastest:
+            pool.sort(key=lambda l: -speed.get(l["remapped_from"], 0.0))
+        else:
+            rng.shuffle(pool)
     picks: list[dict] = []
     while len(picks) < n and any(by_drift.values()):
         for d in sorted(by_drift):
             pool = by_drift[d]
             if pool and len(picks) < n:
-                picks.append(pool.pop(rng.randrange(len(pool))))
+                picks.append(pool.pop(0))
     picks.sort(key=lambda l: l["frame_idx"])
 
     sx = doc["video_width"] / 1280.0   # labels are in source (4K) pixels
@@ -144,9 +171,11 @@ def main(argv=None) -> int:
     ap.add_argument("--n", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--random", action="store_true",
+                    help="sample at random instead of the fastest-ball frames")
     a = ap.parse_args(argv)
     out = a.out or a.folder / "_remap_check.png"
-    return build(a.folder, a.n, a.seed, out)
+    return build(a.folder, a.n, a.seed, out, fastest=not a.random)
 
 
 if __name__ == "__main__":
