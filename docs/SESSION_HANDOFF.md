@@ -1,6 +1,88 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-04)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-11)
 
-## 2026-08-04 — READ FIRST: NEXT ACTION IS BALL LABELLING (indoor, 4K/60)
+## 2026-08-11 — READ FIRST: NEXT ACTION IS UPLOAD + COLAB RUN 3 (labels now correct)
+
+### Start here — operator step
+
+`data/pb_v4_upload.zip` (3.28 GB, 8 clips, 23,171 jpegs) is rebuilt and ready.
+
+1. Upload it to Drive, replacing the previous `pb_v4_upload.zip`.
+2. Re-run `stages/finetune_ball_model/finetune_v4.ipynb` — **config unchanged from
+   Run 3**, no notebook edit needed. `ball_model_v4_base.pt` is already in MyDrive.
+
+Nothing else is pending on the operator side. The labelling does NOT need redoing.
+
+### Why Run 3 failed, and it was not the model
+
+Run 3 read `indoor_seen_rec 0.035` and looked like the model could not learn indoor.
+It could not — it was being taught the wrong thing. **`tools/label_ball.py` displayed
+one frame and recorded the click against a different one.** It seeked per frame with
+`cap.set(CAP_PROP_POS_FRAMES, idx)`, which on long-GOP H.264 returns a frame NEAR idx.
+Fixed in a98158b with an exact sequential reader; **do not reintroduce per-frame
+seeking** (there is a warning in the class docstring).
+
+Damage, and the fix (labels recovered by re-indexing, not re-clicking):
+
+| clip | labels wrong | drift range | after fix |
+|---|---|---|---|
+| `indoor_B1_3min` | 92% | −1 … **+12** | 1.3px median, 90% ≤6px |
+| `indoor_C1_3min` | 85% | −5 … 0 | 2.1px, 89% |
+| `pb_3min_indoor` | **97%** | −2 … 0 | see caveat below |
+| pb_2min / pb_3min / pb_4min / pb_5min / pb_3min_court2 | clean | — | 1.4–2.3px, 0% bad |
+
+Drift is **not** a property of "raw 4K from Dropbox" — four of the clean clips were
+labelled from exactly such files. It is specific to how individual files encode, so
+**assume nothing; measure per file.**
+
+### ⚠ The unseen-venue number is not trustworthy and must be re-measured
+
+`pb_3min_indoor` is the **held-out val clip** — the one Run 3 scored **0.03** on, which
+is the whole basis for "cannot generalise to a new indoor venue". 976 of its 1,002
+labels were off by 1–2 frames ≈ 8–15 source px, about the hit tolerance. **That figure
+was biased low and should not be quoted until Run 3 is repeated.** The venue is
+genuinely hard (pale ball against a pale wall), so this does not explain 0.03 by
+itself — but it was never a clean measurement.
+
+### Method notes worth keeping
+
+- **The model-based audit cannot judge a clip the model is blind on.** `pb_3min_indoor`
+  read 241px median error but **0% confidently-wrong** — the detector is never confident
+  anywhere on it. A blind model and a corrupt label look identical. Only the mechanical
+  drift measurement, which never looks for the ball, could answer it.
+- **Interpolating a sparse drift curve is not good enough.** The first recovery sampled
+  every 400 frames and interpolated; the visual check caught it pushing an
+  already-correct label off the ball. B1's curve is non-monotonic. Measuring every label
+  moved 41%/47% of them AGAIN and found drift the sparse sampling never saw. Seeking is
+  deterministic, so measure — never interpolate.
+- **`verify_remap` samples the fastest-ball frames**, because a 1–2 frame shift on a slow
+  ball is invisible and a random sheet is unreadable.
+- **Read the crops at full resolution.** On `pb_3min_indoor` the downscaled sheet looked
+  like it CONTRADICTED the remap; at full resolution the same tiles confirm it.
+- **Negative result, do not rebuild:** scoring "is there a yellow ball at the label"
+  across candidate offsets fails its own control (pb_2min, known correct, peaks at
+  offset 0 with 11% against a 7.7% chance floor). No discriminating power.
+
+### Tools this left behind (all under `tools/`)
+
+| tool | use |
+|---|---|
+| `measure_seek_drift.py` | per-label drift; run on ANY clip labelled before a98158b |
+| `remap_labels.py` | idempotent — always rebuilds from `ball_labels.PRE_REMAP.json` |
+| `audit_labels.py` | the label acceptance test: median px / ≤6px / confidently-wrong |
+| `verify_remap.py` | before/after contact sheet, stratified across drift values |
+
+`audit_labels.py` is the standing check: **any new labelled clip should read near
+pb_2min's 1.5px / 97% before it is trained on.**
+
+### Not yet checked
+
+`indoor_b`, `indoor_c`, `outdoor`, `test_clip` were labelled with the buggy tool but
+have no `frames_720` cache, so they were not measurable. `indoor_b`/`indoor_c` are
+superseded 1080p/30 and not in the bundle; `test_clip` backs the Stage 2.5 smoke test.
+
+---
+
+## 2026-08-04 — NEXT ACTION IS BALL LABELLING (indoor, 4K/60) [DONE — see above]
 
 ### Start here tomorrow
 

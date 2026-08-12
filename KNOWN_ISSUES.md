@@ -18,6 +18,47 @@ Issues observed during development that are not yet resolved, with notes on
 when/where they should be addressed. Update as issues are resolved or as new
 ones are discovered.
 
+## Tooling - LABEL FRAME INDICES were silently corrupted by per-frame seeking (FIXED, 2026-08-11)
+
+**Status: FIXED (a98158b) and all affected labels recovered (f99ad9e, 2ebb45b, 3a20c72).
+Recorded because the failure mode is invisible and will recur if the pattern returns.**
+
+**The bug.** `tools/label_ball.py` displayed a frame with
+`cap.set(cv2.CAP_PROP_POS_FRAMES, idx); cap.read()`. On long-GOP H.264 that returns a
+frame NEAR `idx`, not `idx`. The operator clicked an accurate ball position and it was
+filed against a frame that was never on screen — by up to **12 frames**.
+
+**Why it was hard to see.** The label file looks perfect: plausible positions, smooth
+trajectories, correct counts. Nothing in the labels, the manifest, or the smoke tests can
+detect it. The only symptom is downstream and easy to misread — a model that will not
+learn a venue. Run 3 reported `indoor_seen_rec 0.035` and was nearly written up as "the
+model cannot generalise indoors". It was being trained to find the ball where it wasn't.
+
+**Blast radius.** 3 of 8 clips in the training bundle: `indoor_B1_3min` (92% of labels
+wrong), `indoor_C1_3min` (85%), and `pb_3min_indoor` (97%) — the last being the
+**held-out unseen-venue val clip**, so the 0.03 recall attributed to it is not a valid
+measurement and must be re-taken. The other five clips measure clean. Drift is NOT
+predictable from resolution or source: four clean clips were labelled from raw 4K
+Dropbox files exactly like the corrupted ones. **Measure per file.**
+
+**The rule.** Never seek per frame for anything whose frame index is recorded. Read
+sequentially (see the `VideoReader` docstring in `label_ball.py`). A frame cache built by
+sequential decode is trustworthy; a seek is not.
+
+**The standing check.** `python -m tools.audit_labels data/<clip>` scores labels against
+a detector that never saw them. A healthy clip reads near **1.5px median / 97% within
+6px / 0% confidently-wrong** (pb_2min). Run it on any newly labelled clip BEFORE training.
+
+**Its one blind spot, learned the hard way:** the audit cannot judge a clip the detector
+is blind on. `pb_3min_indoor` read 241px median with **0% confidently-wrong** — never
+confident anywhere. A blind model and a corrupt label are indistinguishable there. Use
+`tools/measure_seek_drift.py`, which never looks for the ball, to settle those.
+
+**Not yet measured:** `indoor_b`, `indoor_c`, `outdoor`, `test_clip` were labelled with
+the buggy tool but have no `frames_720` cache, so drift could not be measured. The first
+two are superseded 1080p/30 and unused; `test_clip` backs the Stage 2.5 smoke test — if
+that test ever behaves oddly around ball timing, suspect this first.
+
 ## Stage 7 - RALLY END is undetectable; between-point balls are counted (ACCEPTED, 2026-08-03)
 
 **Status: ACCEPTED LIMITATION, operator decision 2026-08-03.** Deliberately parked so
