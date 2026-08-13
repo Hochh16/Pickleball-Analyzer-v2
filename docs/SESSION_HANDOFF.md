@@ -1,6 +1,97 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-11)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-13)
 
-## 2026-08-11 — READ FIRST: NEXT ACTION IS UPLOAD + COLAB RUN 3 (labels now correct)
+## 2026-08-13 — READ FIRST: the unseen-venue failure is CONTRAST, and it is not fundamental
+
+### Result
+
+| venue | Run 3 | **Run 4** (contrast augmentation) |
+|---|---|---|
+| `home` | 0.916 / fp 0.053 | 0.887 / fp 0.053 |
+| `indoor_seen` | 0.978 | 0.977 |
+| `court2` | 0.713 | 0.640 |
+| **`indoor_unseen`** | **0.087** | **0.589** |
+
+`ball_model_v4_run4.pt` (epoch 5) is in MyDrive. Run 3's is `ball_model_v4_run2.pt`.
+**Neither has been brought into the local pipeline yet** — see "next actions".
+
+### How it was diagnosed (the method, not just the answer)
+
+Ball-vs-background yellow contrast measured at every labelled ball, against Run 3 recall:
+
+```
+indoor_C1 45.0 -> 0.978   pb_2min        25.5 -> 0.916
+indoor_B1 36.5 -> 0.978   court2         20.5 -> 0.713
+pb_3min   30.0 -> 0.916   pb_3min_indoor  7.5 -> 0.087
+```
+
+Monotonic — and causal, not merely correlated: applying CLAHE at inference lifted
+pb_3min_indoor 0.050 -> 0.360 on existing weights with no retraining. But the same CLAHE
+COST pb_2min 0.870 -> 0.570, so fixed preprocessing trades one venue for another. That is
+why the fix is trained invariance, not a preprocessing step.
+
+⚠ **A wrong turn worth not repeating:** early-epoch fp spikes on that clip (0.833, 0.786)
+looked like adjacent-court confusion. They were transient — at the saved checkpoint fp is
+0.012 with recall 0.087. Contrast fits the evidence; adjacent courts do not.
+
+### ⚠ Run 4 DIVERGED — read before trusting anything past epoch 5
+
+Epoch 8 spiked (home fp 0.496), epoch 9 collapsed, epoch 11 saturated (fp 1.000 on every
+venue), and it never recovered: loss plateaued ~1.29 and never beat epoch 5's 1.281.
+Nineteen epochs wasted. Gradient clipping was already on at norm 2.0, so clipping alone
+was not the answer.
+
+The notebook is now **Run 5** with four fixes, each dry-run against Run 4's real numbers:
+
+| fix | effect on Run 4's numbers |
+|---|---|
+| LR 1e-4 -> 5e-5 + 300-step warmup | the collapse had no warmup at all |
+| clip 2.0 -> 1.0 | 2.0 did not hold |
+| collapse rollback (reload best, halve LR) | would have fired at epochs 9 and 11 exactly |
+| `INDOOR_FP_CAP` 0.20 + keep TOP_K=3 | picks epoch 4 over epoch 5, and surfaces epoch 7 |
+
+**The fp caps change which checkpoint ships, deliberately.** Run 4 shipped epoch 5
+(unseen 0.589) with `indoor_seen` fp **0.259** — recall bought with false positives, on
+the venues that already worked. Only home fp was capped, so nothing stopped it. Under the
+new rules the picks are:
+
+```
+1. epoch 4  mean_rec 0.833  home fp 0.044  indoor fp 0.172  unseen 0.515
+2. epoch 7  mean_rec 0.828  home fp 0.044  indoor fp 0.103  unseen 0.483
+3. epoch 3  mean_rec 0.808  home fp 0.035  indoor fp 0.190  unseen 0.387
+```
+
+i.e. it trades 0.07 of unseen recall for materially better precision. **fp becomes false
+shots and bounces downstream** — the error the acceptance scorecard is already losing to
+(shots 121 vs 98). Epoch 7 is arguably the best balance of the three and Run 4 discarded
+it outright.
+
+### Next actions
+
+1. **Operator:** upload the Run 5 notebook, Run All. Bundle unchanged, no re-upload.
+2. **Operator:** download the chosen checkpoint to `data/models/` **under its own name** —
+   do NOT overwrite `ball_model_v4.pt`; every local stage loads it and swapping it
+   silently changes Stage 4 output and every downstream count.
+3. **Then:** re-run `tools/score_acceptance.py` and see what the new model does to the
+   counts. Higher recall AND higher fp could make them worse. Measure, do not assume.
+
+### In flight: cumulative videos + venue supportability
+
+`stages/aggregate/contract.md` — cross-video aggregation, operator decisions D1–D5
+settled, NOT implemented. Key design call: aggregation sits BELOW Stage 8 (union the
+per-item streams, run Stage 8 once) because a median of medians is not the median and
+averaging the confidence envelope gets small-sample handling exactly backwards.
+
+**Build order (operator chose): venue supportability check FIRST**, because D4 (do not
+merge a venue whose measurement quality is materially worse) gates on a number we cannot
+currently compute for an unlabelled venue. It predicts from unlabelled signals, is
+calibrated against the venues whose true recall we know, needs **no training and no
+Colab**, and doubles as "is this clip worth labelling before I spend hours on it".
+Honest limit: 8 clips but only **4 distinct venues**, so it can only be a coarse
+supported / marginal / not-supported call.
+
+---
+
+## 2026-08-11 — Labels were corrupted; Run 3 fixed them (indoor 0.035 -> 0.978)
 
 ### Start here — operator step
 
