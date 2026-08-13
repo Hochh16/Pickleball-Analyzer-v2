@@ -1,7 +1,8 @@
 # Stage 7.9 — Aggregate (cross-video union)
 
-**Status:** CONTRACT DRAFT, not implemented. Open questions at the end need operator
-answers before code.
+**Status:** CONTRACT, not implemented. Operator decisions D1-D5 settled 2026-08-13;
+ready to build. One dependency is NOT built: the venue supportability check that D4
+gates on.
 
 Turns N analysed videos into ONE virtual session that Stages 8–11 then run on
 **unchanged**. Produces no statistics of its own.
@@ -67,7 +68,7 @@ data/_collections/<collection_id>/
     bounces.json         unioned   │  so Stage 8 cannot tell the difference
     players.parquet      unioned   │
     track_roles.json     unioned  ─┘
-    court.json           copied from the reference member (see Venues)
+    court.json           copied from the reference member (D4: members share a venue)
     metrics.json         written by Stage 8, unchanged code
     rating.json          Stage 9
     improvement_plan.json Stage 10
@@ -96,10 +97,10 @@ number in the cumulative report can be traced back to a frame in a real file.
 video. Cumulative stats describe time on court, not calendar time. (A literal
 concatenation would agree; the videos have no gap between them.)
 
-**Roles are the join key, not tracks.** `track_id` is meaningless across videos; `user`
-/ `partner` / `opp_a` / `opp_b` are what carry through. Stage 8 already attributes by
-role, so this works unchanged — but see the open questions, because only `user` is
-reliably the same human in every video.
+**Roles are the join key, not tracks.** `track_id` is meaningless across videos; roles
+are what carry through, and Stage 8 already attributes by role. Only `user` is reliably
+the same human in every video, so cumulative buckets are pooled per **D1**:
+`user` (an individual), `partners`, `opponents` (`opp_a` + `opp_b` merged).
 
 **Reliability propagates worst-case, never averaged.** If any member has
 `synthetic_ball: true`, the union is synthetic. `synthetic_gated` is the UNION of member
@@ -156,8 +157,8 @@ Without this, double-counting is invisible and inflates every count.
 **Pipeline version skew.** Every member records the ball model and stage versions it was
 processed with. Mixing a video processed with the 0.90 baseline and one processed with
 the run-4 model means mixing two different accuracy regimes into one number. The
-collection records a `pipeline_fingerprint`; a mismatch raises a warning naming the
-stale members and the re-run needed. **Open question below: warn or block.**
+collection records a `pipeline_fingerprint`; a mismatch produces a report FOOTNOTE, not
+a warning and never a block (**D3**) — the fingerprint detail stays operator-facing.
 
 **Stale member.** If a member's own pipeline is re-run after it joined, the union is
 stale. Detected by comparing each member's `completed_at_utc` against the union's build
