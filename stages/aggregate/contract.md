@@ -213,39 +213,97 @@ is.
 
 ---
 
-## OPEN QUESTIONS — need operator answers before implementation
+## DECISIONS (operator, 2026-08-13)
 
-**Q1. Partners and opponents change between videos. What should the cumulative report
-say about them?** `user` is reliably the same person; `partner` / `opp_a` / `opp_b` are
-not. Options: (a) aggregate anyway, relabelled as "partners faced" / "opponents faced";
-(b) report per-video only and show just `user` cumulatively; (c) let the operator name
-people per video so real per-person stats become possible. (c) is the most useful and
-the most setup work. My default without an answer: **(a) with explicit relabelling**,
-because a merged opponent pool is still a fair description of the competition faced.
+**D1. People are pooled by ROLE; individuals are not identified across videos.**
 
-**Q2. Career-to-date, recent form, or both?** Taken literally, "as if one video" means
-everything ever, equally weighted — a year-old session counts the same as yesterday's.
-That is probably not what a player wants from a coaching report. Options: all-time only;
-all-time plus a "last N sessions" view; time-decay weighting. My default: **all-time
-only for v1**, with capture dates recorded so a recent-form view can be added without
-re-processing anything.
+| cumulative bucket | contents | why |
+|---|---|---|
+| `user` | one human | the only person guaranteed constant; asserted per video in the UI |
+| `partners` | every partner, pooled | team-side; who they were is not tracked |
+| `opponents` | `opp_a` + `opp_b`, pooled | `opp_a` in video 1 is not `opp_a` in video 2 |
 
-**Q3. Should mixed pipeline versions warn or block?** Blocking is safer and forces
-consistency; warning is friendlier and avoids re-running everything each time the model
-improves. Given the ball model is actively changing, blocking could mean re-processing
-the whole library on every improvement. My default: **warn loudly, record in the report,
-never block**.
+The operator asked not to distinguish partners. Taken as "do not identify individuals",
+**not** as "merge partner into opponents" — the partner is on the user's team, and
+`team.near` / `team.far` and error attribution ("my side's errors" vs "theirs") depend on
+that split. Collapsing it would silently corrupt those.
 
-**Q4. Different venues in one collection — separate or merged?** Court-relative stats
-(feet, zones, heatmaps) merge cleanly. But detector accuracy differs per venue, so
-merging a venue at 0.98 recall with one at 0.59 produces a number that describes
-neither. Options: merge silently; merge with a per-venue breakdown; keep collections
-venue-scoped. My default: **merge, plus a per-venue breakdown and a warning when member
-venues differ materially in measured quality**.
+Merging `opp_a`/`opp_b` cumulatively is a change FROM the per-video schema and the one
+place this stage may not simply pass Stage 8's output through. Per-video reports keep
+`opp_a`/`opp_b` unchanged.
 
-**Q5. What identifies "the same player" across videos?** Currently the operator
-self-identifies per session (`user_clicks.json`). Adding a video to a collection is
-itself an assertion that it is the same person, which I think is sufficient and honest.
-Confirm that is acceptable rather than attempting appearance-based re-identification
-across sessions, which is a research problem and would be unreliable across changes of
-clothing, venue and lighting.
+**D2. A collection is all-time. Recency is the operator's control, not a weighting.**
+No time decay, no "last N sessions". If a collection has gone stale the operator closes
+it and starts a new one, which is exactly what the start-new-collection requirement is
+for. Capture dates are still recorded, so a trend view remains possible later without
+reprocessing.
+
+**D3. Mixed pipeline versions produce a report FOOTNOTE, never a warning.** Too technical
+to put in a player's face. The `pipeline_fingerprint` is still recorded in full so the
+footnote can be generated and so the operator can see which members are stale; that
+detail stays operator-facing (`collection.json`), not player-facing.
+
+**D4. A venue whose measurement quality is materially worse is NOT merged.** It is
+excluded from the collection and the report, and the UI says the venue is not supported
+yet. Rationale: merging a venue at 0.98 recall with one at 0.59 yields a number that
+describes neither, and a wrong number is worse than a missing one.
+
+This needs a mechanism that does not exist yet — see **Venue supportability** below.
+
+**D5. Identity is asserted by the operator, per video.** The UI already asks who to
+analyse (`user_clicks.json`); it asks again for each added video. No appearance-based
+re-identification across sessions — clothing, venue and lighting all change, and it is a
+research problem we do not need to take on.
+
+Consequences for the UI, since multiple people can be analysed:
+- The collection list is **selectable** — there will be one collection per person.
+- The list carries a persistent reminder that **each collection must be the same
+  person**. Nothing in the data can verify this; it is an operator promise, so it must be
+  visible at the moment of choosing.
+- Adding a video offers: join the active collection / start a new collection / analyse
+  standalone. Standalone remains the default.
+
+## Venue supportability (required by D4, NOT yet built)
+
+D4 gates on measurement quality, but a brand-new venue has no labels, so its recall is
+unknown — the number we would gate on cannot be computed. It has to be **predicted from
+unlabelled signals**:
+
+- ball-vs-background contrast measured at detections (the metric that already predicts
+  recall monotonically across six venues: 45→0.978, 36→0.978, 30→0.916, 25→0.916,
+  20→0.713, 7.5→0.087)
+- detection density versus expected shot rate
+- track continuity / fragmentation
+- mean and spread of detector confidence
+
+Calibrate against the six venues whose TRUE recall is known, so the threshold is fitted,
+not invented. Two uses for one mechanism: gating a venue out of a collection, and
+answering "is this clip worth labelling?" before the operator spends hours on it.
+
+Being honest about its limits: this predicts from six calibration points, one of which
+is the failing venue. It will be a coarse three-bucket judgement (supported / marginal /
+not supported), not a recall estimate, and it should be presented that way.
+
+---
+
+## RESOLVED — the questions these decisions answered
+
+**Q1. Partners and opponents change between videos.** → **D1.** Pool by role, do not
+identify individuals. Operator asked not to distinguish partners; read as "no person
+identity", not "merge partner into opponents", since that split carries the team stats.
+
+**Q2. Career-to-date or recent form?** → **D2.** All-time. Recency is handled by the
+operator closing a collection and starting a new one, which is what that control is for.
+
+**Q3. Mixed pipeline versions — warn or block?** → **D3.** Neither: a report footnote.
+Too technical for a player-facing warning.
+
+**Q4. Different venues in one collection.** → **D4.** Do not merge a materially worse
+venue; exclude it and say so in the UI. Stronger than my default of merge-with-warning,
+and better: a wrong number is worse than a missing one. Requires the venue
+supportability check, which does not exist yet.
+
+**Q5. What identifies "the same player" across videos?** → **D5.** The operator says so,
+per video, through the existing identify-the-user step. Surfaced a requirement I had
+missed: collections are per-person, so the UI needs collection selection plus a standing
+reminder that a collection must not mix people.
