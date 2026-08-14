@@ -12,8 +12,14 @@ This tool emits both halves in ONE pass over the same frames and the same weight
     mean_conf     mean peak confidence
     p90_conf      90th percentile peak confidence
     contrast      ball-vs-background yellow contrast AT the detected peak
-    continuity    fraction of consecutive-frame pairs whose peaks move a
-                  ball-plausible distance -- a real ball flies, noise teleports
+    continuity    fraction of consecutive detections moving a ball-plausible distance
+                  (>= MIN_STEP_PX and <= MAX_STEP_PX) -- a real ball flies; noise
+                  either teleports or sits still
+    median_step   typical px/frame between consecutive detections
+    moving_frac   fraction of detections that move at all. Targets the one failure mode
+                  p90_conf CANNOT see: a detector confidently locked onto something
+                  static (a yellow shirt, a cone, a ball on the next court), where
+                  confidence stays high while recall collapses.
 
   LABELLED truth, only for clips we have labelled
     recall        fraction of visible labels the peak lands within TOL of
@@ -54,6 +60,13 @@ TOL = 6.0             # px at 720p, matches the training eval
 N_RECALL = 60         # labelled frames scored for truth
 N_BURSTS, BURST = 16, 5   # 80 frames for the unlabelled signals
 MAX_STEP_PX = 55.0    # 720p px/frame a real ball may move (4K 160px / 3)
+# A ball IN PLAY is never parked -- Stage 4 already relies on this (TRACK_MIN_STEP_PX in
+# track_ball_v4: "a stationary high-confidence object on a neighbouring court is the
+# smoothest possible track and wins outright"). It is the signal that separates a
+# detector tracking the real ball from one locked onto a yellow shirt, a cone, a
+# reflection, or a ball on the next court -- the one failure mode where confidence stays
+# HIGH while recall collapses, so p90_conf cannot see it.
+MIN_STEP_PX = 2.0     # 720p px/frame below which a detection looks parked, not ball-like
 BALL_R, BG_R = 6, 22
 
 
@@ -146,7 +159,14 @@ def measure(folder: Path, model, dev, seed: int) -> dict:
         "mean_conf": float(confs.mean()),
         "p90_conf": float(np.percentile(confs, 90)),
         "contrast": float(np.median(contrasts)) if contrasts else None,
-        "continuity": float((steps <= MAX_STEP_PX).mean()) if steps.size else None,
+        # continuity as originally written only asked whether detections move LESS than
+        # MAX -- so a detector parked on a static object scored a perfect 1.00. It read
+        # 1.00 on all eight calibration clips, which was the tell that it measured
+        # nothing. Ball-plausible now means MOVING as well as not teleporting.
+        "continuity": float(((steps >= MIN_STEP_PX) & (steps <= MAX_STEP_PX)).mean())
+                      if steps.size else None,
+        "median_step": float(np.median(steps)) if steps.size else None,
+        "moving_frac": float((steps >= MIN_STEP_PX).mean()) if steps.size else None,
         "n_steps": int(steps.size),
     }
 
@@ -186,7 +206,8 @@ def main(argv=None) -> int:
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_model(a.weights, dev)
     print(f"weights={a.weights.name} device={dev}")
-    hdr = f"{'clip':<20}{'det':>6}{'conf':>7}{'p90':>7}{'contr':>7}{'cont':>7}{'recall':>8}"
+    hdr = (f"{'clip':<20}{'det':>6}{'conf':>7}{'p90':>7}{'contr':>7}"
+           f"{'cont':>7}{'mstep':>7}{'move':>7}{'recall':>8}")
     print(hdr)
 
     res = {}
@@ -201,7 +222,8 @@ def main(argv=None) -> int:
         fmt = lambda v, w, p: (f"{v:>{w}.{p}f}" if v is not None else " " * (w - 1) + "-")
         print(f"{f.name:<20}{fmt(r['det_rate'],6,2)}{fmt(r['mean_conf'],7,3)}"
               f"{fmt(r['p90_conf'],7,3)}{fmt(r['contrast'],7,1)}"
-              f"{fmt(r['continuity'],7,2)}{fmt(r.get('recall'),8,3)}")
+              f"{fmt(r['continuity'],7,2)}{fmt(r.get('median_step'),7,1)}"
+              f"{fmt(r.get('moving_frac'),7,2)}{fmt(r.get('recall'),8,3)}")
         a.out.write_text(json.dumps(res, indent=1), encoding="utf-8")
     print(f"\nsaved -> {a.out}")
     return 0

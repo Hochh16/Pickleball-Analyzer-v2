@@ -64,6 +64,31 @@ SUPPORTED, MARGINAL = 0.80, 0.50
 # det_rate) instead of hugging the larger value.
 T_P90, T_DET = 0.406, 0.077
 
+# Motion guard — CONDITIONAL, and unvalidated. It targets the one failure mode the
+# confidence signals structurally cannot see: a detector locked onto something STATIC
+# (a yellow shirt, a cone, a ball on the next court), where confidence stays high while
+# recall collapses.
+#
+# It must only be applied where motion is actually measurable. Measured values:
+#     clip              recall  det_rate  n_steps  moving_frac
+#     pb_3min_indoor     0.050      0.03        1         1.00
+#     pb_3min_court2     0.533      0.24       11         1.00
+#     indoor_C1          0.750      0.55       32         0.97
+#     pb_2min            0.933      0.66       38         0.61
+#
+# moving_frac is ANTI-correlated with quality here, so it is NOT a quality predictor and
+# must never be used as one. Two reasons, both real: measuring motion needs CONSECUTIVE
+# detections, which a failing venue barely produces (n_steps=1 on pb_3min_indoor — one
+# sample), and on a good venue the ball genuinely sits still a lot (held between points,
+# resting on court), which drags moving_frac DOWN. The original reasoning — "a real ball
+# flies, noise teleports" — is backwards in the sparse-detection regime.
+#
+# A static lock-on, by contrast, produces MANY confident detections, so n_steps is large
+# and moving_frac collapses toward 0. Hence: only judge when there is enough motion data,
+# and set the bar far below the lowest healthy venue (pb_2min at 0.61).
+MIN_STEPS_FOR_MOTION = 20     # below this, motion is not measurable; do not judge on it
+T_MOVE = 0.20                 # ~3x clear of the lowest healthy venue
+
 # Which clips are the same physical venue. Four venues, not eight clips — the unit of
 # generalisation is the VENUE.
 VENUE_OF = {
@@ -110,6 +135,12 @@ def score(r: dict) -> tuple[str, str]:
         return "not_supported", f"p90_conf {p90:.3f} < {T_P90:.3f}"
     if det < T_DET:
         return "not_supported", f"det_rate {det:.3f} < {T_DET:.3f}"
+    # Conditional motion guard: only where motion is measurable at all. Unvalidated —
+    # no venue in the calibration set fails this way, so it has never fired in anger.
+    mv, ns = r.get("moving_frac"), r.get("n_steps", 0)
+    if mv is not None and ns >= MIN_STEPS_FOR_MOTION and mv < T_MOVE:
+        return "not_supported", (f"moving_frac {mv:.2f} < {T_MOVE:.2f} over {ns} steps — "
+                                 f"detections look parked, not ball-like")
     return "ok", f"p90_conf {p90:.3f}, det_rate {det:.3f}"
 
 
