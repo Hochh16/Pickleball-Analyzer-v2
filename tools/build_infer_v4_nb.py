@@ -83,6 +83,9 @@ import numpy as np, pandas as pd
 CELLS.append(code(
 """# ===== KNOBS =====
 CLIP    = 'pb_2min'          # folder under MyDrive/pb_infer/<CLIP>/ with video.mp4
+# To compare candidate models on one clip: upload each .pt to MyDrive, set WEIGHTS to it
+# and Run All again. The video stays in Drive between runs, and outputs are tagged by the
+# weights name, so nothing is overwritten.
 WEIGHTS = DRIVE/'ball_model_v4.pt'
 START   = 0                  # first frame to infer
 MAXF    = None               # None = whole clip; or an int for a sub-range
@@ -240,7 +243,12 @@ df.insert(0, 'schema_version', SCHEMA_VERSION)
 df['visible'] = df['visible'].astype(bool)
 df['interpolated'] = df['interpolated'].astype(bool)
 df['confidence'] = df['confidence'].astype('float32')
-out_parquet = CLIP_DIR/'ball.parquet'; out_meta = CLIP_DIR/'ball.meta.json'
+# Tag outputs with the weights stem so running several candidate models over the same
+# clip does not overwrite. 'ball_model_v4' keeps the plain ball.parquet name that the
+# local stages expect; anything else lands as ball__<stem>.parquet.
+_stem = Path(WEIGHTS).stem
+_tag = '' if _stem == 'ball_model_v4' else f'__{_stem}'
+out_parquet = CLIP_DIR/f'ball{_tag}.parquet'; out_meta = CLIP_DIR/f'ball{_tag}.meta.json'
 df.to_parquet(out_parquet, index=False)
 
 n_vis = int(df['visible'].sum()); n_interp = int(df['interpolated'].sum()); n = len(df)

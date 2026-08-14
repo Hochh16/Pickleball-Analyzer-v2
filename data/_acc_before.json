@@ -1,0 +1,18 @@
+{
+ "shots": 121,
+ "serves": 17,
+ "user_shots": 32,
+ "bounces": 77,
+ "rallies": 16,
+ "volleys": 33,
+ "dinks": 27,
+ "user_drive": 17,
+ "user_serve": 4,
+ "user_dink": 4,
+ "user_drop": 0,
+ "user_volley": 10,
+ "user_forehand": 19,
+ "user_backhand": 7,
+ "_rating_estimate": null,
+ "_rating_band": null
+}
