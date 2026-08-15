@@ -238,6 +238,23 @@ class SessionStore:
             "frame_used_for_calibration": court_json["video"]["frame_used_for_calibration"],
         }
 
+    def set_collection(self, session_id: str, collection_id: Optional[str],
+                       player_name: Optional[str] = None) -> Dict:
+        """Record which cumulative report this video belongs to (None = standalone).
+
+        Asked at the START, with the video, rather than after analysis: the operator
+        already knows whose match it is, and deciding up front means a finished video can
+        be folded into the cumulative report automatically instead of needing a second
+        trip through the UI. `player_name` is stored so a standalone report can still say
+        whose it is.
+        """
+        session = self.get(session_id)
+        session["collection_id"] = collection_id or None
+        if player_name:
+            session["player_name"] = player_name
+        self._save_session(session)
+        return session
+
     def set_starting_corner(self, session_id: str, corner: str) -> Dict:
         """Patch the user's starting corner into markers.json + court.json.
 

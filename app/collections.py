@@ -47,6 +47,9 @@ SCHEMA_VERSION = 1
 POST_STAGES = ["stages.compute_metrics.compute_metrics",
                "stages.rate.rate",
                "stages.plan_improvement.plan_improvement",
+               # Heatmaps only (no single video to annotate) — and before the report,
+               # which embeds the PNGs it produces.
+               "stages.render.render",
                # The report is the point of the whole exercise — without it a collection
                # builds numbers nobody can read, and the "View cumulative report" link
                # 404s. Same builder the per-video path uses, so the cumulative report is
@@ -177,10 +180,26 @@ class CollectionStore:
         except CollectionError:
             return None
 
+    def reopen(self, cid: str) -> Dict:
+        """Undo a close. Ending a report is a judgement call the operator can change
+        their mind about, and there is nothing destructive to undo — closing only stops
+        new videos being added."""
+        doc = self._read(cid)
+        doc["closed_at"] = None
+        self._write(doc)
+        return doc
+
     def set_active(self, cid: str) -> Dict:
+        """Make this the default target for new videos, reopening it if needed.
+
+        Selecting a finished report is a normal thing to want (the operator plays again
+        after a break), and refusing it left them with no route back — the only way to
+        keep going was to start a second report for the same person, which is exactly
+        what collections exist to avoid.
+        """
         doc = self._read(cid)
         if doc.get("closed_at"):
-            raise CollectionError(f"{cid} is closed; start a new collection instead")
+            doc = self.reopen(cid)
         idx = self._read_index()
         idx["active"] = cid
         self._write_index(idx)
@@ -292,6 +311,11 @@ class CollectionStore:
             args = [str(out), "--force"]
             if mod.startswith("stages."):
                 args += ["--log-level", "ERROR"]
+            # Stage 11 on a union can only do the heatmaps — there is no single video to
+            # annotate, by construction. Must run BEFORE build_report, which embeds the
+            # PNGs; without it the cumulative report has no court-positioning section.
+            if mod.endswith("render.render"):
+                args.append("--heatmaps-only")
             r = subprocess.run([sys.executable, "-m", mod] + args,
                                capture_output=True, text=True)
             if r.returncode != 0:

@@ -177,6 +177,13 @@ async function onSessionReady(session) {
   S.session = session;
   S.courtConfirmed = !!(session.steps && session.steps.calibration);
   toast(`Loaded “${session.name}”`);
+  // Ask whose report this is before anything else, once per video. Deciding up front is
+  // what lets a finished analysis join the cumulative report by itself, instead of the
+  // operator having to come back for a second step after a ~100-minute run.
+  if (session.collection_id === undefined) {
+    await askWhoseReport(session);
+    return;
+  }
   const configured = !!(session.steps && session.steps.calibration && session.steps.roster);
   if (!configured) { goto('court'); return; }
   // Fully configured session: hydrate the wizard from disk, unlock every step,
@@ -712,14 +719,21 @@ async function showCollectStep() {
   const card = el('collectCard');
   if (!card || collectLoaded) return;
   collectLoaded = true;
-  card.hidden = false;
-  el('collectDone').hidden = true;
+  // The report was chosen with the video, so this is a confirmation, not a question.
+  // Falling back to asking here only matters for videos set up before that existed.
   try {
-    const data = await api('/api/collections');
-    el('collectReminder').textContent = data.reminder || '';
-    renderCollectList(data.collections || []);
+    const res = await jsonPost(`/api/sessions/${S.session.id}/finalize-collection`, {});
+    if (res.collection_id) {
+      card.hidden = false;
+      const nm = (res.collection && res.collection.name) || res.collection_id;
+      finishCollect(res.collection_id,
+                    res.added ? `Added to "${nm}".` : `Already part of "${nm}".`);
+      return;
+    }
+    card.hidden = true;   // standalone: nothing to ask
   } catch (e) {
-    el('collectReminder').textContent = 'Could not load cumulative reports.';
+    card.hidden = false;
+    el('collectReminder').textContent = e.message || 'Could not update the cumulative report.';
   }
 }
 
@@ -848,10 +862,11 @@ function renderCollMgr(list, activeId) {
       + '</ul><div class="coll-card-actions">'
       + '<a class="btn primary small" target="_blank" href="/api/collections/'
       + encodeURIComponent(c.id) + '/files/report.html">View report →</a>'
-      + (c.closed_at ? ''
+      + (c.closed_at
+        ? '<button class="btn ghost small" data-reopen="' + escapeHtml(c.id) + '">Resume adding videos</button>'
         : '<button class="btn ghost small" data-add="' + escapeHtml(c.id) + '">Add a video</button>'
         + '<button class="btn ghost small" data-act="' + escapeHtml(c.id) + '">Make default</button>'
-        + '<button class="btn ghost small" data-close="' + escapeHtml(c.id) + '">Close</button>')
+        + '<button class="btn ghost small" data-close="' + escapeHtml(c.id) + '">Stop adding videos</button>')
       + '</div>';
     wrap.appendChild(card);
   });
@@ -864,9 +879,19 @@ function renderCollMgr(list, activeId) {
     b.onclick = () => collMgrAction('/api/collections/' + b.dataset.act + '/activate',
                                     'POST', 'Set as default');
   });
+  wrap.querySelectorAll('[data-reopen]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.reopen + '/reopen',
+                                    'POST', 'Resumed');
+  });
   wrap.querySelectorAll('[data-close]').forEach((b) => {
-    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.close + '/close',
-                                    'POST', 'Closed');
+    b.onclick = () => {
+      // This used to be labelled "Close", which reads as closing the panel. The operator
+      // pressed it after viewing a report and silently ended their cumulative analysis.
+      if (!confirm('Stop adding videos to this report? The report stays and can be '
+                   + 'resumed later - this only stops new videos joining it.')) return;
+      collMgrAction('/api/collections/' + b.dataset.close + '/close', 'POST',
+                    'Stopped adding videos');
+    };
   });
   wrap.querySelectorAll('[data-add]').forEach((b) => {
     b.onclick = () => openAddPicker(b.dataset.add);
@@ -916,6 +941,59 @@ async function openAddPicker(cid) {
     });
   } catch (e) {
     list.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Whose report is this?" — asked on the video page, with the video.
+// ---------------------------------------------------------------------------
+
+async function askWhoseReport(session) {
+  const box = el('videoCollect');
+  const list = el('videoCollectList');
+  box.hidden = false;
+  list.innerHTML = '<p class="small muted">Loading…</p>';
+  try {
+    const data = await api('/api/collections');
+    el('videoCollectReminder').textContent = data.reminder || '';
+    const open = (data.collections || []).filter((c) => !c.closed_at);
+    list.innerHTML = '';
+    open.forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost block collect-pick';
+      const n = (c.members || []).length;
+      b.innerHTML = '<b>' + escapeHtml(c.name) + '</b><span class="small muted"> — '
+                    + n + ' video' + (n === 1 ? '' : 's') + '</span>';
+      b.onclick = () => chooseReport(session, c.id, c.name);
+      list.appendChild(b);
+    });
+    if (!open.length) {
+      list.innerHTML = '<p class="small muted">No cumulative reports yet.</p>';
+    }
+  } catch (e) {
+    list.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+  el('videoCollectNewGo').onclick = async () => {
+    const name = el('videoCollectNewName').value.trim();
+    if (!name) { toast('Whose report is it?', true); return; }
+    try {
+      const c = await jsonPost('/api/collections', { name });
+      await chooseReport(session, c.id, c.name);
+    } catch (e) { toast(e.message || 'Could not create', true); }
+  };
+  el('videoCollectSkip').onclick = () => chooseReport(session, null, null);
+}
+
+async function chooseReport(session, cid, name) {
+  try {
+    const updated = await jsonPost(`/api/sessions/${session.id}/collection`,
+                                   { collection_id: cid, player_name: name });
+    el('videoCollect').hidden = true;
+    toast(cid ? `This video will join "${name}"` : 'Standalone analysis');
+    await onSessionReady(updated);
+  } catch (e) {
+    toast(e.message || 'Could not save that choice', true);
   }
 }
 

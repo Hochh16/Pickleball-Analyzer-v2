@@ -341,6 +341,9 @@ def fn(n: int) -> str:
 
 
 def build_html(folder: Path) -> str:
+    # Present only for a cumulative report: it is the collection's membership record,
+    # and it carries the player's name (needed in the hero, far above the role labels).
+    collection = load_json(folder, "collection.json")
     rating = load_json(folder, "rating.json") or {}
     plan = load_json(folder, "improvement_plan.json") or {}
     bounces_doc = load_json(folder, "bounces.json") or {}
@@ -384,8 +387,21 @@ def build_html(folder: Path) -> str:
 
     # ---- Hero ----
     est = rt.get("estimate")
+    # Whose report this is, stated up front. Without it, a library of reports is
+    # indistinguishable one from another, and the operator has no way to tell which
+    # cumulative report a new video belongs to.
+    who = ""
+    if collection and collection.get("name"):
+        who = str(collection["name"])
+    else:
+        sess = load_json(folder, "session.json") or {}
+        who = str(sess.get("player_name") or "")
+    n_vids = len((collection or {}).get("members", []) or [])
     A('<p class="eyebrow">USA Pickleball–aligned skill report</p>')
-    A('<h1>Your Player Report</h1>')
+    A(f'<h1>{esc(who)} — Player Report</h1>' if who else '<h1>Your Player Report</h1>')
+    if collection:
+        A(f'<p class="muted small">Cumulative report across {n_vids} '
+          f'video{"" if n_vids == 1 else "s"}, combined as one longer match.</p>')
     A('<div class="card hero">')
     A(f'<div><div class="score">{est if est is not None else "—"}</div>'
       f'<div class="muted small">USAPA band {esc(rt.get("band","—"))}</div></div>')
@@ -535,7 +551,6 @@ def build_html(folder: Path) -> str:
     # A CUMULATIVE report covers several videos, where "Opponent A" is not one person and
     # neither is the partner. Stage 7.9 already pools every opponent into one bucket
     # (contract D1), so the labels have to say so rather than implying a named individual.
-    collection = load_json(folder, "collection.json")
     role_labels = ([("user", "You"), ("partner", "Partners"), ("opp_a", "Opponents")]
                    if collection else
                    [("user", "You"), ("partner", "Partner"),

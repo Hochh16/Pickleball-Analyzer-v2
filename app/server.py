@@ -130,8 +130,46 @@ def videos() -> dict:
 # --------------------------------------------------------------------------
 
 @app.get("/api/sessions")
-def list_sessions() -> dict:
-    return {"sessions": store.list()}
+def list_sessions(all: bool = False) -> dict:
+    """One entry per VIDEO, newest setup first.
+
+    Setting a video up more than once creates a new folder each time, so the raw list
+    grows a row per attempt — 14 rows for 3 actual videos in testing, which makes both
+    the "continue a previous setup" list and the collection picker unusable. Folders
+    beginning with "_" are internal (collections, scratch) and are never offered.
+
+    ?all=true returns the raw list for debugging.
+    """
+    def _is_real(s: dict) -> bool:
+        if str(s.get("id", "")).startswith("_"):
+            return False
+        # A session pointing at a file INSIDE the data root is one of the pipeline's own
+        # debug clips (_bounces_check2.mp4 and friends) that got opened by accident, not
+        # a match someone wants to analyse.
+        vp = str(s.get("video_path") or "")
+        try:
+            inside = Path(vp).resolve().is_relative_to(DATA_ROOT)
+        except (OSError, ValueError):
+            inside = False
+        return not (inside and Path(vp).name != "video.mp4")
+
+    raw = [s for s in store.list() if _is_real(s)]
+    if all:
+        return {"sessions": raw}
+    best: dict = {}
+    for s in raw:
+        key = str(s.get("video_path") or s.get("id"))
+        prev = best.get(key)
+        # keep the most recent setup for a video, but report how many exist so nothing
+        # is silently hidden
+        if prev is None or str(s.get("created_at", "")) > str(prev.get("created_at", "")):
+            s = dict(s)
+            s["duplicate_setups"] = (prev or {}).get("duplicate_setups", 0) + 1
+            best[key] = s
+        else:
+            prev["duplicate_setups"] = prev.get("duplicate_setups", 0) + 1
+    out = sorted(best.values(), key=lambda s: str(s.get("created_at", "")), reverse=True)
+    return {"sessions": out}
 
 
 @app.post("/api/sessions")
@@ -181,6 +219,50 @@ def calibrate_session(session_id: str, req: CalibrateRequest) -> dict:
         return store.calibrate(session_id, req.model_dump())
     except SessionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class SessionCollectionRequest(BaseModel):
+    collection_id: Optional[str] = None      # None = standalone
+    player_name: Optional[str] = None
+
+
+@app.post("/api/sessions/{session_id}/collection")
+def set_session_collection(session_id: str, req: SessionCollectionRequest) -> dict:
+    """Choose the cumulative report for a video BEFORE it is analysed."""
+    try:
+        return store.set_collection(session_id, req.collection_id, req.player_name)
+    except SessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/sessions/{session_id}/finalize-collection")
+def finalize_session_collection(session_id: str) -> dict:
+    """Fold a finished video into the cumulative report chosen when it was set up.
+
+    Idempotent: re-running after a rebuild, or on a video already in the collection,
+    reports the existing membership instead of failing. The UI calls this when a run
+    completes, so the operator never has to remember a second step.
+    """
+    try:
+        session = store.get(session_id)
+    except SessionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    cid = session.get("collection_id")
+    if not cid:
+        return {"collection_id": None, "added": False, "reason": "standalone"}
+    try:
+        doc = collections.get_doc(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if any(m["session_id"] == session_id for m in doc.get("members", [])):
+        return {"collection_id": cid, "added": False, "reason": "already a member",
+                "collection": doc}
+    try:
+        doc = collections.add(cid, store.folder(session_id),
+                              venue_ok=_venue_ok(session_id))
+    except CollectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"collection_id": cid, "added": True, "collection": doc}
 
 
 @app.post("/api/sessions/{session_id}/starting-corner")
@@ -429,6 +511,14 @@ def activate_collection(cid: str) -> dict:
 def close_collection(cid: str) -> dict:
     try:
         return collections.close(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/collections/{cid}/reopen")
+def reopen_collection(cid: str) -> dict:
+    try:
+        return collections.reopen(cid)
     except CollectionError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

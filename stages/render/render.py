@@ -450,7 +450,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         fail(f"not a folder: {folder}", FileNotFoundError)
     video_path = folder / "video.mp4"
     court_path = folder / "court.json"
-    if not video_path.exists():
+    # A CUMULATIVE folder (Stage 7.9 union) has no single video by construction — it is
+    # several. Heatmaps come from metrics.json grids and need no footage, so
+    # --heatmaps-only must not require one; the annotated video genuinely cannot exist
+    # for a union and is skipped further down.
+    if not video_path.exists() and not args.heatmaps_only:
         fail(f"required input not found: {video_path}", FileNotFoundError)
     if not court_path.exists():
         fail(f"required input not found: {court_path}", FileNotFoundError)
@@ -502,20 +506,27 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         for row in poses_df[poses_df.get("is_user", False) == True].to_dict("records"):  # noqa: E712
             pose_idx[int(row["frame"])].append(row)
 
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
+    # A union folder has no video (see above). Everything that follows about frames and
+    # geometry is only used by the annotated-video path, which --heatmaps-only skips.
+    cap = cv2.VideoCapture(str(video_path)) if video_path.exists() else None
+    if cap is not None and not cap.isOpened():
         fail(f"could not open video: {video_path}")
-    fps = court.get("video", {}).get("fps") or cap.get(cv2.CAP_PROP_FPS) or 30.0
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if cap is None:
+        fps = court.get("video", {}).get("fps") or 30.0
+        frame_count, w, h = 0, 0, 0
+    else:
+        fps = court.get("video", {}).get("fps") or cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     start = max(0, args.start_frame or 0)
     end = args.end_frame if args.end_frame is not None else frame_count
     if args.max_seconds is not None:
         end = min(end, start + int(args.max_seconds * fps))
     end = min(end, frame_count)
-    if start >= end:
+    # An empty range is only a problem when there is a video to draw on.
+    if start >= end and cap is not None:
         fail(f"empty render range [{start},{end})", ValueError)
 
     warnings: List[str] = []
@@ -597,7 +608,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             writer.write(frame)
         writer.release()
         log.info(f"wrote {out_video} ({end - start} frames)")
-    cap.release()
+    if cap is not None:
+        cap.release()
 
     # --- timeline ---
     timeline = build_timeline(rallies, classified, bounces, rating, plan, metrics,

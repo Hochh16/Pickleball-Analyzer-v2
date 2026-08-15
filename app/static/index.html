@@ -78,6 +78,19 @@
             <h2>Or continue a previous setup</h2>
             <div class="session-list" id="sessionList"></div>
           </div>
+
+          <!-- Whose report is this? Asked WITH the video, before analysis, so a
+               finished video folds into the cumulative report on its own. -->
+          <div class="video-collect" id="videoCollect" hidden>
+            <h2>Whose report is this?</h2>
+            <p class="small muted" id="videoCollectReminder"></p>
+            <div class="collect-list" id="videoCollectList"></div>
+            <div class="collect-new">
+              <input type="text" id="videoCollectNewName" placeholder="New report — whose is it? e.g. David" />
+              <button class="btn primary small" id="videoCollectNewGo" type="button">Create &amp; use</button>
+            </div>
+            <button class="btn ghost block" id="videoCollectSkip" type="button">Just this video (no cumulative report)</button>
+          </div>
         </div>
 
         <aside class="camera-reqs">
