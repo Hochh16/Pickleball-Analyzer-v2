@@ -314,6 +314,21 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 .fail-card { border-color: var(--danger); }
 .btn.block { display: block; }
 
+/* Any author `display` rule beats the [hidden] attribute's UA display:none, so
+   `el.hidden = true` silently did nothing to .btn.block elements — the vision hand-off
+   showed the "download the bundle" button alongside instructions saying the clip was
+   already synced. Make hidden actually hide. */
+[hidden] { display: none !important; }
+
+/* One-time Drive setup callout in the vision hand-off */
+.handoff-once {
+  border: 1px solid var(--line, #2a3140); border-left: 3px solid var(--teal, #2ab7ff);
+  border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.handoff-once code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; }
+.handoff-once a { color: var(--teal, #2ab7ff); }
+
 .log-card { padding: 0; overflow: hidden; }
 .log-head { padding: 12px 16px 0; }
 #runLog { margin: 0; padding: 8px 16px 14px; max-height: 260px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; }

@@ -476,6 +476,22 @@ def _venue_ok(session_id: str) -> Optional[bool]:
     return None if v is None else v != "not_supported"
 
 
+@app.get("/api/models/ball_model_v4.pt")
+def get_ball_model() -> FileResponse:
+    """Hand the operator the CURRENTLY DEPLOYED ball model to put on Drive.
+
+    The Colab vision pass uses whatever ball_model_v4.pt sits in My Drive. When the app's
+    model is updated and Drive's is not, clips are silently analysed by an older detector
+    — no error, just worse numbers, and a collection that mixes two accuracy regimes.
+    Serving the exact deployed file removes the guesswork about which one is current.
+    """
+    p = (Path("data/models") / "ball_model_v4.pt").resolve()
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="No ball model is deployed")
+    return FileResponse(p, media_type="application/octet-stream",
+                        filename="ball_model_v4.pt")
+
+
 @app.get("/api/collections")
 def list_collections() -> dict:
     active = collections.active()

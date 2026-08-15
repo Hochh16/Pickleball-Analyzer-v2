@@ -592,19 +592,33 @@ function initRunStep() {
 // and auto-ingests the results — rewrite the hand-off card to that (no manual
 // download; upload stays as a fallback).
 function applyHandoffMode() {
-  if (!S.driveSync) return;
-  el('handoffIntro').textContent =
-    'Vision runs on Colab’s GPU. Your clip is synced to Google Drive automatically — run the notebook and the results import themselves.';
-  el('handoffSteps').innerHTML =
-    '<li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). Your clip is already on Drive — nothing to upload or edit.</li>' +
-    '<li>Leave this page open — the steps on the left tick off as Colab works, and analysis <b>resumes automatically</b> when it finishes.</li>';
-  el('bundleDownloadBtn').hidden = true;   // bundle is auto-pushed to Drive
-  // manual upload becomes a de-emphasized fallback (auto-ingest is the path)
+  // The numbered steps and the numbered BUTTONS must agree. They previously disagreed:
+  // the button labels hardcoded 1/2/3 for the manual path while the step list described
+  // the Drive-sync path, so the screen told the operator both to download the bundle and
+  // that the clip was already synced.
+  const steps = el('handoffSteps'), dl = el('bundleDownloadBtn'), colab = el('openColabBtn');
   const ub = el('visionUploadBtn');
-  ub.classList.remove('primary');
-  ub.classList.add('ghost');
-  ub.textContent = 'Upload outputs manually (fallback)';
-  el('visionNote').textContent = '⏳ Waiting for Colab results (auto-syncing from Google Drive)…';
+  if (S.driveSync) {
+    el('handoffIntro').textContent =
+      'Vision runs on Colab’s GPU. Your clip is synced to Google Drive automatically — '
+      + 'run the notebook and the results import themselves.';
+    steps.innerHTML =
+      '<li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). '
+      + 'Your clip is already on Drive — nothing to upload or edit.</li>'
+      + '<li>Leave this page open — the steps on the left tick off as Colab works, and '
+      + 'analysis <b>resumes automatically</b> when it finishes.</li>';
+    dl.hidden = true;                       // bundle is auto-pushed to Drive
+    colab.textContent = '↗ 1. Open Colab notebook (Run all)';
+    ub.classList.remove('primary');
+    ub.classList.add('ghost');
+    ub.textContent = 'Upload outputs manually (fallback)';
+    el('visionNote').textContent = '⏳ Waiting for Colab results (auto-syncing from Google Drive)…';
+  } else {
+    dl.hidden = false;
+    dl.textContent = '⬇ 1. Download clip bundle (video + setup)';
+    colab.textContent = '↗ 2. Open Colab notebook (Run all)';
+    ub.textContent = '3. Upload vision outputs';
+  }
 }
 
 function enterRun() {
