@@ -117,11 +117,17 @@ def main():
     ap.add_argument("--clip", required=True)
     ap.add_argument("--save", help="write these numbers to a snapshot file")
     ap.add_argument("--compare", help="diff against a snapshot file")
+    # Comparing candidate detectors means running the same footage in a scratch folder,
+    # which by name alone looks like a clip with no truth. This asserts "this IS the
+    # acceptance clip's footage" so the operator counts still apply.
+    ap.add_argument("--as-acceptance-clip", action="store_true",
+                    help="score against the operator truth even though the folder is "
+                         "named something else (use only for a re-run of that footage)")
     args = ap.parse_args()
     clip = Path(args.clip)
 
     got = collect(clip)
-    has_truth = clip.name == TRUTH_CLIP
+    has_truth = clip.name == TRUTH_CLIP or args.as_acceptance_clip
     base = json.load(open(args.compare, encoding="utf-8")) if args.compare else {}
 
     print(f"\nACCEPTANCE SCORECARD — {clip.name}")
