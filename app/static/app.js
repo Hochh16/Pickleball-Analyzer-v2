@@ -121,7 +121,19 @@ async function loadVideos() {
     }
     data.videos.forEach((v) => {
       const size = v.size_mb >= 1024 ? (v.size_mb / 1024).toFixed(1) + ' GB' : v.size_mb + ' MB';
-      list.appendChild(rowEl('video', '🎬', v.name, size, () => pickLocal(v.path)));
+      const row = rowEl('video', '🎬', v.name, size, () => pickLocal(v.path));
+      // Say up front that this clip has been analysed before, and where it ended up.
+      // The alternative is finding out from the duplicate guard after setting it up
+      // again and waiting out a vision pass.
+      if (v.already_analysed || v.in_collection) {
+        const tag = document.createElement('span');
+        tag.className = 'row-note';
+        tag.textContent = v.in_collection
+          ? 'already analysed · in "' + v.in_collection + '"'
+          : 'already analysed';
+        row.querySelector('.nm').appendChild(tag);
+      }
+      list.appendChild(row);
     });
   } catch (e) {
     list.innerHTML = '';

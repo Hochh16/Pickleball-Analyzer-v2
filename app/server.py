@@ -122,6 +122,36 @@ def videos() -> dict:
         vids = data["videos"]
     except (FileNotFoundError, NotADirectoryError, PermissionError):
         vids = []
+
+    # Flag videos that have already been through the app, and which cumulative report
+    # they landed in. Without this the operator can only discover a re-run by hitting the
+    # duplicate guard AFTER setting the clip up again and waiting out a vision pass.
+    in_collection: dict = {}
+    for c in collections.list():
+        for m in c.get("members", []):
+            in_collection[m["session_id"]] = c.get("name") or c["id"]
+
+    # Aggregate over EVERY session for a video, not just the newest. Setting a clip up
+    # again creates a fresh empty session, and keying on that one reported "never
+    # analysed" for a video that has a finished report sitting in a collection.
+    by_video: dict = {}
+    for s in store.list():
+        vp = str(s.get("video_path") or "")
+        if not vp:
+            continue
+        d = by_video.setdefault(vp, {"analysed": None, "collection": None})
+        if d["analysed"] is None and (store.folder(s["id"]) / "report.html").exists():
+            d["analysed"] = s["id"]
+        if d["collection"] is None and s["id"] in in_collection:
+            d["collection"] = in_collection[s["id"]]
+
+    for v in vids:
+        d = by_video.get(str(v["path"]))
+        if not d:
+            continue
+        v["already_analysed"] = bool(d["analysed"])
+        v["analysed_session_id"] = d["analysed"]
+        v["in_collection"] = d["collection"]
     return {"dir": str(VIDEOS_DIR), "videos": vids}
 
 

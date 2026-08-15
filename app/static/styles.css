@@ -320,6 +320,12 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
    already synced. Make hidden actually hide. */
 [hidden] { display: none !important; }
 
+/* "already analysed" marker on a video row */
+.row-note {
+  margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11.5px;
+  background: rgba(255,255,255,.08); color: var(--muted, #93a1b5); white-space: nowrap;
+}
+
 /* One-time Drive setup callout in the vision hand-off */
 .handoff-once {
   border: 1px solid var(--line, #2a3140); border-left: 3px solid var(--teal, #2ab7ff);
