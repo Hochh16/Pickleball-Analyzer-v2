@@ -532,8 +532,15 @@ def build_html(folder: Path) -> str:
     A('<p class="muted small">Where each player spent time during points.'
       + fn(4) + '</p>')
     A('<div class="grid2">')
-    for role, label in [("user", "You"), ("partner", "Partner"),
-                        ("opp_a", "Opponent A"), ("opp_b", "Opponent B")]:
+    # A CUMULATIVE report covers several videos, where "Opponent A" is not one person and
+    # neither is the partner. Stage 7.9 already pools every opponent into one bucket
+    # (contract D1), so the labels have to say so rather than implying a named individual.
+    collection = load_json(folder, "collection.json")
+    role_labels = ([("user", "You"), ("partner", "Partners"), ("opp_a", "Opponents")]
+                   if collection else
+                   [("user", "You"), ("partner", "Partner"),
+                    ("opp_a", "Opponent A"), ("opp_b", "Opponent B")])
+    for role, label in role_labels:
         uri = data_uri_png(folder / f"heatmap_position_{role}.png")
         if uri:
             A(f'<div class="card hm"><h3>{esc(label)}</h3>'

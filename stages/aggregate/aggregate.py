@@ -63,7 +63,8 @@ def member_span_sec(cl: dict, ra: dict, bo: dict) -> float:
     return float(max(ts) - min(ts)) if ts else 0.0
 
 
-def union(members: list[Path], log: logging.Logger) -> dict:
+def union(members: list[Path], log: logging.Logger,
+          pool_opponents: bool = True) -> dict:
     """Concatenate every stream with IDs renumbered and time offset.
 
     Every cross-reference is rewritten with the IDs. A dangling reference afterwards is a
@@ -147,7 +148,17 @@ def union(members: list[Path], log: logging.Logger) -> dict:
         out_players.append(p)
 
         for t, info in tr["track_roles"].items():
-            role_of_track[tid[int(t)]] = info["role"]
+            role = info["role"]
+            # Contract D1: cumulatively, opp_a and opp_b are not the same two humans from
+            # video to video, so keeping them apart is meaningless precision. Pool them
+            # HERE, in the stream, so Stage 8 computes one opponents bucket natively --
+            # merging two per-role metric blocks afterwards would mean re-deriving means
+            # and confidences by hand, the exact arithmetic this stage exists to avoid.
+            # `partner` is NOT pooled into it: the partner is on the user's team, and
+            # team.near / team.far and error attribution are built on that split.
+            if pool_opponents and role == "opp_b":
+                role = "opp_a"
+            role_of_track[tid[int(t)]] = role
             track_conf[tid[int(t)]] = info.get("confidence", 0.0)
 
         span = member_span_sec(cl, ra, bo)
@@ -190,7 +201,7 @@ def union(members: list[Path], log: logging.Logger) -> dict:
     return {"shots": out_shots, "rallies": out_rallies, "bounces": out_bounces,
             "players": players, "role_of_track": role_of_track, "track_conf": track_conf,
             "synthetic": synthetic, "gated": sorted(gated), "provenance": provenance,
-            "span_sec": t_off}
+            "span_sec": t_off, "pooled_opponents": pool_opponents}
 
 
 def write(u: dict, members: list[Path], out: Path, log: logging.Logger) -> None:
@@ -251,6 +262,7 @@ def write(u: dict, members: list[Path], out: Path, log: logging.Logger) -> None:
         "schema_version": SCHEMA_VERSION, "built_at_utc": now,
         "members": u["provenance"], "total_span_sec": round(u["span_sec"], 3),
         "ball_source": ball_source, "synthetic_gated": u["gated"],
+        "pooled_opponents": u["pooled_opponents"],
         "stage_version": STAGE_VERSION}, indent=1), encoding="utf-8")
 
     log.info("union -> %s: %d shots, %d rallies, %d bounces, %d players rows, %.1fs",
@@ -263,11 +275,15 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--member", action="append", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--no-pool-opponents", action="store_true",
+                    help="keep opp_a/opp_b separate (they are different people per "
+                         "video, so the default pools them -- contract D1)")
     ap.add_argument("--log-level", default="INFO")
     a = ap.parse_args(argv)
     log = setup_logging(a.log_level)
     try:
-        write(union(a.member, log), a.member, a.out, log)
+        u = union(a.member, log, pool_opponents=not a.no_pool_opponents)
+        write(u, a.member, a.out, log)
     except RuntimeError as e:
         log.error("%s", e)
         return 1
