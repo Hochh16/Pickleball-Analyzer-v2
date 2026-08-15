@@ -37,7 +37,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 COLLECTIONS_DIRNAME = "_collections"
-COLLECTION_FILE = "collection.json"
+COLLECTION_FILE = "collection.json"      # membership record, owned here
+UNION_FILE = "union.json"                # build summary, written by Stage 7.9
 INDEX_FILE = "_collections/index.json"
 SCHEMA_VERSION = 1
 
@@ -191,6 +192,10 @@ class CollectionStore:
                 doc = json.loads(p.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
+            # Anything without an id is not a membership record -- skip it rather than
+            # crash the whole listing over one stray file in the collections folder.
+            if not isinstance(doc, dict) or "id" not in doc:
+                continue
             doc["is_active"] = doc["id"] == active
             out.append(doc)
         out.sort(key=lambda d: d.get("created_at", ""), reverse=True)
@@ -296,7 +301,7 @@ class CollectionStore:
 
         # The union writes its own collection.json describing the build; keep the
         # membership record as the authority and fold the build summary into it.
-        built = out / COLLECTION_FILE
+        built = out / UNION_FILE
         if built.exists():
             b = json.loads(built.read_text(encoding="utf-8"))
             doc["build"] = {k: b.get(k) for k in

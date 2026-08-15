@@ -258,7 +258,10 @@ def write(u: dict, members: list[Path], out: Path, log: logging.Logger) -> None:
         if p.exists():
             (out / f).write_bytes(p.read_bytes())
 
-    (out / "collection.json").write_text(json.dumps({
+    # NOT collection.json -- app/collections.py owns that name for the membership
+    # record in this same folder. Two writers, one filename, is a silent corruption
+    # waiting for a rebuild to be interrupted.
+    (out / "union.json").write_text(json.dumps({
         "schema_version": SCHEMA_VERSION, "built_at_utc": now,
         "members": u["provenance"], "total_span_sec": round(u["span_sec"], 3),
         "ball_source": ball_source, "synthetic_gated": u["gated"],

@@ -328,3 +328,17 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Cumulative reports (collections) ---------------------------------- */
+/* Choices are stacked buttons rather than a dropdown with a default: picking the
+   wrong player's report is not recoverable in one click, so every option is an
+   equal, deliberate press. */
+.collect-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.collect-pick { text-align: left; }
+.collect-new { display: flex; gap: 6px; margin: 8px 0; }
+.collect-new input {
+  flex: 1; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line, #2a3140); background: transparent; color: inherit;
+}
+.collect-done { margin-top: 10px; }
+.small.err { color: #ff6b6b; }

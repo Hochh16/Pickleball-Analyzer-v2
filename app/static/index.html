@@ -243,6 +243,25 @@
             <a class="btn ghost block" id="viewVideoBtn" target="_blank">Watch match video</a>
           </div>
 
+          <!-- Cumulative report: nothing is pre-selected on purpose. Adding a video to
+               the wrong player's collection is not something the app can detect or undo
+               cleanly, so the choice is always an explicit click. -->
+          <div class="done-card" id="collectCard" hidden>
+            <h3>Add to a cumulative report?</h3>
+            <p class="small muted" id="collectReminder"></p>
+            <div class="collect-list" id="collectList"></div>
+            <div class="collect-new" id="collectNewWrap" hidden>
+              <input type="text" id="collectNewName" placeholder="Whose report is this? e.g. David" />
+              <button class="btn primary small" id="collectNewGo" type="button">Create</button>
+            </div>
+            <button class="btn ghost block" id="collectNewBtn" type="button">+ Start a new cumulative report</button>
+            <button class="btn ghost block" id="collectSkipBtn" type="button">Keep this video standalone</button>
+            <div class="collect-done" id="collectDone" hidden>
+              <p class="small" id="collectDoneMsg"></p>
+              <a class="btn primary block" id="viewCollectionBtn" target="_blank">View cumulative report →</a>
+            </div>
+          </div>
+
           <!-- Failure -->
           <div class="fail-card" id="runFail" hidden>
             <h3>Something went wrong</h3>

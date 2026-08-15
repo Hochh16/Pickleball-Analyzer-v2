@@ -639,6 +639,7 @@ function renderRun(job) {
   // side cards
   el('visionHandoff').hidden = job.phase !== 'vision';
   el('runDone').hidden = job.phase !== 'done';
+  if (job.phase === 'done') showCollectStep();
   el('runFail').hidden = job.phase !== 'failed';
   if (job.phase === 'failed') el('runFailMsg').textContent = job.error || 'A stage failed. See the activity log.';
 
@@ -686,6 +687,7 @@ function boot() {
   initYouStep();
   initReviewStep();
   initRunStep();
+  initCollectStep();
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
   $$('#stepnav li').forEach((li) => li.addEventListener('click', () => {
     const i = STEPS.indexOf(li.dataset.step);
@@ -694,3 +696,101 @@ function boot() {
   goto('video');
 }
 document.addEventListener('DOMContentLoaded', boot);
+
+// ---------------------------------------------------------------------------
+// Cumulative reports (collections)
+//
+// NOTHING IS PRE-SELECTED. Adding a video to the wrong player's cumulative report is
+// not something the app can detect, and un-picking it means a rebuild plus explaining
+// why their numbers moved. One extra click is cheaper than that, every time.
+// ---------------------------------------------------------------------------
+
+let collectLoaded = false;
+
+async function showCollectStep() {
+  const card = el('collectCard');
+  if (!card || collectLoaded) return;
+  collectLoaded = true;
+  card.hidden = false;
+  el('collectDone').hidden = true;
+  try {
+    const data = await api('/api/collections');
+    el('collectReminder').textContent = data.reminder || '';
+    renderCollectList(data.collections || []);
+  } catch (e) {
+    el('collectReminder').textContent = 'Could not load cumulative reports.';
+  }
+}
+
+function renderCollectList(list) {
+  const wrap = el('collectList');
+  const open = list.filter((c) => !c.closed_at);
+  if (!open.length) {
+    wrap.innerHTML = '<p class="small muted">No cumulative reports yet. '
+      + 'Start one to track this player across videos.</p>';
+    return;
+  }
+  wrap.innerHTML = '';
+  open.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn ghost block collect-pick';
+    const n = (c.members || []).length;
+    b.innerHTML = `<b>${escapeHtml(c.name)}</b>`
+      + `<span class="small muted"> — ${n} video${n === 1 ? '' : 's'}</span>`;
+    b.onclick = () => addToCollection(c.id, c.name);
+    wrap.appendChild(b);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function addToCollection(cid, name) {
+  const wrap = el('collectList');
+  wrap.innerHTML = '<p class="small muted">Adding and rebuilding…</p>';
+  try {
+    await jsonPost(`/api/collections/${cid}/members`,
+                   { session_id: S.session.id });
+    finishCollect(cid, `Added to "${name}".`);
+  } catch (e) {
+    // The most likely refusals are meaningful to the operator: an unsupported venue
+    // (D4) or the same video twice. Show the server's reason rather than a generic error.
+    wrap.innerHTML = `<p class="small err">${escapeHtml(e.message || 'Could not add.')}</p>`;
+    toast(e.message || 'Could not add to the cumulative report', true);
+  }
+}
+
+function finishCollect(cid, msg) {
+  el('collectList').innerHTML = '';
+  el('collectNewWrap').hidden = true;
+  el('collectNewBtn').hidden = true;
+  el('collectSkipBtn').hidden = true;
+  el('collectDoneMsg').textContent = msg;
+  el('viewCollectionBtn').href = `/api/collections/${cid}/files/report.html`;
+  el('collectDone').hidden = false;
+}
+
+function initCollectStep() {
+  const nb = el('collectNewBtn');
+  if (!nb) return;
+  nb.onclick = () => {
+    el('collectNewWrap').hidden = false;
+    el('collectNewName').focus();
+  };
+  el('collectNewGo').onclick = async () => {
+    const name = el('collectNewName').value.trim();
+    if (!name) { toast('Give the report a name (whose is it?)', true); return; }
+    try {
+      const c = await jsonPost('/api/collections', { name });
+      await addToCollection(c.id, c.name);
+    } catch (e) {
+      toast(e.message || 'Could not create the cumulative report', true);
+    }
+  };
+  el('collectSkipBtn').onclick = () => {
+    el('collectCard').hidden = true;
+  };
+}
