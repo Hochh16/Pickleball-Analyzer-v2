@@ -121,19 +121,21 @@ class CollectionStore:
     # ---------- lifecycle ----------
 
     def create(self, name: str, make_active: bool = True) -> Dict:
-        """Start a new cumulative analysis. Any currently active collection is CLOSED,
-        not deleted — that is what "start a new one from this point forward" means."""
+        """Start a new cumulative analysis and select it.
+
+        Creating does NOT close any other collection. Those are different actions and
+        conflating them breaks the multi-person case (D5): several people are analysed on
+        one install, each with their own running collection, and starting one for a second
+        player must not stop the first player's from accepting new videos. "Active" here
+        means only "the one new videos are offered to by default" — switch with
+        set_active(). Ending a collection for good is close(), an explicit choice.
+        """
         with self._lock:
             base = _slug(name)
             cid, i = base, 2
             while (self.dir / cid).exists():
                 cid, i = f"{base}-{i}", i + 1
             idx = self._read_index()
-            if make_active and idx.get("active"):
-                try:
-                    self.close(idx["active"], _locked=True)
-                except CollectionError:
-                    pass
             doc = {"schema_version": SCHEMA_VERSION, "id": cid, "name": name,
                    "created_at": _now(), "closed_at": None, "members": [],
                    "built_at": None, "warnings": []}

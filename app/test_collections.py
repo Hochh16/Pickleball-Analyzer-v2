@@ -91,17 +91,31 @@ def main() -> int:
                    if counts(store.folder(c["id"])) == counts(A)
                    else _fail(f"after remove: {counts(store.folder(c['id']))} != {counts(A)}"))
 
-    # starting a new collection closes the old one but never deletes it
-    c2 = store.create("David indoor")
-    old = [x for x in store.list() if x["id"] == c["id"]][0]
-    ok = (old["closed_at"] and store.active()["id"] == c2["id"]
-          and len(old["members"]) == 1)
-    results.append(_pass("new collection started; previous closed and intact") if ok
-                   else _fail(f"start-new mishandled: old={old.get('closed_at')}"))
+    # MULTI-PERSON: starting a collection for another player must NOT stop the first
+    # player's from accepting videos. Creating selects; it does not close.
+    c2 = store.create("Sam outdoor")
+    first = [x for x in store.list() if x["id"] == c["id"]][0]
+    ok = (first["closed_at"] is None and store.active()["id"] == c2["id"])
+    results.append(_pass("second person's collection created; first left open") if ok
+                   else _fail(f"create closed another collection: {first.get('closed_at')}"))
 
-    # a closed collection cannot silently take new members
+    doc = store.add(c["id"], B)
+    results.append(_pass("first person's collection still accepts videos while another "
+                         "is active")
+                   if len(doc["members"]) == 2 else _fail("add to non-active failed"))
+
+    store.set_active(c["id"])
+    results.append(_pass("can switch which collection new videos default to")
+                   if store.active()["id"] == c["id"] else _fail("set_active failed"))
+
+    # closing is an explicit, separate action -- and it is not deletion
+    store.close(c2["id"])
+    closed = [x for x in store.list() if x["id"] == c2["id"]][0]
+    results.append(_pass("close is explicit; collection remains listed")
+                   if closed["closed_at"] else _fail("close did not record"))
+
     try:
-        store.add(c["id"], B)
+        store.add(c2["id"], B)
         results.append(_fail("closed collection accepted a member"))
     except CollectionError:
         results.append(_pass("closed collection refuses new members"))
