@@ -265,16 +265,20 @@
           <div class="handoff-card" id="visionHandoff" hidden>
             <h3>⚡ Vision runs on a GPU (Colab)</h3>
             <p id="handoffIntro">Player tracking, pose, and ball detection run on Colab's GPU — too slow on this computer. Bring the results back and the rest of the analysis finishes on its own.</p>
-            <!-- One-time, and easy to miss: the notebook uses whatever ball_model_v4.pt
-                 is on Drive. An out-of-date one silently analyses the clip with an older
-                 detector, which is worse than an error because nothing looks wrong. -->
-            <div class="handoff-once" id="handoffOnce">
-              <b>One-time setup:</b> your Google Drive (top level, “My Drive”) needs
-              <code>ball_model_v4.pt</code> — the ball model. If you have never uploaded it,
-              or the app has since updated it, upload the current one now.
-              <a href="/api/models/ball_model_v4.pt" download>⬇ Download the current ball model</a>
-              <span class="small muted">Upload it to My Drive keeping the name exactly
-                <code>ball_model_v4.pt</code>, replacing any older copy.</span>
+            <!-- Shown ONLY when Drive auto-sync is off. With sync on, the app copies the
+                 model itself and this stays hidden — nothing for the operator to track. -->
+            <div class="handoff-once" id="handoffOnce" hidden>
+              <b>Optional — only when the ball model has been updated.</b>
+              <span class="small muted">The app ships a trained ball model. Colab reads it
+                from your Drive, so a newer model has to get there once. Skip this unless
+                you were told the model changed, or Colab reports a missing
+                <code>ball_model_v4.pt</code>.</span>
+              <ol class="handoff-steps">
+                <li>Save the model file to your computer.
+                  <a class="btn ghost block" href="/api/models/ball_model_v4.pt" download>⬇ Save ball_model_v4.pt</a></li>
+                <li>Move that file into Google Drive, top level (“My Drive”).
+                  Keep the name exactly <code>ball_model_v4.pt</code> and replace any older copy.</li>
+              </ol>
             </div>
             <ol class="handoff-steps" id="handoffSteps">
               <li><b>Download the clip bundle</b> (button below) and put it in your Google Drive (top level, “My Drive”).</li>

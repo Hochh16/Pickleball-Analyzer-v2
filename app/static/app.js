@@ -598,26 +598,40 @@ function applyHandoffMode() {
   // that the clip was already synced.
   const steps = el('handoffSteps'), dl = el('bundleDownloadBtn'), colab = el('openColabBtn');
   const ub = el('visionUploadBtn');
+  const once = el('handoffOnce');
   if (S.driveSync) {
+    // Everything the operator would otherwise carry to Drive by hand — the clip AND the
+    // ball model — is copied by the app. One instruction is left, so there is one step.
     el('handoffIntro').textContent =
-      'Vision runs on Colab’s GPU. Your clip is synced to Google Drive automatically — '
-      + 'run the notebook and the results import themselves.';
+      'Vision runs on Colab’s GPU. Your clip and the ball model are copied to Google '
+      + 'Drive automatically — there is nothing to upload.';
     steps.innerHTML =
-      '<li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). '
-      + 'Your clip is already on Drive — nothing to upload or edit.</li>'
-      + '<li>Leave this page open — the steps on the left tick off as Colab works, and '
-      + 'analysis <b>resumes automatically</b> when it finishes.</li>';
+      '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU runtime). '
+      + 'Nothing to edit.</li>'
+      + '<li>Come back here and leave this page open. Results import themselves and the '
+      + 'analysis finishes on its own.</li>';
+    once.hidden = true;                     // the app handles the model; do not mention it
     dl.hidden = true;                       // bundle is auto-pushed to Drive
-    colab.textContent = '↗ 1. Open Colab notebook (Run all)';
+    colab.textContent = '↗ Open Colab notebook';
     ub.classList.remove('primary');
     ub.classList.add('ghost');
-    ub.textContent = 'Upload outputs manually (fallback)';
-    el('visionNote').textContent = '⏳ Waiting for Colab results (auto-syncing from Google Drive)…';
+    ub.textContent = 'Upload results by hand (only if the import fails)';
+    el('visionNote').textContent = '⏳ Waiting for Colab results (importing from Google Drive automatically)…';
   } else {
+    el('handoffIntro').textContent =
+      'Vision runs on Colab’s GPU — too slow on this computer. Follow these three steps.';
+    steps.innerHTML =
+      '<li>Save the clip bundle to your computer, then move it into Google Drive, top '
+      + 'level (“My Drive”).</li>'
+      + '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU '
+      + 'runtime). It finds the clip on its own — nothing to edit.</li>'
+      + '<li>When Colab prints <b>ALL 7 OUTPUTS READY</b>, save those files from Drive, '
+      + 'then send them back here.</li>';
+    once.hidden = false;                    // no auto-sync: the model is the operator's job
     dl.hidden = false;
-    dl.textContent = '⬇ 1. Download clip bundle (video + setup)';
-    colab.textContent = '↗ 2. Open Colab notebook (Run all)';
-    ub.textContent = '3. Upload vision outputs';
+    dl.textContent = '⬇ 1. Save clip bundle';
+    colab.textContent = '↗ 2. Open Colab notebook';
+    ub.textContent = '3. Send results back here';
   }
 }
 

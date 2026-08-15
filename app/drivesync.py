@@ -99,6 +99,56 @@ class DriveSync:
                     pass
         raise RuntimeError(f"could not write a complete bundle to {dest}: {last}")
 
+    def sync_model(self, model_path: Path) -> str:
+        """Put the deployed ball model on Drive, replacing an out-of-date copy.
+
+        The Colab vision pass uses whatever `ball_model_v4.pt` is in My Drive. When the
+        app's model is updated and Drive's is not, clips are analysed by the OLDER
+        detector — no error, just quietly worse numbers. Asking the operator to notice
+        that and re-upload by hand is asking them to track something invisible, so the
+        same channel that already carries the clip carries the model.
+
+        Returns one of "synced" / "up-to-date" / "missing" / "unavailable" (never raises:
+        a model that fails to copy must not block the run, it degrades to the manual
+        instructions).
+        """
+        if not self.enabled() or self.drive_dir is None:
+            return "unavailable"
+        src = Path(model_path)
+        if not src.is_file():
+            return "missing"
+        dest = self.drive_dir / "ball_model_v4.pt"
+        size = src.stat().st_size
+        # Size alone is a weak identity check for two checkpoints of the same
+        # architecture, so compare a content prefix too.
+        def head(p: Path) -> bytes:
+            with p.open("rb") as f:
+                return f.read(1 << 20)
+        try:
+            if dest.exists() and dest.stat().st_size == size and head(dest) == head(src):
+                return "up-to-date"
+            # Verify then rename, and RETRY: DriveFS drops write data without raising —
+            # measured here, a 45,508,290-byte model landed as 45,088,768 with a
+            # successful return. push_bundle already guards the same way. A truncated
+            # model that reached the real name would be loaded by Colab and fail there,
+            # or worse, quietly behave differently.
+            part = self.drive_dir / "ball_model_v4.pt.part"
+            try:
+                for _ in range(4):
+                    shutil.copyfile(src, part)
+                    if part.stat().st_size == size:
+                        os.replace(part, dest)
+                        return "synced"
+            finally:
+                if part.exists():
+                    try:
+                        part.unlink()
+                    except OSError:
+                        pass
+            return "unavailable"
+        except OSError:
+            return "unavailable"
+
     def outputs_ready(self, session_id: str) -> bool:
         """True once all REQUIRED outputs are present in the synced outputs dir."""
         d = self.outputs_dir(session_id)

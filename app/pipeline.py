@@ -202,6 +202,17 @@ class PipelineRunner:
         except Exception as e:  # noqa: BLE001
             self._log(job, f"Drive auto-sync unavailable ({e}); use the manual buttons.")
             return
+        # Send the ball model down the same channel. Otherwise Drive keeps whatever model
+        # was uploaded by hand once, and every later clip is silently analysed by an older
+        # detector after the app updates its own — invisible to the operator.
+        state = ds.sync_model(Path("data/models/ball_model_v4.pt"))
+        if state == "synced":
+            self._log(job, "Ball model updated on Google Drive (ball_model_v4.pt).")
+        elif state == "up-to-date":
+            self._log(job, "Ball model on Google Drive is already current.")
+        else:
+            self._log(job, "Could not sync the ball model to Drive — if Colab reports a "
+                           "missing or old ball_model_v4.pt, upload it from the run screen.")
         self._log(job, f"Clip synced to Google Drive as {dest.name}. Open the Colab "
                        "notebook and Run all — the results import automatically.")
         threading.Thread(target=self._watch_drive_outputs, args=(job,), daemon=True).start()
