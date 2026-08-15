@@ -213,8 +213,18 @@ class PipelineRunner:
         else:
             self._log(job, "Could not sync the ball model to Drive — if Colab reports a "
                            "missing or old ball_model_v4.pt, upload it from the run screen.")
-        self._log(job, f"Clip synced to Google Drive as {dest.name}. Open the Colab "
-                       "notebook and Run all — the results import automatically.")
+        # Size matters here: the app writes into the LOCAL Drive folder in seconds, but
+        # Colab reads the CLOUD copy, and Google Drive can take many minutes to upload a
+        # multi-GB clip. Starting the notebook too early fails with "no *_vision_input.zip
+        # found on Drive root", which reads like a broken hand-off rather than "wait".
+        try:
+            gb = dest.stat().st_size / 1e9
+        except OSError:
+            gb = 0.0
+        self._log(job, f"Clip copied to Google Drive as {dest.name} ({gb:.1f} GB). "
+                       "WAIT for Google Drive to finish uploading it before running the "
+                       "Colab notebook — Colab reads the uploaded copy, not the local "
+                       "one. The Drive icon in your taskbar shows when syncing is done.")
         threading.Thread(target=self._watch_drive_outputs, args=(job,), daemon=True).start()
 
     def _sync_vision_progress(self, job: Job) -> None:

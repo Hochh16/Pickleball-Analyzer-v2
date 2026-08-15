@@ -618,8 +618,13 @@ function applyHandoffMode() {
       'Vision runs on Colab’s GPU. Your clip and the ball model are copied to Google '
       + 'Drive automatically — there is nothing to upload.';
     steps.innerHTML =
-      '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU runtime). '
-      + 'Nothing to edit.</li>'
+      '<li><b>Wait for Google Drive to finish uploading your clip.</b> The app copies it '
+      + 'to Drive in seconds, but Drive needs several minutes to upload a few GB, and '
+      + 'Colab reads the uploaded copy. Your taskbar Drive icon shows when it is done. '
+      + '<span class="small muted">Starting sooner fails with “no *_vision_input.zip '
+      + 'found on Drive root”.</span></li>'
+      + '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU '
+      + 'runtime). Nothing to edit.</li>'
       + '<li>Come back here and leave this page open. Results import themselves and the '
       + 'analysis finishes on its own.</li>';
     once.hidden = true;                     // the app handles the model; do not mention it
