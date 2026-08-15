@@ -329,7 +329,38 @@ class PipelineRunner:
             return
         job.phase = "done"
         self._log(job, "Analysis complete. Report ready.")
+        self._add_to_collection(job)
         self._bump(job)
+
+    def _add_to_collection(self, job: Job) -> None:
+        """Fold a finished video into the cumulative report chosen when it was set up.
+
+        Server-side on purpose. This used to run only when the browser was sitting on the
+        run screen, so closing the tab — or a vision run that finishes hours later on
+        Colab — left the video analysed but never added, with nothing to indicate it. The
+        operator's choice was recorded at setup; honouring it must not depend on a page
+        being open.
+        """
+        try:
+            session = self.store.get(job.session_id)
+        except Exception:  # noqa: BLE001
+            return
+        cid = session.get("collection_id")
+        if not cid:
+            return
+        try:
+            from .collections import CollectionError, CollectionStore
+            cs = CollectionStore(self.store.data_root)
+            doc = cs.get_doc(cid)
+            if any(m["session_id"] == job.session_id for m in doc.get("members", [])):
+                return
+            cs.add(cid, self.store.folder(job.session_id))
+            self._log(job, f"Added to the cumulative report \"{doc.get('name', cid)}\" "
+                           f"and rebuilt it.")
+        except CollectionError as e:
+            self._log(job, f"Could not add this video to its cumulative report: {e}")
+        except Exception as e:  # noqa: BLE001
+            self._log(job, f"Could not add this video to its cumulative report: {e}")
 
     def _run_module(self, job: Job, module: str, folder: Path,
                     extra_args: Optional[List[str]] = None) -> int:
