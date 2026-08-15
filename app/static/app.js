@@ -688,6 +688,7 @@ function boot() {
   initReviewStep();
   initRunStep();
   initCollectStep();
+  initCollMgr();
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
   $$('#stepnav li').forEach((li) => li.addEventListener('click', () => {
     const i = STEPS.indexOf(li.dataset.step);
@@ -792,5 +793,147 @@ function initCollectStep() {
   };
   el('collectSkipBtn').onclick = () => {
     el('collectCard').hidden = true;
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// Cumulative reports — management view
+//
+// Reachable any time from the top bar rather than being a wizard step: managing a
+// player's running report has nothing to do with setting up one video.
+// ---------------------------------------------------------------------------
+
+function showCollectionsPanel(on) {
+  $$('.panel').forEach((p) => { p.hidden = true; });
+  el('panel-collections').hidden = !on;
+  if (on) loadCollMgr(); else goto('video');
+}
+
+async function loadCollMgr() {
+  const wrap = el('collMgrList');
+  wrap.innerHTML = '<p class="small muted">Loading…</p>';
+  try {
+    const data = await api('/api/collections');
+    el('collMgrReminder').textContent = data.reminder || '';
+    renderCollMgr(data.collections || [], data.active_id);
+  } catch (e) {
+    wrap.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+}
+
+function renderCollMgr(list, activeId) {
+  const wrap = el('collMgrList');
+  if (!list.length) {
+    wrap.innerHTML = '<p class="small muted">No cumulative reports yet. Create one on the right.</p>';
+    el('collMgrAddCard').hidden = true;
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach((c) => {
+    const n = (c.members || []).length;
+    const card = document.createElement('div');
+    card.className = 'coll-card' + (c.closed_at ? ' is-closed' : '');
+    const members = (c.members || []).map((m) =>
+      '<li><span>' + escapeHtml(m.session_id) + '</span>'
+      + '<button class="btn ghost xsmall" data-rm="' + escapeHtml(m.session_id)
+      + '" data-cid="' + escapeHtml(c.id) + '">Remove</button></li>').join('');
+    card.innerHTML =
+      '<div class="coll-card-head"><h3>' + escapeHtml(c.name)
+      + (c.id === activeId ? ' <span class="badge ok">default</span>' : '')
+      + (c.closed_at ? ' <span class="badge">closed</span>' : '')
+      + '</h3><span class="small muted">' + n + ' video' + (n === 1 ? '' : 's')
+      + '</span></div>'
+      + '<ul class="coll-members">' + (members || '<li class="small muted">No videos yet</li>')
+      + '</ul><div class="coll-card-actions">'
+      + '<a class="btn primary small" target="_blank" href="/api/collections/'
+      + encodeURIComponent(c.id) + '/files/report.html">View report →</a>'
+      + (c.closed_at ? ''
+        : '<button class="btn ghost small" data-add="' + escapeHtml(c.id) + '">Add a video</button>'
+        + '<button class="btn ghost small" data-act="' + escapeHtml(c.id) + '">Make default</button>'
+        + '<button class="btn ghost small" data-close="' + escapeHtml(c.id) + '">Close</button>')
+      + '</div>';
+    wrap.appendChild(card);
+  });
+
+  wrap.querySelectorAll('[data-rm]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.cid + '/members/'
+                                    + b.dataset.rm, 'DELETE', 'Removed ' + b.dataset.rm);
+  });
+  wrap.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.act + '/activate',
+                                    'POST', 'Set as default');
+  });
+  wrap.querySelectorAll('[data-close]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.close + '/close',
+                                    'POST', 'Closed');
+  });
+  wrap.querySelectorAll('[data-add]').forEach((b) => {
+    b.onclick = () => openAddPicker(b.dataset.add);
+  });
+}
+
+async function collMgrAction(path, method, okMsg) {
+  try {
+    await api(path, { method });
+    toast(okMsg);
+    await loadCollMgr();
+  } catch (e) {
+    toast(e.message || 'That did not work', true);
+  }
+}
+
+async function openAddPicker(cid) {
+  const card = el('collMgrAddCard');
+  const list = el('collMgrAddList');
+  card.hidden = false;
+  list.innerHTML = '<p class="small muted">Loading videos…</p>';
+  try {
+    const { sessions } = await api('/api/sessions');
+    list.innerHTML = '';
+    if (!sessions.length) {
+      list.innerHTML = '<p class="small muted">No videos set up yet.</p>';
+      return;
+    }
+    sessions.forEach((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost block collect-pick';
+      b.textContent = s.name || s.id;
+      b.onclick = async () => {
+        try {
+          await jsonPost('/api/collections/' + cid + '/members', { session_id: s.id });
+          toast('Added ' + (s.name || s.id));
+          card.hidden = true;
+          await loadCollMgr();
+        } catch (e) {
+          // The refusals that actually happen carry meaning: an unsupported venue, the
+          // same video twice, or a video that was never analysed. Show the real reason.
+          toast(e.message || 'Could not add that video', true);
+        }
+      };
+      list.appendChild(b);
+    });
+  } catch (e) {
+    list.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+}
+
+function initCollMgr() {
+  const open = el('openCollections');
+  if (!open) return;
+  open.onclick = () => showCollectionsPanel(true);
+  el('collMgrBack').onclick = () => showCollectionsPanel(false);
+  el('collMgrNewGo').onclick = async () => {
+    const name = el('collMgrNewName').value.trim();
+    if (!name) { toast('Give the report a name (whose is it?)', true); return; }
+    try {
+      await jsonPost('/api/collections', { name });
+      el('collMgrNewName').value = '';
+      toast('Created "' + name + '"');
+      await loadCollMgr();
+    } catch (e) {
+      toast(e.message || 'Could not create', true);
+    }
   };
 }

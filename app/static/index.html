@@ -21,9 +21,39 @@
       <li data-step="review"><span class="num">5</span><span class="lbl">Review</span></li>
       <li data-step="run"><span class="num">6</span><span class="lbl">Run</span></li>
     </ol>
+    <button class="btn ghost small topbar-btn" id="openCollections" type="button">Cumulative reports</button>
   </header>
 
   <main class="stage">
+
+    <!-- CUMULATIVE REPORTS (not a wizard step — reachable any time) -->
+    <section class="panel" id="panel-collections" hidden>
+      <div class="panel-head">
+        <h1>Cumulative reports</h1>
+        <p class="lead" id="collMgrReminder"></p>
+      </div>
+      <div class="coll-mgr">
+        <div class="coll-mgr-list" id="collMgrList"></div>
+        <div class="coll-mgr-side">
+          <div class="done-card">
+            <h3>Start a new one</h3>
+            <p class="small muted">One report per player. Videos you add are combined as
+              if they were a single longer match.</p>
+            <div class="collect-new">
+              <input type="text" id="collMgrNewName" placeholder="Whose report? e.g. David" />
+              <button class="btn primary small" id="collMgrNewGo" type="button">Create</button>
+            </div>
+          </div>
+          <div class="done-card" id="collMgrAddCard" hidden>
+            <h3 id="collMgrAddTitle">Add a video</h3>
+            <p class="small muted">Only analysed videos can be added.</p>
+            <div class="coll-add-list" id="collMgrAddList"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn ghost" id="collMgrBack" type="button">← Back to setup</button>
+    </section>
+
     <!-- STEP 1: VIDEO -->
     <section class="panel" id="panel-video" hidden>
       <div class="panel-head">

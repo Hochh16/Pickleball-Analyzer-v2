@@ -46,7 +46,12 @@ SCHEMA_VERSION = 1
 # ordinary per-video pipeline, which is the entire point of unioning below Stage 8.
 POST_STAGES = ["stages.compute_metrics.compute_metrics",
                "stages.rate.rate",
-               "stages.plan_improvement.plan_improvement"]
+               "stages.plan_improvement.plan_improvement",
+               # The report is the point of the whole exercise — without it a collection
+               # builds numbers nobody can read, and the "View cumulative report" link
+               # 404s. Same builder the per-video path uses, so the cumulative report is
+               # literally the same report over a bigger input.
+               "tools.build_report"]
 
 # Shown wherever collections are listed. Nothing in the data can verify that a collection
 # holds one person — it is an operator promise (D5), so it has to be visible at the moment
@@ -283,8 +288,12 @@ class CollectionStore:
             raise CollectionError(f"aggregate failed: {r.stderr.strip()[-400:]}")
 
         for mod in POST_STAGES:
-            r = subprocess.run([sys.executable, "-m", mod, str(out), "--force",
-                                "--log-level", "ERROR"], capture_output=True, text=True)
+            # build_report is a tool, not a stage: it takes --force but no --log-level.
+            args = [str(out), "--force"]
+            if mod.startswith("stages."):
+                args += ["--log-level", "ERROR"]
+            r = subprocess.run([sys.executable, "-m", mod] + args,
+                               capture_output=True, text=True)
             if r.returncode != 0:
                 warnings.append(f"{mod.split('.')[-1]} failed: {r.stderr.strip()[-200:]}")
 
