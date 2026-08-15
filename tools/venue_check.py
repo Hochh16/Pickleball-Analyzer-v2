@@ -60,9 +60,16 @@ SUPPORTED, MARGINAL = 0.80, 0.50
 
 # Geometric midpoints of the measured PER-CLIP gaps between the worst working clip and
 # the failing one. Geometric rather than arithmetic because these behave like ratios, so
-# the threshold sits clear of both ends by the same factor (~1.9x on p90_conf, ~3.1x on
-# det_rate) instead of hugging the larger value.
-T_P90, T_DET = 0.406, 0.077
+# the threshold sits clear of both ends by the same factor instead of hugging the larger
+# value.
+#
+# REFITTED 2026-08-15 against the DEPLOYED weights (Run 3). Thresholds are tied to the
+# model that produced the signals, so this must be redone on every model change.
+#     p90_conf   worst working 0.841 (pb_3min)  vs failing 0.263  ->  3.2x
+#     det_rate   worst working 0.550 (court2)   vs failing 0.060  ->  9.2x
+# The previous values (0.406 / 0.077, fitted to the old baseline) would still have
+# classified all eight clips correctly, so this is a margin improvement, not a fix.
+T_P90, T_DET = 0.470, 0.182
 
 # Motion guard — CONDITIONAL, and unvalidated. It targets the one failure mode the
 # confidence signals structurally cannot see: a detector locked onto something STATIC
