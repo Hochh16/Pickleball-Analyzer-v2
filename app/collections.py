@@ -111,6 +111,13 @@ class CollectionStore:
             raise CollectionError(f"Unknown collection: {cid}")
         return json.loads(p.read_text(encoding="utf-8"))
 
+    def get_doc(self, cid: str) -> Dict:
+        """The membership record, plus whether it is the default target for new videos."""
+        doc = self._read(cid)
+        doc["is_active"] = self._read_index().get("active") == cid
+        doc["has_report"] = (self.folder(cid) / "report.html").exists()
+        return doc
+
     def _write(self, doc: Dict) -> None:
         f = self.folder(doc["id"])
         f.mkdir(parents=True, exist_ok=True)

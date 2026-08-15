@@ -26,6 +26,7 @@ from . import browse as browse_mod
 from . import video as video_mod
 from .drivesync import DriveSync, detect_drive_dir
 from .pipeline import PipelineRunner, has_vision_outputs
+from .collections import SAME_PERSON_REMINDER, CollectionError, CollectionStore
 from .sessions import SessionError, SessionStore
 
 # Only these (known pipeline outputs from the vision GPU pass) may be written via
@@ -43,6 +44,7 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 
 store = SessionStore(DATA_ROOT)
+collections = CollectionStore(DATA_ROOT)
 drivesync = DriveSync(detect_drive_dir())
 runner = PipelineRunner(store, drivesync=drivesync)
 
@@ -364,6 +366,108 @@ def get_annotated(session_id: str) -> FileResponse:
         if p.exists():
             return FileResponse(p, media_type="video/mp4")
     raise HTTPException(status_code=404, detail="Annotated video not ready")
+
+
+# --------------------------------------------------------------------------
+# Collections — cumulative analysis across videos
+# --------------------------------------------------------------------------
+
+class CreateCollectionRequest(BaseModel):
+    name: str
+
+
+class AddMemberRequest(BaseModel):
+    session_id: str
+
+
+def _venue_ok(session_id: str) -> Optional[bool]:
+    """The stored venue verdict for a session, if one has been measured.
+
+    None means "not measured", which is NOT the same as "supported" — the caller must not
+    turn an absent verdict into a refusal, or every video would be blocked before the
+    check has ever been run.
+    """
+    try:
+        v = store.get(session_id).get("venue", {}).get("verdict")
+    except SessionError:
+        return None
+    return None if v is None else v != "not_supported"
+
+
+@app.get("/api/collections")
+def list_collections() -> dict:
+    active = collections.active()
+    return {"collections": collections.list(),
+            "active_id": active["id"] if active else None,
+            # Nothing in the data can verify a collection holds one person, so the
+            # reminder travels with the list rather than living only in the docs.
+            "reminder": SAME_PERSON_REMINDER}
+
+
+@app.post("/api/collections")
+def create_collection(req: CreateCollectionRequest) -> dict:
+    return collections.create(req.name)
+
+
+@app.get("/api/collections/{cid}")
+def get_collection(cid: str) -> dict:
+    try:
+        return collections.get_doc(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/collections/{cid}/activate")
+def activate_collection(cid: str) -> dict:
+    try:
+        return collections.set_active(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/collections/{cid}/close")
+def close_collection(cid: str) -> dict:
+    try:
+        return collections.close(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/collections/{cid}/members")
+def add_collection_member(cid: str, req: AddMemberRequest) -> dict:
+    try:
+        return collections.add(cid, store.folder(req.session_id),
+                               venue_ok=_venue_ok(req.session_id))
+    except CollectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/collections/{cid}/members/{session_id}")
+def remove_collection_member(cid: str, session_id: str) -> dict:
+    try:
+        return collections.remove(cid, session_id)
+    except CollectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/collections/{cid}/rebuild")
+def rebuild_collection(cid: str) -> dict:
+    try:
+        return collections.rebuild(cid)
+    except CollectionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/collections/{cid}/files/{file_path:path}")
+def get_collection_file(cid: str, file_path: str) -> FileResponse:
+    """Serve the cumulative report and its sibling assets, guarded to the folder."""
+    folder = collections.folder(cid).resolve()
+    target = (folder / file_path).resolve()
+    if folder not in target.parents and target != folder:
+        raise HTTPException(status_code=403, detail="Path outside collection")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(target)
 
 
 # --------------------------------------------------------------------------
