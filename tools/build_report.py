@@ -190,11 +190,21 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
 
 # --- Ball-landing sequence diagram (drawn with OpenCV) -----------------------
 
-def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
-    """Top-down court showing WHERE the ball bounced during rallies (a landing map,
-    not a sequence). No connecting lines or numbers: volleys never bounce and some
-    bounces are missed, so any implied shot-by-shot order would be inaccurate. The
-    map fills in as bounce detection improves. Returns a PNG data URI."""
+def landing_diagram_uri(bounces: list, rally_windows: list,
+                        user_hits: Optional[dict] = None) -> Optional[str]:
+    """Top-down court showing WHERE the ball bounced during rallies, with a line from
+    each of YOUR shots to where that ball landed.
+
+    Still not a shot-by-shot sequence: bounces are not numbered and unlinked dots keep no
+    implied order, because volleys never bounce and some bounces are missed. The lines are
+    safe where the numbering was not, because each one joins a specific bounce to the
+    specific shot the bounce stage already attributed to it (`between_shots`), rather than
+    inferring order from time.
+
+    user_hits: {bounce_id: (hit_x_ft, hit_y_ft)} for bounces produced by the user's shots.
+    Volleys are absent by construction — a volley has no bounce to link to.
+
+    Returns a PNG data URI."""
     import cv2
     def rally_of(f):
         for i, (a, b) in enumerate(rally_windows):
@@ -209,7 +219,7 @@ def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
         ri = rally_of(int(b["frame"]))
         if ri is None:           # between-point / out-of-play bounce -> skip
             continue
-        pts.append((xy, bool(b.get("is_in_court")), ri))
+        pts.append((xy, bool(b.get("is_in_court")), ri, b.get("bounce_id")))
     if not pts:
         return None
     W_FT, L_FT, KIT = 20.0, 44.0, 7.0
@@ -231,9 +241,19 @@ def landing_diagram_uri(bounces: list, rally_windows: list) -> Optional[str]:
     for yy, w in [(L_FT / 2, 2), (L_FT / 2 - KIT, 1), (L_FT / 2 + KIT, 1)]:
         cv2.line(img, to_px(0, yy), to_px(W_FT, yy), line, w)
     cv2.line(img, to_px(W_FT / 2, 0), to_px(W_FT / 2, L_FT), line, 1)
-    # landing dots only — no lines, no numbers (see docstring)
     teal, red = (110, 118, 15), (60, 60, 210)
-    for (xy, ok, ri) in pts:
+    mine = (150, 90, 40)          # BGR muted blue — the operator's own shots
+    # Your shot -> where that ball landed. Drawn first so the dots sit on top.
+    uh = user_hits or {}
+    n_lines = 0
+    for (xy, ok, ri, bid) in pts:
+        hit = uh.get(bid)
+        if not hit:
+            continue
+        cv2.line(img, to_px(hit[0], hit[1]), to_px(xy[0], xy[1]), mine, 2, cv2.LINE_AA)
+        cv2.circle(img, to_px(hit[0], hit[1]), 4, mine, -1, cv2.LINE_AA)
+        n_lines += 1
+    for (xy, ok, ri, bid) in pts:
         p = to_px(xy[0], xy[1])
         cv2.circle(img, p, 8, teal if ok else red, -1, cv2.LINE_AA)
         cv2.circle(img, p, 8, (255, 255, 255), 1, cv2.LINE_AA)
@@ -344,6 +364,9 @@ def build_html(folder: Path) -> str:
     # Present only for a cumulative report: it is the collection's membership record,
     # and it carries the player's name (needed in the hero, far above the role labels).
     collection = load_json(folder, "collection.json")
+    # Needed to tell the user's shots from everyone else's when linking bounces back to
+    # the shot that produced them.
+    track_roles = load_json(folder, "track_roles.json") or {}
     rating = load_json(folder, "rating.json") or {}
     plan = load_json(folder, "improvement_plan.json") or {}
     bounces_doc = load_json(folder, "bounces.json") or {}
@@ -437,43 +460,32 @@ def build_html(folder: Path) -> str:
              ("Ball bounces", len(bounces_doc.get("bounces", [])))]
     A('<div class="card"><div class="stats">')
     for label, val in stats:
-        ref = fn(6) if label == "Ball bounces" else ""
+        ref = fn(5) if label == "Ball bounces" else ""
         A(f'<div class="stat"><div class="stat-n num">{esc(val)}</div>'
           f'<div class="stat-l">{esc(label)}{ref}</div></div>')
     A('</div></div>')
 
-    # ---- 7-category table ----
+    # ---- 7-category table (level + numbers + what USAPA rates, in one) ----
+    # Previously two tables listing the same seven categories, which made the reader
+    # cross-reference to answer one question. The coverage column and its badges are gone
+    # too: the "what USA Pickleball rates" column already shows which elements are
+    # measured, so the badge restated it in vaguer words.
     A('<h2>Your 7 categories</h2><hr class="rule">')
     A('<p class="muted small">USA Pickleball rates players across these seven '
-      'categories. Here\'s your level in each, and how well we can measure it today.</p>')
+      'categories. Here\'s your level in each, the numbers behind it, and what the '
+      'category covers.</p>')
     A('<div class="card scrollx"><table><thead><tr>'
-      '<th>Category</th><th>Your level</th><th>Coverage</th></tr></thead><tbody>')
+      '<th>Category</th><th>Your level</th><th>Your numbers now</th>'
+      '<th>What USA Pickleball rates</th></tr></thead><tbody>')
     for c in CATEGORY_ORDER:
         d = dims.get(c, {})
         sub = d.get("subscore_level")
-        cov = cov_of(c)
-        if cov == "not_assessable" or not isinstance(sub, (int, float)):
+        if cov_of(c) == "not_assessable" or not isinstance(sub, (int, float)):
             lvl = '<span class="muted">—</span>'
         else:
             barpct = int(max(0, min(100, ((sub - 1.0) / 4.5) * 100)))
             lvl = (f'<span class="lvl num">{band_of(sub)}</span>'
                    f'<div class="bar"><i style="width:{barpct}%"></i></div>')
-        A(f'<tr><td><b>{esc(CATEGORY_LABEL[c])}</b></td><td>{lvl}</td>'
-          f'<td>{badge(cov)}</td></tr>')
-    A('</tbody></table></div>')
-    A('<div class="legend">'
-      '<span><span class="badge b-measured">Measured</span> real data, high confidence</span>'
-      '<span><span class="badge b-partial">Partial</span> early signal — read as a hint</span>'
-      '<span><span class="badge b-na">Not yet measured</span> needs upcoming detection</span>'
-      '</div>')
-
-    # ---- Category detail table ----
-    A('<h2>What\'s behind each category</h2><hr class="rule">')
-    A('<div class="card scrollx"><table><thead><tr>'
-      '<th>Category</th><th>Your numbers now</th>'
-      '<th>What USA Pickleball rates</th></tr></thead><tbody>')
-    for c in CATEGORY_ORDER:
-        d = dims.get(c, {})
         drivers = d.get("driver_metrics", {}) or {}
         nums = []
         for k, (label, fmt) in METRIC_DISPLAY.items():
@@ -481,7 +493,7 @@ def build_html(folder: Path) -> str:
                 s = fmt_metric(fmt, drivers[k])
                 if s is None:
                     continue
-                ref = fn(5) if k == "distance_ft_per_min" else ""
+                ref = fn(4) if k == "distance_ft_per_min" else ""
                 # Count drivers: show the match total AND the user's share, so the
                 # user's numbers sit in perspective (a 5-min clip has ~4 players).
                 mt = match_counts.get(k)
@@ -497,7 +509,7 @@ def build_html(folder: Path) -> str:
             f'<span class="el"><span class="sym">{SYMBOL[st]}</span> '
             f'<span class="{ "planned" if st=="planned" else "" }">{esc(lbl)}</span></span>'
             for lbl, st in CATEGORY_ELEMENTS[c])
-        A(f'<tr><td><b>{esc(CATEGORY_LABEL[c])}</b><br>{badge(cov_of(c))}</td>'
+        A(f'<tr><td><b>{esc(CATEGORY_LABEL[c])}</b></td><td>{lvl}</td>'
           f'<td>{numhtml}</td><td class="small">{els}</td></tr>')
     A('</tbody></table></div>')
     A('<div class="legend"><span><span class="sym">●</span> measured now</span>'
@@ -536,7 +548,7 @@ def build_html(folder: Path) -> str:
     # ---- USAPA ratings ladder ----
     A('<h2>USAPA ratings</h2><hr class="rule">')
     A(f'<p class="muted small">The official skill levels and what each looks like '
-      f'across the seven categories.{fn(3)} You\'re highlighted.</p>')
+      f'across the seven categories.{fn(2)} You\'re highlighted.</p>')
     A('<div class="card scrollx"><table><thead><tr><th>Level</th>'
       '<th>What it looks like</th></tr></thead><tbody>')
     for lvl, desc in USAPA_LADDER:
@@ -549,7 +561,7 @@ def build_html(folder: Path) -> str:
     # ---- Court positioning ----
     A('<h2>Court positioning</h2><hr class="rule">')
     A('<p class="muted small">Where each player spent time during points.'
-      + fn(4) + '</p>')
+      + fn(3) + '</p>')
     A('<div class="grid2">')
     # A CUMULATIVE report covers several videos, where "Opponent A" is not one person and
     # neither is the partner. Stage 7.9 already pools every opponent into one bucket
@@ -576,11 +588,31 @@ def build_html(folder: Path) -> str:
         return any(a <= f <= b for a, b in rally_windows)
     n_inr = sum(1 for b in all_bounces
                 if b.get("court_xy_ft") and _inr(int(b["frame"])))
-    land = landing_diagram_uri(all_bounces, rally_windows)
+    # Link each bounce to the shot that produced it, but only for the user's own shots.
+    # between_shots[0] is the shot the bounce stage already attributed the bounce to, so
+    # this needs no timing guesswork; a volley simply has no bounce pointing at it.
+    _user_tids = {int(t) for t, i in (track_roles.get("track_roles", {}) or {}).items()
+                  if i.get("role") == "user"}
+    _shot_by_id = {int(x["shot_id"]): x for x in classified.get("shots", [])}
+    user_hits = {}
+    for b in all_bounces:
+        prev = (b.get("between_shots") or [None, None])[0]
+        sh = _shot_by_id.get(int(prev)) if prev is not None else None
+        if sh is None or sh.get("track_id") is None:
+            continue
+        if int(sh["track_id"]) not in _user_tids:
+            continue
+        hxy = sh.get("hitter_court_xy_ft")
+        if hxy and hxy[0] is not None:
+            user_hits[b.get("bounce_id")] = (float(hxy[0]), float(hxy[1]))
+    land = landing_diagram_uri(all_bounces, rally_windows, user_hits)
     if land:
         A('<div class="grid2"><div class="card hm"><h3>Where the ball bounced</h3>'
           f'<img alt="ball landing sequence" src="{land}"></div>'
           '<div class="card"><h3>Reading it</h3>'
+          f'<p class="small muted">Lines join <b>your</b> shots to where that ball '
+          f'landed ({len(user_hits)} of them) — the dot at the start is where you hit '
+          f'from. Your volleys have no line: a volley never bounces.</p>'
           f'<p class="small muted">Each dot is where the ball bounced during a rally — '
           f'<span style="color:var(--court)">●</span> in bounds · '
           f'<span style="color:#d23">●</span> out. Near baseline at the bottom, far '
@@ -588,7 +620,7 @@ def build_html(folder: Path) -> str:
           f'<p class="small muted">Showing {n_inr} of {len(all_bounces)} detected '
           f'bounces (the rest were between points). Volleys never bounce, and a '
           f'ball hit into the net doesn\'t bounce either, so those aren\'t shown. '
-          f'A few real bounces are also still missed by detection{fn(6)}.</p></div></div>')
+          f'A few real bounces are also still missed by detection{fn(5)}.</p></div></div>')
 
     # ---- Match video ----
     A('<h2>Match video &amp; timeline</h2><hr class="rule">')
@@ -620,25 +652,21 @@ def build_html(folder: Path) -> str:
       f'because shot <i>quality</i> (pace, dink height, return depth) isn\'t measured '
       f'yet; the counts we do report are validated. Thresholds are uncalibrated '
       f'heuristics anchored to the USAPA definitions, not an official rating.</li>')
-    A('<li id="fn2">"Not yet measured" categories need upcoming shot-speed, serve, '
-      'and stroke detection. We flag them rather than guess a number.</li>')
-    A('<li id="fn3">Level descriptions are a condensed synthesis of the published '
+    A('<li id="fn2">Level descriptions are a condensed synthesis of the published '
       'USA Pickleball definitions across the seven categories.</li>')
-    A('<li id="fn4">Positioning is measured from the player\'s front foot, during '
+    A('<li id="fn3">Positioning is measured from the player\'s front foot, during '
       'live rallies only (between-point standing is excluded).</li>')
-    A('<li id="fn5">Court covered is a work-rate figure (feet per minute of play). '
+    A('<li id="fn4">Court covered is a work-rate figure (feet per minute of play). '
       'On its own it isn\'t good or bad — strong players often move <i>less</i> but '
       'get to better spots — so we don\'t rate it. The coachable lever is footwork '
       'and positioning, which lives under Strategy above.</li>')
-    A(f'<li id="fn6">Every ground shot bounces once, so bounces should equal your '
+    A(f'<li id="fn5">Every ground shot bounces once, so bounces should equal your '
       f'non-volley shots: about {max(0, len(shots) - n_volley)} expected here, '
       f'{len(all_bounces)} detected. The ~{max(0, len(shots) - n_volley - len(all_bounces))} '
       f'gap is real bounces missed by detection — a known ball-detection limit we\'re '
       f'improving. It thins the landing map and depth stats, but doesn\'t affect your '
       f'positioning or rating.</li>')
     A('</ol>')
-    for w in (rating.get("warnings", []) or []):
-        A(f'<p>⚠ {esc(w)}</p>')
     A('</div></div>')
     return _PAGE.replace("__CSS__", CSS).replace("__BODY__", "\n".join(O))
 
