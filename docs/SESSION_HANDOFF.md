@@ -1,3 +1,85 @@
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-15)
+
+## 2026-08-15 — READ FIRST: NEXT ACTION IS SHOT-TO-PLAYER ATTRIBUTION
+
+### The next job, and why it is worth doing
+
+Per-player numbers on the indoor clip are wrong because individual shots land on the
+wrong player. Identity is NOT the problem — the operator confirmed by render that the
+`user` role is the right person. Roles are right; shots are attributed within them wrongly.
+
+**It is provable without any new labelling.** The serving team cannot hit the return of
+its own serve, and `data/pb_3_min_indoor_1_court_b` contains exactly that:
+
+```
+rally 3  1:00.7  server opp_a   2nd shot opp_a      <- impossible
+```
+
+Operator truth for that clip: they served 2 and returned 2. Detected: 2 rallies served by
+`user` (correct) but 0 returns (partner credited with 2).
+
+Build the rule as a check first — "same team serves and returns" is a contradiction that
+can be counted on BOTH clips — then fix what it exposes. That gives a test before a fix,
+which is what this codebase keeps needing.
+
+Start from `tools/verify_identity.py` (render-based, already proves roles) and the rally
+table produced by reading `classified.json` + `rallies.json` + `track_roles.json`.
+
+### ⚠ Do NOT re-litigate these — measured and understood today
+
+**Volleys over-count because bounces are MISSED, not because volleys are over-detected.**
+`is_volley` means "no bounce since the previous shot", so every missed bounce becomes a
+false volley. Indoor: 36 volleys detected vs the operator's 20, and 49 bounces detected
+where ~68 are implied — **16 excess volleys against 19 missing bounces, the same error
+from both ends**. This is the accepted bounce-detection limitation, worse indoors because
+ball contrast is ~3.5x lower. Not an aggregation or identity problem.
+
+**Serves: the count metric disagrees with the rally table.** `n_serves` counts shot TYPES;
+the rally table counts servers. Indoor rally 0 is attributed to `user` but its shot was
+typed `drive`, so the metric said 1 serve where the operator counted 2. Rally 0 is also a
+one-shot "rally" at 0:00.0 — almost certainly a warm-up ball counted as a point (the known
+between-point problem).
+
+### Fixed today (do not re-investigate)
+
+**The cumulative rating was LOWER than both its inputs** (3.23 vs 4.14 and 3.78). Two
+faults in Stage 7.9, both now fixed:
+1. `poses.parquet` was never unioned. Stage 8 silently falls back from the pose front foot
+   to the bbox foot (which is the BACK foot for a net-facing player) and under-counts
+   kitchen time; it also dropped ready-position and knee-bend entirely.
+2. Pose pixels were projected through ONE homography. A union spans venues and carries one
+   `court.json`, so every member after the first landed off-court. Stage 7.9 now
+   pre-projects per member with that member's own court into
+   `front_foot_court_x_ft/_y_ft`, and `compute_metrics` uses those when present.
+   **Any future per-video pixel data added to the union needs the same treatment.**
+
+Result: rating 3.82, between its inputs; every strategy driver between its inputs.
+
+⚠ **The aggregate acceptance test cannot catch this class of bug** — it partitions ONE
+clip, so every member shares a court and has poses. It proves losslessness, never
+venue-independence. A multi-venue fixture is worth building.
+
+**Court positioning was missing from EVERY app-produced report.** The per-video pipeline
+had no render step at all (Stage 11 also renders a slow annotated video, so the whole
+stage was skipped), and `build_report` silently omits images it cannot find. Now runs
+`render --heatmaps-only` before the report.
+
+**Three separate silent-degradation bugs in one day** (missing poses, missing heatmaps,
+missing timeline duration). The report drops sections rather than saying "not available".
+Worth a pass.
+
+### Other things now working
+
+- Cumulative videos end to end: choose the report when picking the video, analysis folds
+  itself in server-side at `phase=done` (not browser-dependent), management view in the
+  top bar, reports named per player.
+- Drive auto-sync now carries the ball model too, verified against DriveFS silent
+  truncation (a 45,508,290-byte model landed as 45,088,768 with a successful return).
+- The vision hand-off tells the operator to WAIT for Drive to finish uploading before
+  running Colab — starting early fails with "no *_vision_input.zip found on Drive root".
+
+---
+
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-13)
 
 ## 2026-08-13 — READ FIRST: the unseen-venue failure is CONTRAST, and it is not fundamental
