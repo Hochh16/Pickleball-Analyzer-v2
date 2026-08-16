@@ -405,16 +405,13 @@ def build_html(folder: Path) -> str:
     A('<div class="card hero">')
     A(f'<div><div class="score">{est if est is not None else "—"}</div>'
       f'<div class="muted small">USAPA band {esc(rt.get("band","—"))}</div></div>')
-    rng = rt.get("range") or [None, None]
+    # Score plus one sentence. The old hero also printed a likely RANGE, claimed the
+    # rating "rests mostly on court strategy", and counted categories not yet measured —
+    # all three are stale now that every category contributes real measurements, and the
+    # count read "0 of 7 aren't measured yet", which says nothing.
     A('<div class="hero-meta">')
-    A(f'<p style="margin-top:0"><b>Your estimated rating is {est}</b>, most likely '
-      f'between {rng[0]} and {rng[1]}.{fn(1)}</p>')
-    measured = rel.get("measured_categories", [])
-    na_cats = [c for c in CATEGORY_ORDER if cov_of(c) == "not_assessable"]
-    A(f'<p class="small muted" style="margin-bottom:0">Right now this rests mostly on '
-      f'your <b>court strategy &amp; positioning</b> — the part we can measure well '
-      f'from one camera. {len(na_cats)} of the 7 categories aren\'t measured yet and '
-      f'are marked below.{fn(2)}</p>')
+    A(f'<p style="margin-top:0;margin-bottom:0"><b>Your estimated rating is {est}</b>.'
+      f'{fn(1)}</p>')
     A('</div></div>')
 
     # ---- Session at a glance ----
@@ -427,8 +424,14 @@ def build_html(folder: Path) -> str:
     shots = ([s for s in _all_shots if int(s["shot_id"]) in _rsids]
              if _rsids else _all_shots)
     n_volley = sum(1 for s in shots if s.get("is_volley"))
-    dur = timeline.get("duration_sec")
-    mins = f"{dur/60:.1f}" if isinstance(dur, (int, float)) else "—"
+    # "Minutes analyzed" was blank whenever timeline.json was missing or carried no
+    # duration — which is always true for a cumulative report, since a union has no single
+    # video to render a timeline from. match_span_sec is what every other number here is
+    # computed against, so take it first.
+    dur = v((metrics.get("match") or {}).get("match_span_sec")) if metrics else None
+    if not isinstance(dur, (int, float)) or dur <= 0:
+        dur = timeline.get("duration_sec")
+    mins = f"{dur/60:.1f}" if isinstance(dur, (int, float)) and dur > 0 else "—"
     stats = [("Minutes analyzed", mins), ("Rallies", len(rallies)),
              ("Shots", len(shots)), ("Volleys (hit in the air)", n_volley),
              ("Ball bounces", len(bounces_doc.get("bounces", [])))]
@@ -604,16 +607,10 @@ def build_html(folder: Path) -> str:
     A(f'<p class="small muted">Timeline: {n_events} shot &amp; bounce events over '
       f'{timeline.get("duration_sec","—")} seconds, each carrying its own confidence.</p>')
 
-    # ---- Technique & trends ----
-    A('<h2>Coming soon</h2><hr class="rule">')
-    A('<div class="grid2">'
-      '<div class="card"><h3>Technique (body mechanics)</h3>'
-      '<p class="small muted">A supporting pose layer — split-step timing, '
-      'knees-bent dinks, contact-point consistency, ready-position recovery — that '
-      'feeds the categories above. Not measured yet.</p></div>'
-      '<div class="card"><h3>Trends across sessions</h3>'
-      '<p class="small muted">Your rating and key stats over time, once multiple '
-      'sessions are linked. This is a single-session report.</p></div></div>')
+    # The "Coming soon" section advertised two things that now exist: body mechanics is
+    # measured and feeds the categories above (ready position, knee bend, contact point),
+    # and cross-session trends are cumulative reports. Promising delivered features as
+    # future ones makes the whole report look out of date.
 
     # ---- Footnotes ----
     A('<div class="foot"><h3>Notes</h3><ol>')

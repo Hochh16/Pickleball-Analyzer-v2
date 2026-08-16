@@ -78,6 +78,13 @@ POST_STEPS = [
     Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics", args=["--force"]),
     Step("rate", "USAPA rating", module="stages.rate.rate", args=["--force"]),
     Step("plan", "Improvement plan", module="stages.plan_improvement.plan_improvement", args=["--force"]),
+    # Court-position heatmaps. Stage 11 also renders an annotated video, which is slow
+    # enough that the pipeline skipped the stage entirely — so EVERY app-produced report
+    # has been missing its court-positioning section, silently, because build_report just
+    # omits images it cannot find. --heatmaps-only is arithmetic over the metrics grids
+    # and costs a second. Must precede the report, which embeds the PNGs.
+    Step("heatmaps", "Court heatmaps", module="stages.render.render",
+         args=["--heatmaps-only", "--force"]),
     Step("report", "Build report", module="tools.build_report", args=["--force"]),
 ]
 
