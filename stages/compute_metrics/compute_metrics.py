@@ -470,6 +470,22 @@ def pose_front_foot(poses_df: Optional[pd.DataFrame],
         df = df[df["pose_detected"].astype(bool)]
     if df.empty:
         return {}
+
+    # A CUMULATIVE folder (Stage 7.9 union) holds videos from DIFFERENT venues, each with
+    # its own homography, and carries only one court.json. Projecting every member's pose
+    # pixels through that single homography puts the other venues' players nowhere near
+    # the court -- measured: kitchen time fell to 0.25 from inputs of 0.50 and 0.35.
+    # Stage 7.9 therefore pre-projects each member with ITS OWN court and stores the
+    # result; use it when present rather than re-projecting here.
+    if {"front_foot_court_x_ft", "front_foot_court_y_ft"} <= set(df.columns):
+        out: Dict[int, Dict[int, Tuple[float, float]]] = {}
+        for tid, fr, x, y in zip(df["track_id"].to_numpy(), df["frame"].to_numpy(),
+                                 df["front_foot_court_x_ft"].to_numpy(),
+                                 df["front_foot_court_y_ft"].to_numpy()):
+            if np.isfinite(x) and np.isfinite(y):
+                out.setdefault(int(tid), {})[int(fr)] = (float(x), float(y))
+        return out
+
     H = np.asarray(image_to_court, dtype=np.float64)
 
     def proj(xcol: str, ycol: str) -> Tuple[np.ndarray, np.ndarray]:

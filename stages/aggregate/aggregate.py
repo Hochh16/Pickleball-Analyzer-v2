@@ -63,6 +63,47 @@ def member_span_sec(cl: dict, ra: dict, bo: dict) -> float:
     return float(max(ts) - min(ts)) if ts else 0.0
 
 
+NET_Y_FT = 22.0
+POSE_ANKLE_MIN_VIS = 0.3
+
+
+def _project_front_foot(q, court: dict) -> None:
+    """Add front_foot_court_x_ft / _y_ft to a member's poses, using ITS court.
+
+    Mirrors compute_metrics.pose_front_foot: the front foot is the visible ankle nearest
+    the net, because a player's bbox bottom is the BACK foot for a net-facing player and
+    reads several feet too deep. Doing it here, once per member, is what makes the union
+    venue-independent.
+    """
+    import numpy as np
+
+    H = (court.get("homography", {}) or {}).get("image_to_court")
+    need = {"left_ankle_x_px", "right_ankle_x_px", "left_ankle_visibility"}
+    if H is None or not need <= set(q.columns):
+        q["front_foot_court_x_ft"] = float("nan")
+        q["front_foot_court_y_ft"] = float("nan")
+        return
+    M = np.asarray(H, dtype=np.float64)
+
+    def proj(xc, yc):
+        pts = np.column_stack([q[xc].to_numpy(dtype=np.float64),
+                               q[yc].to_numpy(dtype=np.float64), np.ones(len(q))])
+        o = pts @ M.T
+        return o[:, 0] / o[:, 2], o[:, 1] / o[:, 2]
+
+    lx, ly = proj("left_ankle_x_px", "left_ankle_y_px")
+    rx, ry = proj("right_ankle_x_px", "right_ankle_y_px")
+    ok_l = q["left_ankle_visibility"].to_numpy(dtype=np.float64) >= POSE_ANKLE_MIN_VIS
+    ok_r = q["right_ankle_visibility"].to_numpy(dtype=np.float64) >= POSE_ANKLE_MIN_VIS
+    dl = np.where(ok_l, np.abs(ly - NET_Y_FT), np.inf)
+    dr = np.where(ok_r, np.abs(ry - NET_Y_FT), np.inf)
+    use_left = dl <= dr
+    fx, fy = np.where(use_left, lx, rx), np.where(use_left, ly, ry)
+    bad = ~np.isfinite(fx) | ~np.isfinite(fy) | (np.minimum(dl, dr) == np.inf)
+    q["front_foot_court_x_ft"] = np.where(bad, np.nan, fx)
+    q["front_foot_court_y_ft"] = np.where(bad, np.nan, fy)
+
+
 def union(members: list[Path], log: logging.Logger,
           pool_opponents: bool = True) -> dict:
     """Concatenate every stream with IDs renumbered and time offset.
@@ -72,7 +113,8 @@ def union(members: list[Path], log: logging.Logger,
     with missing shots in the cumulative report, which is indistinguishable from a real
     detection gap.
     """
-    out_shots, out_rallies, out_bounces, out_players = [], [], [], []
+    out_shots, out_rallies, out_bounces, out_players, out_poses = [], [], [], [], []
+    missing_poses: list[str] = []
     role_of_track: dict[int, str] = {}
     track_conf: dict[int, float] = {}
     shot_off = rally_off = bounce_off = track_off = frame_off = 0
@@ -147,6 +189,30 @@ def union(members: list[Path], log: logging.Logger,
         p["t_sec"] = p["t_sec"] + t_off
         out_players.append(p)
 
+        # Poses MUST travel with the players. Stage 8 uses the pose front-foot for court
+        # position and falls back to the bbox foot when poses are absent — silently, with
+        # only a warning — which UNDER-COUNTS kitchen time. Omitting them made a
+        # cumulative rating (3.23) come out below both of its inputs (4.14 and 3.78),
+        # because strategy is the heaviest category. They also carry ready-position and
+        # knee-bend, so without them the report loses its body-mechanics findings.
+        pp = folder / "poses.parquet"
+        if pp.exists():
+            q = pd.read_parquet(pp)
+            q["video_id"] = vi
+            q["video_frame"] = q["frame"]
+            q["frame"] = q["frame"] + frame_off
+            q["track_id"] = q["track_id"].map(lambda t: tid.get(int(t), int(t) + track_off))
+            if "t_sec" in q.columns:
+                q["t_sec"] = q["t_sec"] + t_off
+            # Pose landmarks are PIXELS, so they only mean something alongside the
+            # homography of the video they came from. A union spans venues and can carry
+            # only one court.json, so project here, per member, with that member's own
+            # court — otherwise every venue after the first lands off-court.
+            _project_front_foot(q, _read(folder, "court.json"))
+            out_poses.append(q)
+        else:
+            missing_poses.append(folder.name)
+
         for t, info in tr["track_roles"].items():
             role = info["role"]
             # Contract D1: cumulatively, opp_a and opp_b are not the same two humans from
@@ -198,8 +264,9 @@ def union(members: list[Path], log: logging.Logger,
     if unknown:
         fail(f"{len(unknown)} track ids in players.parquet have no role")
 
+    poses = pd.concat(out_poses, ignore_index=True) if out_poses else None
     return {"shots": out_shots, "rallies": out_rallies, "bounces": out_bounces,
-            "players": players, "role_of_track": role_of_track, "track_conf": track_conf,
+            "players": players, "poses": poses, "missing_poses": missing_poses, "role_of_track": role_of_track, "track_conf": track_conf,
             "synthetic": synthetic, "gated": sorted(gated), "provenance": provenance,
             "span_sec": t_off, "pooled_opponents": pool_opponents}
 
@@ -234,6 +301,10 @@ def write(u: dict, members: list[Path], out: Path, log: logging.Logger) -> None:
         "bounces": u["bounces"], "stats": {"n_bounces": len(u["bounces"])}}), indent=1),
         encoding="utf-8")
     u["players"].to_parquet(out / "players.parquet", index=False)
+    if u.get("poses") is not None:
+        u["poses"].to_parquet(out / "poses.parquet", index=False)
+    else:
+        (out / "poses.parquet").unlink(missing_ok=True)
 
     # Roles carry through; TRACK ids do not. Note the union keeps all four roles rather
     # than pooling opp_a/opp_b (contract D1) -- pooling happens at REPORT time, so no
