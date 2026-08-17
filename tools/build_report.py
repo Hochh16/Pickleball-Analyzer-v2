@@ -105,6 +105,19 @@ COVERAGE = {
 }
 SYMBOL = {"live": "●", "partial": "◐", "planned": "○"}
 
+# Seconds of run-up before a serve when jumping to a point. Landing exactly on the serve
+# frame drops the viewer in mid-motion with no idea how the players were set.
+JUMP_LEAD_S = 3.0
+
+
+def clock(sec) -> str:
+    """m:ss for the point index."""
+    try:
+        sec = max(0, int(float(sec)))
+    except (TypeError, ValueError):
+        return "0:00"
+    return f"{sec // 60}:{sec % 60:02d}"
+
 
 # --- Data helpers ------------------------------------------------------------
 
@@ -348,6 +361,13 @@ sup a{color:var(--court);text-decoration:none;font-size:11px;padding:0 1px;}
 .foot{color:var(--muted);font-size:12.5px;margin-top:48px;border-top:1px solid var(--line);padding-top:14px;}
 .foot li{margin:5px 0;}
 a{color:var(--court-deep);} .vid video{width:100%;border-radius:10px;border:1px solid var(--line);}
+.points{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:10px 0;}
+.pt{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);
+background:#fff;border-radius:9px;cursor:pointer;font:inherit;text-align:left;}
+.pt:hover{border-color:var(--court-deep);}
+.pt-n{font-weight:700;min-width:1.4em;color:var(--court-deep);}
+.pt-t{font-variant-numeric:tabular-nums;font-weight:600;}
+.pt-d{font-size:11.5px;color:var(--muted);margin-left:auto;white-space:nowrap;}
 """
 
 
@@ -622,22 +642,44 @@ def build_html(folder: Path) -> str:
           f'ball hit into the net doesn\'t bounce either, so those aren\'t shown. '
           f'A few real bounces are also still missed by detection{fn(5)}.</p></div></div>')
 
-    # ---- Match video ----
-    A('<h2>Match video &amp; timeline</h2><hr class="rule">')
+    # ---- Match video + point index ----
+    # Deliberately NOT a re-rendered video with overlays. Those overlays (boxes, ball
+    # trails, track ids) exist to verify DETECTION; a player does not need a box drawn
+    # around themselves. What they need is "watch these moments" — and the rally
+    # boundaries that answer it already exist, so this costs no rendering, no extra
+    # storage and no waiting, on a source video that is several GB.
+    A('<h2>Watch the points</h2><hr class="rule">')
     if (folder / "video.mp4").exists():
-        A('<div class="card vid">'
-          '<p>Your original match video — <a href="video.mp4" target="_blank">open '
-          'it</a> or <a href="video.mp4" download>download it</a>.</p>'
-          '<p class="small muted">We\'re not overlaying boxes on the video for now — '
-          'they added little. Once the shot stats are solid, the video will carry the '
-          'ball trail, per-shot labels, and short clips tied to your improvement plan. '
-          '(Plays when you open this report from the same folder as the video; a '
-          'shared/online copy won\'t include it.)</p></div>')
+        A('<div class="card vid">')
+        A('<video id="matchvid" controls preload="metadata" src="video.mp4"></video>')
+        A(f'<p class="small muted">Click a point to jump straight to it. Playback starts '
+          f'{JUMP_LEAD_S:g}s before the serve so you see the setup.</p>')
+        A('<div class="points">')
+        for i, r in enumerate(rallies, 1):
+            t0 = max(0.0, float(r.get("start_t_sec", 0.0)) - JUMP_LEAD_S)
+            dur = float(r.get("duration_sec") or 0.0)
+            A(f'<button class="pt" data-t="{t0:.2f}">'
+              f'<span class="pt-n">{i}</span>'
+              f'<span class="pt-t">{clock(r.get("start_t_sec", 0))}</span>'
+              f'<span class="pt-d">{int(r.get("n_shots", 0))} shots &middot; {dur:.0f}s</span>'
+              f'</button>')
+        A('</div>')
+        A('<p class="small muted">Plays when you open this report from the same folder '
+          'as the video; a shared copy will not include it. '
+          '<a href="video.mp4" download>Download the video</a>.</p>')
+        A('</div>')
+        A('<script>document.querySelectorAll(".pt").forEach(function(b){'
+          'b.addEventListener("click",function(){var v=document.getElementById("matchvid");'
+          'v.currentTime=parseFloat(b.dataset.t);v.play();'
+          'v.scrollIntoView({behavior:"smooth",block:"center"});});});</script>')
+    elif collection:
+        # A cumulative report has no single video by construction — it is several.
+        A('<p class="muted small">This is a cumulative report, so there is no one video '
+          'to scrub. Open an individual video\'s report to jump to its points.</p>')
     else:
         A('<p class="muted small">The match video isn\'t in this folder.</p>')
-    n_events = len(timeline.get("events", []))
-    A(f'<p class="small muted">Timeline: {n_events} shot &amp; bounce events over '
-      f'{timeline.get("duration_sec","—")} seconds, each carrying its own confidence.</p>')
+    A('<p class="small muted">Points come from detected rally boundaries, so one or two '
+      'may land on ball-handling between points rather than a serve.</p>')
 
     # The "Coming soon" section advertised two things that now exist: body mechanics is
     # measured and feeds the categories above (ready position, knee bend, contact point),
