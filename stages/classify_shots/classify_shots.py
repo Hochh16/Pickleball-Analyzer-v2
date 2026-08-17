@@ -573,27 +573,40 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         return "lob", min(1.0, max(0.6, arc_frac))
 
     # --- Landing-aware path: the SOUND signal (bounces project reliably) ---------
+    # OPERATOR TYPE TABLE (2026-08-03). Type is a function of WHERE THE HITTER WAS
+    # x WHERE THE BALL LANDED (x pace), not of landing depth alone:
+    #   "from the kitchen area: hit softly to the baseline = LOB; hard to the
+    #    baseline or transition zone = DRIVE; into the kitchen area, or softly into
+    #    the transition zone, = DINK."
+    # The previous rule only tested landing-distance-from-net and so never combined
+    # the two zones — which is why a soft ball lofted from the kitchen to the
+    # baseline came out a DRIVE (both operator-labelled lobs were scored drives).
+    # LOFTED vs FLAT is judged on ARC SHAPE first: arc is a trajectory property,
+    # while ball speed is the signal this project has repeatedly found unreliable
+    # (ACCURACY_LEDGER: "a weak discriminator by physics, not a fixable bug").
+    # Speed is only the fallback when no arc is measurable.
     if landing_y is not None:
-        # soft landing within the kitchen + ~2 ft buffer (operator: a drop/dink
-        # lands up to ~2 ft past the kitchen line, not only inside the kitchen).
-        soft = abs(landing_y - NET_Y_FT) <= KITCHEN_MAX_DIST_FT
-        if soft:
-            # dink is hit from AT/NEAR the net (kitchen or transition — operator:
-            # players dink from a step or two behind the kitchen line); a drop is
-            # the soft shot from DEEP (baseline, the third-shot drop).
-            return ("drop", 0.78) if zone == "baseline" else ("dink", 0.78)
-        # REMOVED 2026-08-02 — the "speed guard" (a slow ball with a deep landing was
-        # called a dink anyway) is deleted. It CONTRADICTED the operator's own ruling:
-        # "shot type is decided by WHERE THE BALL LANDED, not by how it was struck. A
-        # softly-hit ball that lands well past the kitchen line is NOT a dink — it's a
-        # dink that got away, typed by outcome." It existed to compensate for landings
-        # being read too deep, but the ledger's own investigation of the canonical case
-        # (drill shot 7) concluded the deep landing was REAL, so the compensation was
-        # correcting an error that wasn't there — while resting on ball speed, which is
-        # documented as a weak discriminator by physics, not a fixable bug.
-        # Measured on pb_5_minute_outdoor-2: dinks 36 -> 31 (operator truth 18), mean
-        # error across the 14 acceptance counts 26.9% -> 26.7%.
-        return "drive", 0.78   # deep landing = a ball that got past the kitchen
+        land_zone = zone_from_court_y(landing_y)
+        if arc_frac is not None:
+            lofted = arc_frac >= DRIVE_DROP_ARC_SPLIT
+            high_lob = arc_frac >= LOB_MIN_ARC_FRAC
+        else:
+            lofted = high_lob = (post_ftps is not None and post_ftps <= dink_max)
+        if zone == "baseline":
+            # from DEEP: a soft ball landing at the net is the third-shot drop.
+            return ("drop", 0.78) if land_zone == "kitchen" else ("drive", 0.78)
+        # hitter at/near the net (kitchen or transition)
+        if land_zone == "kitchen":
+            return "dink", 0.78
+        if land_zone == "transition":
+            return ("dink", 0.7) if lofted else ("drive", 0.78)
+        # lands deep at the baseline: lofted from the net = LOB, flat = DRIVE
+        return ("lob", 0.7) if high_lob else ("drive", 0.78)
+        # NOTE: the old "speed guard" (a slow ball with a DEEP landing called a dink
+        # anyway) was removed in v0.5.0 and is not reinstated here. It contradicted
+        # the operator's ruling that the LANDING decides type, and rested on ball
+        # speed. The table above expresses the same intent correctly: a soft ball
+        # that lands deep is a LOB (from the net) or a DRIVE, never a dink.
 
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
     if post_ftps is not None and post_ftps >= drive_min:
