@@ -110,6 +110,44 @@ SYMBOL = {"live": "●", "partial": "◐", "planned": "○"}
 JUMP_LEAD_S = 3.0
 
 
+SHOT_LEAD_S = 2.0       # run-up when jumping to one shot rather than a whole rally
+LONG_RALLY_S = 25.0     # beyond this a "rally" is usually several points run together
+
+
+def user_shot_groups(classified: dict, rallies: list, track_roles: dict) -> dict:
+    """{label: [t_sec, ...]} for the operator's OWN shots, by kind.
+
+    Only the user's shots: the point of this list is reviewing your own play, and a
+    mixed list would need a name against every row to be readable.
+
+    "Third shots" is positional (the 3rd shot of a rally), not a shot type — that is what
+    the third-shot category rates, and it is the one the drop-vs-drive choice belongs to.
+    """
+    tids = {int(t) for t, i in (track_roles.get("track_roles", {}) or {}).items()
+            if i.get("role") == "user"}
+    by_id = {int(s["shot_id"]): s for s in classified.get("shots", [])}
+    mine = lambda s: s.get("track_id") is not None and int(s["track_id"]) in tids
+
+    third = []
+    for r in rallies:
+        ids = [i for i in r.get("shot_ids", []) if i in by_id]
+        if len(ids) >= 3 and mine(by_id[ids[2]]):
+            third.append(float(by_id[ids[2]]["t_sec"]))
+
+    def of_type(*types):
+        return sorted(float(s["t_sec"]) for s in by_id.values()
+                      if mine(s) and s.get("shot_type") in types)
+
+    return {
+        "Serves & returns": of_type("serve", "return"),
+        "Third shots": sorted(third),
+        "Dinks": of_type("dink"),
+        "Drops": of_type("drop"),
+        "Volleys": sorted(float(s["t_sec"]) for s in by_id.values()
+                          if mine(s) and s.get("is_volley")),
+    }
+
+
 def clock(sec) -> str:
     """m:ss for the point index."""
     try:
@@ -368,6 +406,11 @@ background:#fff;border-radius:9px;cursor:pointer;font:inherit;text-align:left;}
 .pt-n{font-weight:700;min-width:1.4em;color:var(--court-deep);}
 .pt-t{font-variant-numeric:tabular-nums;font-weight:600;}
 .pt-d{font-size:11.5px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+.pt-long{border-color:#e0b23c;background:#fffaf0;}
+.pt.pt-s{justify-content:center;padding:5px 8px;}
+.shotrow{display:flex;gap:10px;align-items:flex-start;margin:8px 0;flex-wrap:wrap;}
+.shotrow-l{min-width:130px;padding-top:6px;font-size:13px;}
+.shotrow .points{flex:1;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));margin:0;}
 """
 
 
@@ -652,18 +695,47 @@ def build_html(folder: Path) -> str:
     if (folder / "video.mp4").exists():
         A('<div class="card vid">')
         A('<video id="matchvid" controls preload="metadata" src="video.mp4"></video>')
-        A(f'<p class="small muted">Click a point to jump straight to it. Playback starts '
-          f'{JUMP_LEAD_S:g}s before the serve so you see the setup.</p>')
+        A(f'<p class="small muted">Click any time below to jump straight there — '
+          f'{JUMP_LEAD_S:g}s before a rally starts, {SHOT_LEAD_S:g}s before a single '
+          f'shot, so you see the setup rather than landing mid-motion.</p>')
+        A('<h3>Rallies</h3>')
         A('<div class="points">')
         for i, r in enumerate(rallies, 1):
             t0 = max(0.0, float(r.get("start_t_sec", 0.0)) - JUMP_LEAD_S)
             dur = float(r.get("duration_sec") or 0.0)
-            A(f'<button class="pt" data-t="{t0:.2f}">'
+            # A real point runs ~5-15s. A much longer one is usually several points run
+            # together, because rally-END detection is a known open limitation — so flag
+            # it rather than presenting "31 shots" as one rally the player did not play.
+            long = dur > LONG_RALLY_S
+            A(f'<button class="pt{" pt-long" if long else ""}" data-t="{t0:.2f}"'
+              f'{" title=\'Unusually long - this may be several points run together\'" if long else ""}>'
               f'<span class="pt-n">{i}</span>'
               f'<span class="pt-t">{clock(r.get("start_t_sec", 0))}</span>'
-              f'<span class="pt-d">{int(r.get("n_shots", 0))} shots &middot; {dur:.0f}s</span>'
+              f'<span class="pt-d">{dur:.0f}s{" &middot; ?" if long else ""}</span>'
               f'</button>')
         A('</div>')
+        n_long = sum(1 for r in rallies
+                     if float(r.get("duration_sec") or 0) > LONG_RALLY_S)
+        if n_long:
+            A(f'<p class="small muted">{n_long} rall{"y is" if n_long == 1 else "ies are"} '
+              f'longer than {LONG_RALLY_S:g}s and marked <b>?</b> — a point rarely runs '
+              f'that long, so those are probably several points run together. Detecting '
+              f'where a point ENDS is a known open limitation.</p>')
+
+        # Jump straight to the operator's own shots by type. Same zero-cost mechanism as
+        # the rally list, just a different filter over shots we already classified.
+        groups = user_shot_groups(classified, rallies, track_roles)
+        if any(groups.values()):
+            A('<h3>Your shots</h3>')
+            for label, items in groups.items():
+                if not items:
+                    continue
+                A(f'<div class="shotrow"><span class="shotrow-l">{esc(label)} '
+                  f'<b>({len(items)})</b></span><div class="points">')
+                for t in items:
+                    A(f'<button class="pt pt-s" data-t="{max(0.0, t - SHOT_LEAD_S):.2f}">'
+                      f'<span class="pt-t">{clock(t)}</span></button>')
+                A('</div></div>')
         A('<p class="small muted">Plays when you open this report from the same folder '
           'as the video; a shared copy will not include it. '
           '<a href="video.mp4" download>Download the video</a>.</p>')
