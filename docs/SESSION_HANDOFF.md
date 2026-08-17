@@ -25,6 +25,28 @@ which is what this codebase keeps needing.
 Start from `tools/verify_identity.py` (render-based, already proves roles) and the rally
 table produced by reading `classified.json` + `rallies.json` + `track_roles.json`.
 
+### Report changes landed (2026-08-15, operator review)
+
+- **One category table**, not two: `Category | Your level | Your numbers now | What USA
+  Pickleball rates`. Coverage column, badges and footnote removed — the USAPA column
+  already shows what is measured.
+- **Bounce map links the operator's own shots** to where that ball landed (19 lines
+  outdoor / 9 indoor / 28 cumulative). Still deliberately unnumbered: lines are safe
+  because each joins a bounce to the shot `between_shots` already attributed it to,
+  whereas numbering would infer an order from time and be wrong wherever a bounce is
+  missed. Volleys have no line by construction.
+- Hero trimmed to the score plus one sentence; "Coming soon" removed; "Minutes analyzed"
+  now from `match_span_sec`; footnotes renumbered 1–5; rating warnings no longer render
+  into the player report (they stay in `rating.json`).
+
+### ⚠ UNCOMMITTED work in the tree
+
+`stages/classify_shots/classify_shots.py` carries ~33 lines implementing the operator's
+shot-type table (hitter zone × landing zone × arc). It was **measured as a wash (12/32)**
+and never committed. Decide: land it as a recorded negative result, or revert it. Leaving
+it uncommitted means every future `git status` is noisy and the next person cannot tell
+whether it is in flight or abandoned.
+
 ### ⚠ Do NOT re-litigate these — measured and understood today
 
 **Volleys over-count because bounces are MISSED, not because volleys are over-detected.**
