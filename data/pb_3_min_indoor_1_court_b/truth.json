@@ -1,0 +1,87 @@
+{
+ "schema_version": 1,
+ "clip": "pb_3_min_indoor_1_court_b",
+ "source": "operator worksheet _truth_worksheet.csv, 2026-08-15",
+ "note": "Operator watched the clip and listed every point with its start/end and server. Serves by the user: 2 (points 0 and 7). Totals: 10 points, 82 shots.",
+ "totals": {
+  "points": 10,
+  "shots": 82,
+  "serves_by": {
+   "user": 2,
+   "partner": 3,
+   "opponents": 5
+  }
+ },
+ "points": [
+  {
+   "point": 0,
+   "start_t_sec": 3,
+   "end_t_sec": 20,
+   "server": "user",
+   "n_shots": 17
+  },
+  {
+   "point": 1,
+   "start_t_sec": 29,
+   "end_t_sec": 35,
+   "server": "opp",
+   "n_shots": 4
+  },
+  {
+   "point": 2,
+   "start_t_sec": 45,
+   "end_t_sec": 53,
+   "server": "opp",
+   "n_shots": 5
+  },
+  {
+   "point": 3,
+   "start_t_sec": 63,
+   "end_t_sec": 77,
+   "server": "opp",
+   "n_shots": 14
+  },
+  {
+   "point": 4,
+   "start_t_sec": 86,
+   "end_t_sec": 98,
+   "server": "partner",
+   "n_shots": 10
+  },
+  {
+   "point": 5,
+   "start_t_sec": 104,
+   "end_t_sec": 116,
+   "server": "partner",
+   "n_shots": 10
+  },
+  {
+   "point": 6,
+   "start_t_sec": 127,
+   "end_t_sec": 134,
+   "server": "partner",
+   "n_shots": 5
+  },
+  {
+   "point": 7,
+   "start_t_sec": 140,
+   "end_t_sec": 144,
+   "server": "user",
+   "n_shots": 3
+  },
+  {
+   "point": 8,
+   "start_t_sec": 152,
+   "end_t_sec": 159,
+   "server": "opp",
+   "n_shots": 3
+  },
+  {
+   "point": 9,
+   "start_t_sec": 166,
+   "end_t_sec": 178,
+   "server": "opp",
+   "n_shots": 11
+  }
+ ]
+}

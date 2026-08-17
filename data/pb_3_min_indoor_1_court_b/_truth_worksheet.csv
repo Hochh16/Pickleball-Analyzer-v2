@@ -1,0 +1,20 @@
+we_detected,start_time,duration_s,shots,we_say_server,REAL_POINT_y_n,WHO_SERVED,NOTES
+rally 0,00:00.0,5,1,user,,,See 0 below 
+rally 1,00:07.0,38,31,user,n,,this was the 3rd shot in previous rally and was taken from behind the baseline
+rally 2,00:49.5,9,3,opp_b,,,SEE RALLY 2 below
+rally 3,01:00.7,27,10,opp_a,,,SEE Rally 3 below
+rally 4,01:28.6,17,10,opp_a,,,See Rally 4 below
+rally 5,01:47.6,20,8,partner,,,see rally 5 below
+rally 6,02:07.9,6,5,partner,,,see rally 6 below
+rally 7,02:20.9,37,20,partner,,,see rally 7 below
+,,,,,,,
+rally 0,00:00.0,5,1,user,y,user,"serve is hit at :03, ends at :20, 17 shots in rally"
+rally 1,:29,6 secs,4,,y,opponent,ends at :35
+rally 2,:45,8,5,,y,opponent,ends at :53
+rally 3,1:03,14,14,,y,opponent,ends at 1:17
+rally 4,1:26,12,10,,y,partner,ends at 1:38
+rally  5,1:44,12,10,,y,partner,ends at 1:56
+rally 6,2:07,7,5,,y,partner,ends at 2:14
+rally 7,2:20,4,3,,y,user,ends at 2:24
+rally 8 ,2:32,7,3,,y,opponent,ends at 2:39
+rally 9,2:46,12,11,,y,opponent,ends at 2:58
