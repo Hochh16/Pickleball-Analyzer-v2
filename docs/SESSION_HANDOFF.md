@@ -25,6 +25,50 @@ which is what this codebase keeps needing.
 Start from `tools/verify_identity.py` (render-based, already proves roles) and the rally
 table produced by reading `classified.json` + `rallies.json` + `track_roles.json`.
 
+### 2026-08-15 (later) — ACCURACY: the largest error is BETWEEN-POINT BALLS
+
+Corrected an earlier claim of mine: **recall is not the constraint.** That conclusion came
+from two measurement mistakes — `missed_shots.csv` is STALE (6 of its 7 misses are detected
+today), and I matched hand-typed clock labels within 0.33s when 1s is fair. Recall is ~94%
+in the labelled window, 81% across all labels.
+
+Measured on the outdoor acceptance clip (32 real + 18 non-shot operator labels):
+
+    shot recall            81-94%
+    TYPE accuracy          42% among detected (11/26)
+    shots vs truth         125 vs 98  -> 27 too many (22%)
+    between-point junk     8 of 34 matched labels (24%)
+    is_between_point flag  set on 0 of 125 shots — THE FIELD EXISTS BUT NOTHING SETS IT
+
+Type errors are dominated by two things: SERVE is under-called (5 truth, 2 predicted) and
+DRIVE is a catch-all sink (9 truth, 14 predicted). `return` is exactly right (4/4), so the
+machinery works.
+
+**Why serves are missed — measured, three ways, all caused by between-point handling:**
+
+    128.8s  behind baseline, 8.3s gap — but the FEED at 120.5 already took the serve slot
+    219.8s  behind baseline, but gap before is 1.8s (< 3s rule) because of handling
+     66.8s  behind baseline, gap 1.9s — same, and it was typed `return`
+
+So ball handling defeats serve detection twice over: it steals the slot AND shrinks the
+gap before the real serve.
+
+**Discriminators tested against truth and REJECTED — do not re-derive these:**
+
+| signal | result |
+|---|---|
+| next shot same team | fixes 1, breaks 2 (a missed return looks identical to a feed) |
+| hitter position | every case is behind the baseline, both classes |
+| time gap | HELPS at 8.3s and 1.9s; HURTS at 0.8s, 3.1s, 6.6s |
+| ball crosses net after | real 19/26 vs junk 5/6 — no separation (feeds cross too) |
+| post-shot speed | real median 15.1 vs junk 5.1, BUT 5 real shots sit at 3.0 (soft dinks). A threshold at 7 removes 6/8 junk and destroys 8/26 real |
+
+**NEXT: this needs the operator's "combine weak cues" method, and more labels to fit it.**
+Only 8 junk samples align with current detections — too few to fit or validate a
+multi-cue rule without overfitting. The concrete ask is a larger between-point labelling
+pass (the whole 5-minute clip, marking every ball that is not a real shot). That is the
+one input that would let a combined rule be built AND tested.
+
 ### RESOLVED: there is no same-side attribution bug — it is SERVE attribution
 
 The operator counted 2 returns; the report credited them 0 and gave 2 to the partner. The
