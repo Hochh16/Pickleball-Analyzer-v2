@@ -749,6 +749,7 @@ def build_html(folder: Path) -> str:
         # operator off to open each per-video report, give one player per member with that
         # member's own rallies underneath it.
         members = collection.get("members", []) or []
+        member_groups: dict = {}
         shown = 0
         for m in members:
             sid = m.get("session_id")
@@ -761,25 +762,63 @@ def build_html(folder: Path) -> str:
                 mr = []
             shown += 1
             vid = f"vid{shown}"
+            # Each member's own shots, keyed to ITS player. Computed from the member
+            # folder rather than the union: the union's times are offset and its track ids
+            # renumbered, so member-local times are what seek this member's video.
+            try:
+                mcl = json.loads((mf / "classified.json").read_text(encoding="utf-8"))
+                mtr = json.loads((mf / "track_roles.json").read_text(encoding="utf-8"))
+                for lbl, ts in user_shot_groups(mcl, mr, mtr).items():
+                    member_groups.setdefault(lbl, []).extend((vid, shown, t) for t in ts)
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
+            # Rallies join the same cross-video index as the shot kinds, rather than
+            # sitting in a per-video grid. Two layouts for the same idea made the reader
+            # learn the page twice.
+            for r in mr:
+                member_groups.setdefault("Rallies", []).append(
+                    (vid, shown, float(r.get("start_t_sec", 0.0)),
+                     float(r.get("duration_sec") or 0.0)))
             # Served through the app's per-session file route: the member videos live
             # outside this folder, and the collection file route (rightly) refuses to
             # serve anything outside it.
             src = f"/api/sessions/{sid}/files/video.mp4"
             A('<div class="card vid">')
-            A(f'<h3>{esc(m.get("session_id"))}</h3>')
+            A(f'<h3>Video {shown} &mdash; {esc(m.get("session_id"))}</h3>')
             A(f'<video id="{vid}" controls preload="none" src="{esc(src)}"></video>')
-            A('<div class="points">')
-            for i, r in enumerate(mr, 1):
-                t0 = max(0.0, float(r.get("start_t_sec", 0.0)) - JUMP_LEAD_S)
-                dur = float(r.get("duration_sec") or 0.0)
-                long = dur > LONG_RALLY_S
-                A(f'<button class="pt{" pt-long" if long else ""}" '
-                  f'data-t="{t0:.2f}" data-v="{vid}">'
-                  f'<span class="pt-n">{i}</span>'
-                  f'<span class="pt-t">{clock(r.get("start_t_sec", 0))}</span>'
-                  f'<span class="pt-d">{dur:.0f}s{" &middot; ?" if long else ""}</span>'
-                  f'</button>')
-            A('</div></div>')
+            A('</div>')
+        if shown and any(member_groups.values()):
+            # The point of a cumulative report: every rally, third shot, dink or volley
+            # across ALL videos in one place, each button seeking its own video.
+            A('<h3>Jump to any moment, across all videos</h3>')
+            # Rallies first: they are the coarse index, the shot kinds refine it.
+            order = ["Rallies"] + [k for k in member_groups if k != "Rallies"]
+            n_long = 0
+            for label in order:
+                items = member_groups.get(label) or []
+                if not items:
+                    continue
+                A(f'<div class="shotrow"><span class="shotrow-l">{esc(label)} '
+                  f'<b>({len(items)})</b></span><div class="points">')
+                for it in items:
+                    vid, n, t = it[0], it[1], it[2]
+                    dur = it[3] if len(it) > 3 else None
+                    lead = JUMP_LEAD_S if dur is not None else SHOT_LEAD_S
+                    long = dur is not None and dur > LONG_RALLY_S
+                    n_long += 1 if long else 0
+                    extra = (f'<span class="pt-d">{dur:.0f}s{" &middot; ?" if long else ""}'
+                             f'</span>') if dur is not None else ''
+                    A(f'<button class="pt{"" if dur is not None else " pt-s"}'
+                      f'{" pt-long" if long else ""}" data-v="{vid}" '
+                      f'data-t="{max(0.0, t - lead):.2f}">'
+                      f'<span class="pt-n">{n}</span>'
+                      f'<span class="pt-t">{clock(t)}</span>{extra}</button>')
+                A('</div></div>')
+            A('<p class="small muted">The small number is which video above.</p>')
+            if n_long:
+                A(f'<p class="small muted">{n_long} rall{"y is" if n_long == 1 else "ies are"} '
+                  f'longer than {LONG_RALLY_S:g}s and marked <b>?</b> — a point rarely runs '
+                  f'that long, so those are probably several points run together.</p>')
         if shown:
             A('<p class="small muted">One player per video in this report. Videos load '
               'from the app, so this section needs the app open (a downloaded copy of '
