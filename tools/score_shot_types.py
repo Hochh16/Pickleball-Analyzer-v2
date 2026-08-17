@@ -26,7 +26,11 @@ import json
 from collections import Counter
 from pathlib import Path
 
-TOL_FRAMES = 20
+# 1 second, not the 0.33s used at first. The labels carry a hand-typed CLOCK time (one
+# file has no frame column at all), so sub-second matching measures the operator's
+# stopwatch rather than our detection: at 0.33s only 22/32 labels matched, at 1s it is
+# 26/32. Tightening this manufactured a "41% of shots are missed" result that was not real.
+TOL_FRAMES = 60
 REAL_TYPES = {"drive", "drop", "dink", "lob", "serve", "return", "reset"}
 
 
