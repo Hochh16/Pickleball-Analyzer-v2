@@ -25,6 +25,31 @@ which is what this codebase keeps needing.
 Start from `tools/verify_identity.py` (render-based, already proves roles) and the rally
 table produced by reading `classified.json` + `rallies.json` + `track_roles.json`.
 
+### RESOLVED: there is no same-side attribution bug — it is SERVE attribution
+
+The operator counted 2 returns; the report credited them 0 and gave 2 to the partner. The
+theory was a user/partner mix-up invisible to the alternation rule. **Measured at the shot
+frames, that theory is wrong.** Every detected return is on the right player:
+
+```
+frame 3159 (rally 2 return)  ball INSIDE partner's bbox (0px)      user 435px away
+frame 5378 (rally 4 return)  partner 117px                          user >500px away
+frame 3813 (rally 3 return)  ball INSIDE opp_a's bbox (0px, wrist 25px)
+```
+
+Two cautions this exposed, both mine: reading a scaled render by eye put the ball at the
+wrong player (1500px wide from 3840 is 2.56x), and a "large" 153px was the WRIST distance
+while the ball sat inside the box. Compute the distances; do not eyeball them.
+
+**The real cause:** only 3 of 8 indoor rallies are attributed to an opponent serve
+(servers split 5-3 to the near team). The operator's returns are in rallies we credited to
+their OWN side — and if our side served, the second shot is not a return by definition, so
+it is typed as something else and never counted. Rally 3's impossible serve/return pair
+says the same thing from the other end: the return is right, so the SERVE is wrong.
+
+So items 2 and 3 of the queue are one item: **serve detection and rally-server
+attribution**. Start there, not at shot-to-player association.
+
 ### Report changes landed (2026-08-15, operator review)
 
 - **One category table**, not two: `Category | Your level | Your numbers now | What USA
