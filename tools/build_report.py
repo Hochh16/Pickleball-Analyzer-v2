@@ -745,13 +745,55 @@ def build_html(folder: Path) -> str:
           'v.currentTime=parseFloat(b.dataset.t);v.play();'
           'v.scrollIntoView({behavior:"smooth",block:"center"});});});</script>')
     elif collection:
-        # A cumulative report has no single video by construction — it is several.
-        A('<p class="muted small">This is a cumulative report, so there is no one video '
-          'to scrub. Open an individual video\'s report to jump to its points.</p>')
+        # A cumulative report has no single video — it has several. Rather than send the
+        # operator off to open each per-video report, give one player per member with that
+        # member's own rallies underneath it.
+        members = collection.get("members", []) or []
+        shown = 0
+        for m in members:
+            sid = m.get("session_id")
+            mf = Path(m.get("path") or "")
+            if not sid or not (mf / "video.mp4").exists():
+                continue
+            try:
+                mr = json.loads((mf / "rallies.json").read_text(encoding="utf-8"))["rallies"]
+            except (OSError, json.JSONDecodeError, KeyError):
+                mr = []
+            shown += 1
+            vid = f"vid{shown}"
+            # Served through the app's per-session file route: the member videos live
+            # outside this folder, and the collection file route (rightly) refuses to
+            # serve anything outside it.
+            src = f"/api/sessions/{sid}/files/video.mp4"
+            A('<div class="card vid">')
+            A(f'<h3>{esc(m.get("session_id"))}</h3>')
+            A(f'<video id="{vid}" controls preload="none" src="{esc(src)}"></video>')
+            A('<div class="points">')
+            for i, r in enumerate(mr, 1):
+                t0 = max(0.0, float(r.get("start_t_sec", 0.0)) - JUMP_LEAD_S)
+                dur = float(r.get("duration_sec") or 0.0)
+                long = dur > LONG_RALLY_S
+                A(f'<button class="pt{" pt-long" if long else ""}" '
+                  f'data-t="{t0:.2f}" data-v="{vid}">'
+                  f'<span class="pt-n">{i}</span>'
+                  f'<span class="pt-t">{clock(r.get("start_t_sec", 0))}</span>'
+                  f'<span class="pt-d">{dur:.0f}s{" &middot; ?" if long else ""}</span>'
+                  f'</button>')
+            A('</div></div>')
+        if shown:
+            A('<p class="small muted">One player per video in this report. Videos load '
+              'from the app, so this section needs the app open (a downloaded copy of '
+              'this page will not include them).</p>')
+            A('<script>document.querySelectorAll(".pt[data-v]").forEach(function(b){'
+              'b.addEventListener("click",function(){'
+              'var v=document.getElementById(b.dataset.v);'
+              'v.currentTime=parseFloat(b.dataset.t);v.play();'
+              'v.scrollIntoView({behavior:"smooth",block:"center"});});});</script>')
+        else:
+            A('<p class="muted small">The videos for this report are not on this '
+              'computer, so there is nothing to scrub.</p>')
     else:
         A('<p class="muted small">The match video isn\'t in this folder.</p>')
-    A('<p class="small muted">Points come from detected rally boundaries, so one or two '
-      'may land on ball-handling between points rather than a serve.</p>')
 
     # The "Coming soon" section advertised two things that now exist: body mechanics is
     # measured and feeds the categories above (ready position, knee bend, contact point),
