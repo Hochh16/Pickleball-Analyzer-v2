@@ -1109,7 +1109,7 @@ stable, but nothing verifies it. If that coin-flip lands wrong on another video,
 user-specific metric and the USAPA rating belong to the partner, with no signal that anything
 is amiss. See docs/USABILITY_BACKLOG.md.
 
-## Cross-venue check of the 2026-08-18 Stage 5/7 changes (OPEN: indoor shot count)
+## Cross-venue check of the 2026-08-18 Stage 5/7 changes (CLOSED; indoor RECALL is the real gap)
 
 Everything in that session was tuned on ONE outdoor clip, so it was re-run against
 `pb_3_min_indoor_1_court_b`, which has independent operator truth (10 points, 82 shots).
@@ -1134,6 +1134,33 @@ independent evidence says the gate helps: with it ON, indoor serve recall is 70%
 and precision 88% vs 83%. A better-structured rally sequence from fewer shots means the
 removals were mostly junk.
 
-**To close this:** the indoor clip needs a per-shot operator review like
-`data/pb_5_minute_outdoor-7/shot_review.json`, so `tools/score_shots` can run on a second
-venue instead of a raw count. Until then the indoor number is a count, not an accuracy.
+**CLOSED 2026-08-18 — no new labelling was needed.** The operator's existing
+`_truth_worksheet.csv` already lists every point with its start, end, server and shot count,
+so a detected shot outside every rally window is a between-point false positive *by the
+operator's own account of when play was live*. `tools/score_rally_shots.py` splits the count
+on that boundary:
+
+| indoor | inside rallies (truth 82) | outside = junk |
+|---|---|---|
+| latch OFF | 62 | 23 |
+| latch ON | 60 | **11** |
+
+The gate removes 14 shots: **12 junk and 2 real, a 6:1 ratio**. The apparent regression
+(88 → 71 against a truth of 82) was the total moving AWAY from truth while becoming more
+correct — precisely the failure mode that made a raw count untrustworthy in the first place.
+The gate stays.
+
+**The real indoor gap is RECALL, not precision:** 60 of 82 shots inside rallies = 73%, and
+22 missing. It is concentrated — rally 0 (−4), rally 3 (−7), rally 5 (−3) and rally 9 (−6)
+hold 20 of the 22, in about 55 seconds of the clip:
+
+| rally | window | truth | got | delta |
+|---|---|---|---|---|
+| 0 | 3–20s | 17 | 13 | −4 |
+| 3 | 63–77s | 14 | 7 | **−7** |
+| 5 | 104–116s | 10 | 7 | −3 |
+| 9 | 166–178s | 11 | 5 | **−6** |
+
+Outdoor recall is ~85% against ~73% here, so the ball track is weaker indoors and this is
+the next thing to work. A per-shot review is still worth having eventually, but it is no
+longer needed to answer the precision question.
