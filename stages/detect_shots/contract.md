@@ -444,6 +444,47 @@ after a net hit (4), pick-ups with no swing (3), and shots after the point alrea
 All of those reduce to *the ball is not in play*, which needs rally boundaries rather than
 ball physics. `is_between_point` exists on every shot and is populated on **0 of 119**.
 
+## Real-ball adaptations (v0.5.1): same-side runs keep the STRONGEST, not the last
+
+The operator flagged 7 shots as attributed to the wrong near-side player. Tracking, roles
+and association were each measured and cleared (see KNOWN_ISSUES) — the cause was
+`reject_same_side_runs` **deleting the real shot**.
+
+That filter collapses consecutive same-net-side impacts as ball-handling and kept the LAST,
+on the reasoning that you catch/bounce and THEN hit. True for handling; inverted for a real
+strike followed by a weak tracking wobble, which is also a same-side run:
+
+| time | event | turn | kept? |
+|---|---|---|---|
+| 199.60s | partner's dink — the real shot | **172°** | dropped |
+| 200.13s | tracking wobble near the user | 26.6° | kept, called a user shot |
+
+Same at 284.45s (156° dropped, 11.3° kept) and 286.63s (180° dropped, 0.0° kept). A 180°
+reversal is the least ambiguous paddle signature there is, and the rule was discarding it.
+
+The two cases separate on **span**. Genuine handling spreads over seconds; a wobble follows
+its strike inside a second. So a run spanning ≥ `HANDLING_SPREAD_S` keeps the LAST (handling,
+unchanged), and a tighter run keeps the STRONGEST by `max(turn/180, speed_ratio)` — the same
+score used for candidate selection.
+
+**Measured on both scorers** (`tools/score_shots` and `tools/score_serves`):
+
+| spread | false pos | wrong player | real kept | serve recall / prec |
+|---|---|---|---|---|
+| keep-LAST (old) | 29/34 | 7/7 | 90 | 71% / 67% |
+| **1.0s (shipped)** | **29/34** | **4/7** | **91** | **79% / 69%** |
+| 2.0s | 27/34 | 2/7 | 90 | 71% / 71% |
+| always strongest | **22/34** | **1/7** | **94** | **50% / 54%** |
+
+1.0s is the only setting that beats the old rule on *every* measure at once, which is why it
+ships. Note what the last row costs: keeping the strongest unconditionally is dramatically
+better for shots — 22 false positives instead of 29, and 94 real shots kept instead of 91 —
+but it collapses serve detection, because Stage 7 derives serves from the surviving shot
+sequence and is fragile to which shot survives. **That 22/34 is available as soon as serve
+labelling is robust**, and is the strongest current argument for fixing Stage 7 next.
+
+Do not raise `HANDLING_SPREAD_S` without re-running `tools.score_serves`.
+
 ## Test fixture: synthetic ball generator (`tools/synth_ball.py`)
 
 Because real ball detection is paused (Stage 4.5), Stage 5 is developed and

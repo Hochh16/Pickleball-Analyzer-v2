@@ -25,10 +25,10 @@ from tools.score_shots import score
 
 CLIP = Path("data/pb_5_minute_outdoor-7")
 
-# Measured 2026-08-18 after the wrong-object latch gate.
+# Measured 2026-08-18 after the wrong-object latch gate and the same-side strength rule.
 MAX_FALSE_POSITIVES = 29   # was 34 before the latch gate
-MIN_REAL_SHOTS_KEPT = 90   # was 91; the latch gate costs exactly one real shot
-MAX_WRONG_PLAYER = 7       # unfixed -- Block C
+MIN_REAL_SHOTS_KEPT = 91   # 90 after the latch gate; the strength rule recovered one
+MAX_WRONG_PLAYER = 4       # was 7; the rest need Stage 7 serve labelling (see contract)
 
 
 needs_clip = pytest.mark.skipif(

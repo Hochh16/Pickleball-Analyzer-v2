@@ -29,7 +29,11 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.5.0"  # 0.4.0 -> 0.5.0: WRONG-OBJECT LATCH rejection. The
+STAGE_VERSION = "0.5.1"  # 0.5.0 -> 0.5.1: same-side runs keep the STRONGEST
+                         # impact, not the last, when the run is tight -- the old
+                         # rule deleted a 172-degree paddle reversal and kept a
+                         # 26-degree wobble, which is what "wrong player" was.
+                         # 0.4.0 -> 0.5.0: WRONG-OBJECT LATCH rejection. The
                          # single-ball tracker latches onto a neighbouring court's
                          # ball or a parked object beside the court; 10 of the 34
                          # operator-labelled false positives came from that, and
@@ -59,6 +63,24 @@ FPS_TOLERANCE = 0.5
 WRIST_VISIBILITY_FLOOR = 0.5
 MIN_SERVE_GAP_S = 0.7  # not-visible gap before a serve (dead time vs detection gap)
 HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window = ball-handling
+# A same-side run spanning at least this long is genuine ball-handling (bounce, bounce,
+# serve) where the real shot is LAST; anything tighter is a strike plus a tracking wobble,
+# where the real shot is the STRONGEST. See reject_same_side_runs.
+#
+# Swept against BOTH scorers on pb_5_minute_outdoor-7 (shot review + serve truth):
+#
+#   spread   false pos   wrong player   real kept   serve recall / precision
+#     0.6s      29/34         6/7           90            71% / 67%
+#     1.0s      29/34         4/7           91            79% / 69%     <- chosen
+#     2.0s      27/34         2/7           90            71% / 71%
+#     always    22/34         1/7           94            50% / 54%
+#
+# "always" means keeping the strongest regardless of span. It is much better for shots and
+# much worse for serves, because Stage 7 derives serves from the surviving shot sequence and
+# is fragile to which one survives. 1.0s is the only setting that beats the old keep-LAST
+# rule on EVERY measure at once, so it ships; the 22/34 remains available once serve
+# labelling is robust enough to take it. Do not raise this without re-running score_serves.
+HANDLING_SPREAD_S = 1.0
 # Adjacent-court contamination gates (real ball only). On a multi-court venue the
 # single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
 # producing phantom shots/serves. Two trajectory-coherence gates reject them:
@@ -389,18 +411,33 @@ def reject_same_track_repeats(shots: List[dict], gap_frames: int
 
 
 def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
-                          reset_frames: int) -> Tuple[List[dict], int]:
+                          reset_frames: int, fps: float = 60.0
+                          ) -> Tuple[List[dict], int]:
     """Net-side alternation / ball-handling rejection. Every rally shot crosses
     the net, so the striker's net side must alternate; a run of consecutive
     same-side impacts means the ball stayed on one side — a player catching /
     holding / bouncing the ball between points, not rally shots (you can't
     legally hit twice in a row).
 
-    Within each same-side run, keep the LAST impact and drop the earlier ones:
-    handling precedes the real shot (you catch/bounce, THEN serve/hit), so the
-    last same-side impact before the ball finally crosses is the real one. Runs
-    are split by a side change or a gap longer than reset_frames (a new rally).
+    Within each same-side run, keep the STRONGEST impact and drop the rest.
+
+    This kept the LAST impact until 2026-08-18, on the reasoning that handling precedes
+    the real shot (you catch/bounce, THEN serve/hit). That reasoning holds for genuine
+    handling but inverts on the case the operator reported as "wrong player": a real
+    strike followed by a weak spurious inflection is also a same-side run, and keeping the
+    LAST deletes the strike and keeps the junk. Measured at t=200s -- the partner's dink
+    turns the ball 172 degrees at 199.60s and was dropped, while a 26.6-degree wobble at
+    200.13s survived and was attributed to the user. Same story at 284.45s (156 vs 11.3)
+    and 286.63s (180 vs 0.0).
+
+    Impact strength uses the same score as candidate selection -- max(turn/180, speed
+    ratio) -- so a paddle reversal outranks a tracking wobble regardless of order. For a
+    true handling run the real shot is still the most impulsive event in the run, so the
+    original case is preserved.
+
+    Runs are split by a side change or a gap longer than reset_frames (a new rally).
     Returns (kept, n_dropped)."""
+    fps_local = float(fps) or 60.0
     shots_sorted = sorted(shots, key=lambda x: x["frame"])
     kept: List[dict] = []
     n_dropped = 0
@@ -408,11 +445,22 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     prev_side: Optional[str] = None
     prev_frame: Optional[int] = None
 
+    def strength(s) -> float:
+        turn = float(s.get("turn_rate_deg") or 0.0) / 180.0
+        ratio = min(1.0, float(s.get("speed_change_ratio") or 0.0))
+        return max(turn, ratio)
+
     def flush():
         nonlocal n_dropped
-        if run:
-            kept.append(run[-1])        # keep the LAST of the same-side run
-            n_dropped += len(run) - 1
+        if not run:
+            return
+        # Both rules are right about different runs, and they separate on TIMING.
+        # Genuine ball-handling (bounce, bounce, serve) is spread over seconds and the
+        # real shot is LAST. A real strike followed by a tracking wobble is tight -- the
+        # wobble lands within half a second -- and the real shot is the STRONGEST.
+        span = (run[-1]["frame"] - run[0]["frame"]) / max(fps_local, 1.0)
+        kept.append(run[-1] if span >= HANDLING_SPREAD_S else max(run, key=strength))
+        n_dropped += len(run) - 1
 
     for s in shots_sorted:
         side = side_by_track.get(s["track_id"])
@@ -805,7 +853,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     #     not model strict net-crossing alternation.
     if params.get("handling_filter"):
         shots, n_handling = reject_same_side_runs(
-            shots, side_by_track or {}, params["handling_reset_frames"])
+            shots, side_by_track or {}, params["handling_reset_frames"],
+            params["fps"])
     else:
         n_handling = 0
     impulse_frames = sorted(s["frame"] for s in shots)
