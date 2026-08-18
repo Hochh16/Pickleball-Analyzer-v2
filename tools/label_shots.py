@@ -97,9 +97,38 @@ def build(clip: Path, args):
     raw_path = out_dir / "_reel_raw.mp4"
     vw = cv2.VideoWriter(str(raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
-    # Segments are written in shot order, so buffer per shot then emit.
-    buf = defaultdict(list)
+    # STREAM, do not buffer. Buffering every annotated frame for every shot needed
+    # ~529 MB per shot at width 1280 (180 frames x 2.9 MB), so a 125-shot reel wanted
+    # ~66 GB and died inside cv2.VideoCapture.read() with an opaque SystemError.
+    # A ring of the raw resized frames is enough: segments are emitted in shot order,
+    # and the ring only has to reach back as far as one segment length.
+    ring: deque = deque(maxlen=pre + post + 4)   # (frame_idx, annotated small frame)
+    pending = list(sel)                          # segments still to write, in order
     trail = deque(maxlen=12)
+
+    def flush_ready(upto: int) -> None:
+        """Write any segment whose last frame we have already passed."""
+        while pending:
+            pos, sh = pending[0]
+            end = sh["frame"] + post
+            if end > upto:
+                return
+            a = max(0, sh["frame"] - pre)
+            for idx, img in ring:
+                if a <= idx <= end:
+                    d = idx - sh["frame"]
+                    hdr = (f"SHOT #{pos}   {int(sh['frame'] / fps // 60)}:"
+                           f"{sh['frame'] / fps % 60:04.1f}   "
+                           f"{roles.get(sh['track_id'], '?')} / "
+                           f"{sh.get('hitter_side', '?')}"
+                           f"   {'CONTACT' if abs(d) <= 2 else ''}")
+                    if args.show_prediction:
+                        hdr += f"   [pred {cls.get(sh['shot_id'], {}).get('shot_type')}]"
+                    bar = np.zeros((46, W, 3), np.uint8)
+                    cv2.putText(bar, hdr, (10, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
+                                (255, 255, 255), 2)
+                    vw.write(np.vstack([bar, img[:H - 46]]))
+            pending.pop(0)
     print(f"decoding to frame {last} for {len(sel)} shots "
           f"({args.pre:g}s before / {args.post:g}s after each)...")
     f = 0
@@ -125,29 +154,16 @@ def build(clip: Path, args):
             cv2.circle(img, (tx, ty), 5, (0, 140, 255), -1)
         if bx is not None:
             cv2.circle(img, (bx, by), 20, (0, 0, 255), 4)
+        # contact flash for any segment whose contact is this frame
         for pos, s in need[f]:
-            d = f - s["frame"]
-            if abs(d) <= 2:              # contact flash
+            if abs(f - s["frame"]) <= 2:
                 cv2.circle(img, tuple(int(v) for v in s["impact_pixel_xy"]),
                            60, (255, 255, 255), 6)
-            small = cv2.resize(img, (W, H))
-            hdr = (f"SHOT #{pos}   {int(s['frame'] / fps // 60)}:"
-                   f"{s['frame'] / fps % 60:04.1f}   "
-                   f"{roles.get(s['track_id'], '?')} / {s.get('hitter_side', '?')}"
-                   f"   {'CONTACT' if abs(d) <= 2 else ''}")
-            if args.show_prediction:
-                c = cls.get(s["shot_id"], {})
-                hdr += f"   [pred {c.get('shot_type')}]"
-            bar = np.zeros((46, W, 3), np.uint8)
-            cv2.putText(bar, hdr, (10, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
-                        (255, 255, 255), 2)
-            buf[pos].append(np.vstack([bar, small[:H - 46]]))
+        ring.append((f, cv2.resize(img, (W, H))))
+        flush_ready(f)
         f += 1
     cap.release()
-
-    for pos, _ in sel:
-        for frame in buf.get(pos, []):
-            vw.write(frame)
+    flush_ready(f + pre + post + 4)      # emit whatever is left at the end
     vw.release()
     # Re-encode to H.264 so the reel plays in any viewer and is a fraction of the
     # size (mp4v wrote 68 MB for 66 s). ffmpeg comes from the imageio-ffmpeg wheel,
