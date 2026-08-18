@@ -1071,3 +1071,40 @@ build program are in `docs/PRODUCT_VISION.md`. Body mechanics is NOT a USAPA cat
 > recall (C4) / serve detection (C3) / stroke-side (F16) / shot speed (F7) land
 > (build-program ADD step). Also fixed in passing: `score_volley` read the wrong
 > (nested) shot_mix path and always scored NEUTRAL (`c2a703f`).
+
+## Stage 5/6 - "wrong player" is a CONTACT-TIMING error, not an identity error (2026-08-18)
+
+Recorded because the obvious diagnosis is wrong and cost a wasted plan. The operator flagged
+7 shots as attributed to the wrong near-side player. The natural reading -- role assignment
+or track identity -- was **measured and refuted**:
+
+- **Tracking is stable.** Track 1452 carries 23 shots over 171s and is on the same person in
+  every sampled frame (2s, 60s, 120s, 200s renders). No ID swap, no flip.
+- **Roles never change.** The near-side labels are consistent for the whole clip.
+- **Association is not ambiguous.** At 6 of the 7 disputed shots the chosen player's box is
+  **0-90px** from the ball while the other near-side player is **229-927px** away. The
+  associator picks the obviously-nearest player and is right to.
+
+The actual cause is that the CONTACT FRAME is late. Rendered at t=200s: at **199.60s** the
+partner is bent low with her paddle on the ball (a kitchen dink); at **200.13s**, where the
+shot is detected, the ball has travelled up to the user's head and is associated with him.
+The operator independently reported the same thing -- *"#73 at 3:18.3 was hit by partner,
+not the user. And shot looked closer to 3:17.5"* -- flagging a ~0.8s timing error in the
+same note as the attribution error.
+
+Measured across all 7: the partner's closest approach to the ball is 4-51px at a frame
+**17-60 frames EARLIER** than the detected contact in 5 of 7 cases. So fixing attribution
+means fixing WHEN the contact is detected, not WHO it is assigned to. Reassigning the hitter
+without moving the frame would only trade one wrong answer for another.
+
+`python -m tools.show_attribution data/pb_5_minute_outdoor-7` renders the disputed frames
+with both near-side boxes so the operator can adjudicate directly.
+
+### Latent risk found alongside: the user was never identified
+
+`session.json` has `steps.user_clicks: false`, and `track_roles.json` seeds the user from
+`user_starting_corner: "left"` with **confidence 0.5** and basis `"starting-corner"`; the
+partner is then derived as `"simultaneous-with-user"`. On this clip the guess is correct and
+stable, but nothing verifies it. If that coin-flip lands wrong on another video, EVERY
+user-specific metric and the USAPA rating belong to the partner, with no signal that anything
+is amiss. See docs/USABILITY_BACKLOG.md.
