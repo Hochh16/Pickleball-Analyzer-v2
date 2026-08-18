@@ -1108,3 +1108,32 @@ partner is then derived as `"simultaneous-with-user"`. On this clip the guess is
 stable, but nothing verifies it. If that coin-flip lands wrong on another video, EVERY
 user-specific metric and the USAPA rating belong to the partner, with no signal that anything
 is amiss. See docs/USABILITY_BACKLOG.md.
+
+## Cross-venue check of the 2026-08-18 Stage 5/7 changes (OPEN: indoor shot count)
+
+Everything in that session was tuned on ONE outdoor clip, so it was re-run against
+`pb_3_min_indoor_1_court_b`, which has independent operator truth (10 points, 82 shots).
+
+**Generalised well — rally structure:**
+
+| indoor | before the session | after |
+|---|---|---|
+| serve recall | 50% | **70%** |
+| serve precision | 62% | **88%** |
+
+**OPEN — the indoor shot count moved from over to under truth:** 88 → 71 against a truth of
+82. Isolated to the wrong-object latch gate (85 shots with it off, 71 with it on); the
+same-side strength rule is not involved. Narrowing `LATCH_WINDOW_S` recovers only part of it
+(79 at 0.25s) and costs outdoor serve accuracy badly (86%/86% → 64%/69%), so the committed
+1.0s stands.
+
+The count alone cannot settle whether those 14 removals were real shots or junk — the
+outdoor clip is the cautionary case, where 125 detected contained 34 non-shots AND 17 missed
+shots at the same time, so a count near truth can hide large errors in both directions. The
+independent evidence says the gate helps: with it ON, indoor serve recall is 70% vs 50% OFF
+and precision 88% vs 83%. A better-structured rally sequence from fewer shots means the
+removals were mostly junk.
+
+**To close this:** the indoor clip needs a per-shot operator review like
+`data/pb_5_minute_outdoor-7/shot_review.json`, so `tools/score_shots` can run on a second
+venue instead of a raw count. Until then the indoor number is a count, not an accuracy.
