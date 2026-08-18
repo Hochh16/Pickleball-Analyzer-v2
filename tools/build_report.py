@@ -356,6 +356,7 @@ h2{font-family:var(--serif);font-size:23px;margin:44px 0 6px;font-weight:600;tex
 h3{font-size:15px;margin:0 0 4px;}
 p{margin:9px 0;} .muted{color:var(--muted);} .small{font-size:13px;}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0;}
+.warn-card{border-left:5px solid #d98200;background:#fff8ec;}
 .hero{display:flex;flex-wrap:wrap;gap:24px;align-items:center;
   background:linear-gradient(135deg,var(--card),var(--measured-bg));}
 .score{font-family:var(--serif);font-size:72px;font-weight:600;line-height:.9;color:var(--court);
@@ -423,6 +424,21 @@ def fn(n: int) -> str:
     return f'<sup><a href="#fn{n}">{n}</a></sup>'
 
 
+def user_seed_basis(track_roles: dict) -> tuple:
+    """How the "user" role was decided, as (basis, confidence).
+
+    Stage 2.5 seeds the user from a CLICK at confidence 0.95, or geometrically from
+    court.json's `user_starting_corner` at 0.5 when no click exists. The report is entirely
+    per-player, so a wrong seed makes every number belong to the partner with nothing else
+    looking wrong -- which is exactly what makes it worth a banner. Returns (None, None)
+    when no user role is present at all.
+    """
+    for info in (track_roles.get("track_roles", {}) or {}).values():
+        if (info or {}).get("role") == "user":
+            return info.get("basis"), info.get("confidence")
+    return None, None
+
+
 def build_html(folder: Path) -> str:
     # Present only for a cumulative report: it is the collection's membership record,
     # and it carries the player's name (needed in the hero, far above the role labels).
@@ -488,6 +504,19 @@ def build_html(folder: Path) -> str:
     if collection:
         A(f'<p class="muted small">Cumulative report across {n_vids} '
           f'video{"" if n_vids == 1 else "s"}, combined as one longer match.</p>')
+    # IDENTITY WARNING. Everything below is per-player, so if the wrong near-side player
+    # was picked as "you", every number here is the partner's and nothing else in the
+    # report would look wrong. Stage 2.5 seeds the user from a CLICK at confidence 0.95,
+    # or from the starting corner at 0.5 when no click exists. The 0.5 case is a coin flip
+    # nothing verifies, so say so where it cannot be missed rather than in a log line.
+    _basis, _conf = user_seed_basis(track_roles)
+    if _basis and _basis != "click":
+        A('<div class="card warn-card">'
+          '<p style="margin:0"><b>Check this is you.</b> Nobody marked which player to '
+          'analyse, so we guessed from the starting side you chose during setup '
+          f'(confidence {esc(_conf if _conf is not None else "?")} out of 1.0). If the '
+          'guess is wrong, every number in this report belongs to your partner. Re-run '
+          'setup and click on yourself in the frame to remove the guess.</p></div>')
     A('<div class="card hero">')
     A(f'<div><div class="score">{est if est is not None else "—"}</div>'
       f'<div class="muted small">USAPA band {esc(rt.get("band","—"))}</div></div>')

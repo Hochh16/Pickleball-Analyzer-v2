@@ -378,3 +378,11 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 .btn.xsmall { padding: 2px 8px; font-size: .78rem; }
 .coll-add-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 @media (max-width: 900px) { .coll-mgr { grid-template-columns: 1fr; } }
+
+
+/* "Which player are you?" — click-to-identify state */
+.click-state { margin: 6px 0 2px; font-size: 14px; color: var(--warn, #b26a00); }
+.click-state.ok { color: var(--ok, #1b7f3b); font-weight: 600; }
+.fallback { margin-top: 14px; }
+.fallback > summary { cursor: pointer; font-size: 14px; opacity: .75; }
+.btn.small { padding: 4px 10px; font-size: 13px; }

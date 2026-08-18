@@ -29,7 +29,7 @@ const S = {
   court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1 },
   calib: null,
   courtConfirmed: false,
-  you: { frameIdx: 0, img: null, imgFrame: -1 },
+  you: { frameIdx: 0, img: null, imgFrame: -1, click: null },
 };
 
 // ---------------------------------------------------------------- helpers
@@ -486,8 +486,10 @@ function initYouStep() {
   el('youSlider').addEventListener('input', (e) => setYouFrame(parseInt(e.target.value, 10)));
   el('youBack').addEventListener('click', () => setYouFrame(S.you.frameIdx - 1));
   el('youFwd').addEventListener('click', () => setYouFrame(S.you.frameIdx + 1));
+  youCanvas.addEventListener('click', onYouClick);
   ['cardLeft', 'cardRight'].forEach((id) =>
     el(id).addEventListener('click', () => pickCorner(el(id).dataset.corner)));
+  el('youClearClick').addEventListener('click', () => { S.you.click = null; drawYou(); reflectYou(); });
   el('youNext').addEventListener('click', saveSide);
 }
 
@@ -497,20 +499,70 @@ function enterYou() {
   if (S.you.imgFrame < 0) { S.you.frameIdx = Math.floor((v.frame_count || 1) * 0.1); el('youSlider').value = S.you.frameIdx; }
   loadYouFrame();
   reflectCorner();
+  reflectYou();
 }
 function setYouFrame(idx) {
   const max = Math.max(0, (S.session.video.frame_count || 1) - 1);
   idx = Math.max(0, Math.min(max, idx));
-  S.you.frameIdx = idx; el('youSlider').value = idx; loadYouFrame();
+  S.you.frameIdx = idx; el('youSlider').value = idx; loadYouFrame(); reflectYou();
 }
 function loadYouFrame() {
   const s = S.session, idx = S.you.frameIdx;
   el('youFrameLabel').textContent = `${idx} / ${Math.max(0, s.video.frame_count - 1)}`;
   const img = new Image();
-  img.onload = () => { S.you.img = img; S.you.imgFrame = idx; youCanvas.width = img.naturalWidth; youCanvas.height = img.naturalHeight; youCtx.drawImage(img, 0, 0); };
+  img.onload = () => { S.you.img = img; S.you.imgFrame = idx; youCanvas.width = img.naturalWidth; youCanvas.height = img.naturalHeight; drawYou(); };
   img.onerror = () => toast('Could not load that frame', true);
   img.src = `/api/sessions/${s.id}/frame/${idx}?maxw=${FRAME_MAXW}`;
 }
+
+// Identifying the user by CLICK rather than by starting corner. The corner is a
+// geometric guess that Stage 2.5 seeds at confidence 0.5; a click seeds at 0.95. On
+// pb_5_minute_outdoor-7 the corner guess happened to be right, but nothing verified it,
+// and if it lands wrong every "your" metric and the USAPA rating belong to the partner
+// with no signal that anything is amiss. One click removes the coin flip.
+function youScale() {
+  return S.you.img ? (S.you.img.naturalWidth / S.session.video.frame_width) : 1;
+}
+
+function onYouClick(e) {
+  if (!S.you.img) return;
+  const rect = youCanvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (youCanvas.width / rect.width);
+  const cy = (e.clientY - rect.top) * (youCanvas.height / rect.height);
+  const sc = youScale();
+  S.you.click = { frame: S.you.frameIdx, x: Math.round(cx / sc), y: Math.round(cy / sc) };
+  // Keep the corner consistent with the click so court.json still carries a sane value
+  // for the geometric fallback; the click is what Stage 2 actually uses.
+  S.startingCorner = (cx < youCanvas.width / 2) ? 'left' : 'right';
+  drawYou(); reflectYou();
+}
+
+function drawYou() {
+  if (!S.you.img) return;
+  youCtx.drawImage(S.you.img, 0, 0);
+  const c = S.you.click;
+  if (!c || c.frame !== S.you.frameIdx) return;
+  const sc = youScale(), x = c.x * sc, y = c.y * sc;
+  youCtx.strokeStyle = '#ff3b30'; youCtx.lineWidth = 3;
+  youCtx.beginPath(); youCtx.arc(x, y, 26, 0, Math.PI * 2); youCtx.stroke();
+  youCtx.beginPath(); youCtx.moveTo(x - 38, y); youCtx.lineTo(x - 30, y);
+  youCtx.moveTo(x + 30, y); youCtx.lineTo(x + 38, y);
+  youCtx.moveTo(x, y - 38); youCtx.lineTo(x, y - 30);
+  youCtx.moveTo(x, y + 30); youCtx.lineTo(x, y + 38); youCtx.stroke();
+  youCtx.fillStyle = '#ff3b30'; youCtx.font = 'bold 20px system-ui';
+  youCtx.fillText('you', x + 32, y - 10);
+}
+
+function reflectYou() {
+  const c = S.you.click;
+  const marked = !!c;
+  el('youClearClick').hidden = !marked;
+  el('youClickState').textContent = marked
+    ? `Marked on frame ${c.frame}. Analysis will follow this player.`
+    : 'Not marked yet — without it we fall back to guessing from your starting side.';
+  el('youClickState').classList.toggle('ok', marked);
+}
+
 function pickCorner(corner) {
   S.startingCorner = corner;
   reflectCorner();
@@ -525,7 +577,15 @@ async function saveSide() {
   try {
     // persist the starting side into markers.json + court.json (used by Stage 2/2.5)
     await jsonPost(`/api/sessions/${S.session.id}/starting-corner`, { corner: S.startingCorner });
-    toast(`Starting side: ${S.startingCorner}`);
+    // The click is what actually identifies the user (Stage 2.5 seeds it at 0.95 vs 0.5
+    // for the corner). Posting an empty list clears any prior file and reverts to the
+    // geometric guess, so only send when we have one.
+    if (S.you.click) {
+      await jsonPost(`/api/sessions/${S.session.id}/user-clicks`, { clicks: [S.you.click] });
+      toast('You are marked — analysis will follow that player');
+    } else {
+      toast(`Starting side: ${S.startingCorner} (guessing which player is you)`);
+    }
     goto('review');
   } catch (e) { toast('Could not save: ' + e.message, true); }
   finally { btn.disabled = false; }

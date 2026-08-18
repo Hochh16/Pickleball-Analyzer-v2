@@ -205,8 +205,8 @@
     <!-- STEP 4: YOU (which side) -->
     <section class="panel" id="panel-you" hidden>
       <div class="panel-head">
-        <h1>Which side do you start on?</h1>
-        <p class="lead">You're one of the two players <b>closest to the camera</b> (the near baseline, bottom of frame). Pick which side — <b>left or right</b> — you start on. This tells us which of the two near players to analyze.</p>
+        <h1>Which player are you?</h1>
+        <p class="lead">You're one of the two players <b>closest to the camera</b> (the near baseline, bottom of frame). Scrub to a frame where you can see yourself, then <b>click on yourself</b> in the picture. Everything in your report — your shots, your court coverage, your rating — follows whoever you mark here.</p>
       </div>
 
       <div class="court-main you-main">
@@ -219,7 +219,12 @@
           <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
           <span class="frame-label" id="youFrameLabel">0 / 0</span>
         </div>
-        <p class="hint">Scrub to a frame where you can see yourself, then choose your side below.</p>
+        <p class="hint">Click directly on yourself in the frame above.</p>
+        <p class="click-state" id="youClickState">Not marked yet — without it we fall back to guessing from your starting side.</p>
+        <button class="btn ghost small" id="youClearClick" type="button" hidden>Clear mark</button>
+        <details class="fallback">
+          <summary>Can't see yourself in any frame?</summary>
+          <p class="hint">Pick the side you start on instead. This is a guess based on position, so check the report names it right.</p>
         <div class="side-choice">
           <button class="choice-card" data-corner="left" id="cardLeft" type="button">
             <div class="cc-icon">◄</div><div class="cc-title">Left side</div>
@@ -228,6 +233,7 @@
             <div class="cc-icon">►</div><div class="cc-title">Right side</div>
           </button>
         </div>
+        </details>
       </div>
 
       <div class="panel-nav">
