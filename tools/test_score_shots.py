@@ -25,10 +25,13 @@ from tools.score_shots import score
 
 CLIP = Path("data/pb_5_minute_outdoor-7")
 
-# Measured 2026-08-18 after the wrong-object latch gate and the same-side strength rule.
-MAX_FALSE_POSITIVES = 29   # was 34 before the latch gate
-MIN_REAL_SHOTS_KEPT = 91   # 90 after the latch gate; the strength rule recovered one
-MAX_WRONG_PLAYER = 4       # was 7; the rest need Stage 7 serve labelling (see contract)
+# Measured 2026-08-18 after the latch gate, the same-side strength rule, and the Stage 7
+# serve return tie-break. Serve accuracy is scored separately by tools/score_serves.py --
+# a Stage 5 change can move BOTH, and one earlier version of the strength rule bought
+# 22/34 here by dropping serve recall to 50%. Never tighten these without re-running it.
+MAX_FALSE_POSITIVES = 23   # 34 -> 29 (latch) -> 23 (strength rule at 8s)
+MIN_REAL_SHOTS_KEPT = 94   # 91 -> 94; the strength rule recovers real shots, not just junk
+MAX_WRONG_PLAYER = 1       # was 7; these were never attribution errors -- see KNOWN_ISSUES
 
 
 needs_clip = pytest.mark.skipif(

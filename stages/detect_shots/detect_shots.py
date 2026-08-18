@@ -29,7 +29,12 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.5.1"  # 0.5.0 -> 0.5.1: same-side runs keep the STRONGEST
+STAGE_VERSION = "0.6.0"  # 0.5.1 -> 0.6.0: serve acceptance breaks ties on the
+                         # RETURN. A feed lobbed back to the server looked like a
+                         # serve, claimed the slot and BLOCKED the real serve behind
+                         # it -- the false and missed serves were one bug. This also
+                         # unblocked HANDLING_SPREAD_S (1.0s -> 8.0s).
+                         # 0.5.0 -> 0.5.1: same-side runs keep the STRONGEST
                          # impact, not the last, when the run is tight -- the old
                          # rule deleted a 172-degree paddle reversal and kept a
                          # 26-degree wobble, which is what "wrong player" was.
@@ -67,20 +72,23 @@ HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window =
 # serve) where the real shot is LAST; anything tighter is a strike plus a tracking wobble,
 # where the real shot is the STRONGEST. See reject_same_side_runs.
 #
-# Swept against BOTH scorers on pb_5_minute_outdoor-7 (shot review + serve truth):
+# Swept against BOTH scorers (tools.score_shots + tools.score_serves) on
+# pb_5_minute_outdoor-7, AFTER the serve return tie-break made Stage 7 robust:
 #
-#   spread   false pos   wrong player   real kept   serve recall / precision
-#     0.6s      29/34         6/7           90            71% / 67%
-#     1.0s      29/34         4/7           91            79% / 69%     <- chosen
-#     2.0s      27/34         2/7           90            71% / 71%
-#     always    22/34         1/7           94            50% / 54%
+#   spread   false pos   wrong player   real kept   serve recall / prec
+#     1.0s      29/34         4/7           91            86% / 75%
+#     2.5s      27/34         2/7           90            86% / 86%
+#     6-10s     23/34         1/7           94            86% / 86%    <- plateau, 8.0 chosen
+#    15s+       22/34         1/7           94            71% / 77%
 #
-# "always" means keeping the strongest regardless of span. It is much better for shots and
-# much worse for serves, because Stage 7 derives serves from the surviving shot sequence and
-# is fragile to which one survives. 1.0s is the only setting that beats the old keep-LAST
-# rule on EVERY measure at once, so it ships; the 22/34 remains available once serve
-# labelling is robust enough to take it. Do not raise this without re-running score_serves.
-HANDLING_SPREAD_S = 1.0
+# Runs are already split at gaps over HANDLING_RESET_S (3s), so a run SPANNING 8s is a
+# genuine repeated-bounce sequence before a serve, where the real shot is last. Everything
+# tighter is a strike plus a tracking wobble, where the real shot is the strongest.
+#
+# This threshold could not be raised past 1.0s before the tie-break landed -- serve recall
+# collapsed to 50%, because Stage 7 derives serves from the surviving shot sequence. Do not
+# change it without re-running score_serves; the two stages are coupled through this value.
+HANDLING_SPREAD_S = 8.0
 # Adjacent-court contamination gates (real ball only). On a multi-court venue the
 # single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
 # producing phantom shots/serves. Two trajectory-coherence gates reject them:
@@ -542,6 +550,20 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
                      or (ss[i]["frame"] - ss[accepted[-1]]["frame"]) >= min_inter_serve_frames)
         if not accepted or end_since or gap_since:
             accepted.append(i)
+        elif returned(i) is True and returned(accepted[-1]) is not True:
+            # RETURN TIE-BREAK. Acceptance is otherwise greedy first-wins, so a deep
+            # between-point ball (a feed lobbed back to the server) claims the slot and
+            # then BLOCKS the real serve behind it via the mutual constraint -- measured
+            # on the acceptance clip, the false serve at 120.5s blocked the real one at
+            # 128.8s, and 295.9s blocked 302.9s. The two error classes are one bug.
+            #
+            # A serve is answered: the opposing side plays the ball back. A feed is not.
+            # Measured over the labelled serves, 8 of 11 real serves draw a reply within
+            # `return_frames` against 1 of 5 false ones. Too weak to gate on outright --
+            # 3 real serves go unanswered because the REPLY was missed, not because it
+            # never happened -- but decisive when choosing between two candidates for the
+            # same slot, which is the only thing it is used for here.
+            accepted[-1] = i
     accepted_set = set(accepted)
 
     # Between-point = dead-time balls AFTER a rally's point-end and before the next

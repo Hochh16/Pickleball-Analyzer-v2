@@ -485,6 +485,46 @@ labelling is robust**, and is the strongest current argument for fixing Stage 7 
 
 Do not raise `HANDLING_SPREAD_S` without re-running `tools.score_serves`.
 
+## Real-ball adaptations (v0.6.0): serve acceptance breaks ties on the RETURN
+
+Serve acceptance was greedy first-wins: the first candidate passing `serve_cand` (deep
+enough + an opening gap) claimed the slot, and the mutual point-end constraint then blocked
+anything within `POINT_MIN_INTER_SERVE_S` behind it.
+
+That made the false serves and the missed serves **the same bug**. A deep between-point ball
+— a feed lobbed back to the server — looks exactly like a serve on depth and gap, claims the
+slot, and blocks the real serve behind it. Measured: the false serve at 120.5s blocked the
+real one at 128.8s, and 295.9s blocked 302.9s. Two of the three missed serves were caused by
+false ones.
+
+The separating cue is whether the ball came back. **A serve is answered; a feed is not.**
+Over the labelled serves, 8 of 11 real serves draw an opposite-side reply within
+`POINT_RETURN_S`, against 1 of 5 false ones. That is far too weak to gate on — three real
+serves go unanswered because the REPLY was missed, not because it never happened, and gating
+on it costs more than it saves. It is decisive only for **choosing between two candidates
+for the same slot**, which is the only place it is used: when a candidate is blocked by the
+mutual constraint, it replaces the incumbent if it was returned and the incumbent was not.
+
+| | before | after |
+|---|---|---|
+| serve recall | 79% | **86%** |
+| serve precision | 69% | **86%** |
+| rallies | 16 | **14** (operator truth: 14) |
+
+**This unblocked Stage 5.** `HANDLING_SPREAD_S` could not be raised past 1.0s beforehand —
+serve recall collapsed to 50% because Stage 7 derives serves from the surviving shot
+sequence. With the tie-break it holds 86% across a 6–10s plateau, so the threshold moved to
+8.0s and took the shot numbers with it: false positives 29 → 23, misattributions 4 → 1, real
+shots kept 91 → 94.
+
+The two stages are coupled through that value. **Never judge a change to either on one
+scorer.** Run both:
+
+```
+python -m tools.score_shots  data/pb_5_minute_outdoor-7
+python -m tools.score_serves data/pb_5_minute_outdoor-7
+```
+
 ## Test fixture: synthetic ball generator (`tools/synth_ball.py`)
 
 Because real ball detection is paused (Stage 4.5), Stage 5 is developed and
