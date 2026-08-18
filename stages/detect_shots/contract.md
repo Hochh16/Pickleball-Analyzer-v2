@@ -400,6 +400,50 @@ impact and are missed (`n_rejected_ball_gap` are the identifiable ones). This is
 a **Stage 4** limit, not a Stage 5 algorithm gap; forcing shots out of gaps
 reintroduces contamination. Closing it needs better ball-detector recall.
 
+## Real-ball adaptations (v0.5.0): wrong-object latch rejection
+
+The operator reviewed **all 125 detected shots** on `pb_5_minute_outdoor-7` and reported
+every error by cause. 34 were not shots at all, and **10 of those 34** came from the
+single-ball tracker locking onto something that is not our ball — a neighbouring court's
+ball (5), or a **lawnmower parked beside the court** (4, at :25, :26, :41.7 and :42.5).
+
+The existing `TELEPORT_IN_PX_PER_FRAME` gate was supposed to cover this and **had never
+fired once** (`n_rejected_teleport_in = 0`). Two reasons, both instructive:
+
+1. It is ANDed with a short-blip run-length test, which makes it unreachable for a latch
+   that persists for a second or more.
+2. It measures the jump *into the run containing the contact*. By the contact frame the
+   tracker has settled on the wrong object, so the step is small — measured **3–11 px/frame
+   on the labelled junk, LOWER than real shots at up to 43**. The gate was looking in the
+   one place the signal is absent.
+
+`max_latch_jump_pxpf` scans a ±1.0 s window instead, catching the jump at the *start* of the
+latch. The threshold is physical, not tuned: across the 84 operator-confirmed real shots the
+ball never exceeds **101 px/frame** at 60 fps / 3840 px, while latched junk reaches **2783**.
+`LATCH_JUMP_PX_PER_FRAME = 75.0` ref @1920 (150 at 4K) leaves 50% headroom.
+
+**Measured effect** (`python -m tools.score_shots data/pb_5_minute_outdoor-7`):
+
+| | before | after |
+|---|---|---|
+| shots detected | 125 | 119 |
+| operator-labelled false positives | 34 | **29** |
+| real shots kept | 91 | **90** |
+| precision on labelled junk | 73% | **76%** |
+| rating estimate / band | 3.78 / 4.0 | 3.77 / 4.0 |
+| rallies | 15 | 15 |
+
+The gate costs **exactly one real shot** for five pieces of junk. A 0.5 s window costs none
+but removes only two, and 0.75 s removes four at the same one-shot cost; ±1.0 s is the best
+net error count of the three. That trade is asserted in `tools/test_score_shots.py` so a
+future change cannot buy precision with recall silently.
+
+**Not fixed by this gate** — 29 false positives remain, and they are a different problem:
+feeds and throws between points (11), duplicate detections of one shot (5), balls rolling
+after a net hit (4), pick-ups with no swing (3), and shots after the point already ended (3).
+All of those reduce to *the ball is not in play*, which needs rally boundaries rather than
+ball physics. `is_between_point` exists on every shot and is populated on **0 of 119**.
+
 ## Test fixture: synthetic ball generator (`tools/synth_ball.py`)
 
 Because real ball detection is paused (Stage 4.5), Stage 5 is developed and

@@ -29,7 +29,12 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.4.0"  # 0.3.0 -> 0.4.0: GROUND-BALL rejection. Operator per-shot
+STAGE_VERSION = "0.5.0"  # 0.4.0 -> 0.5.0: WRONG-OBJECT LATCH rejection. The
+                         # single-ball tracker latches onto a neighbouring court's
+                         # ball or a parked object beside the court; 10 of the 34
+                         # operator-labelled false positives came from that, and
+                         # the existing teleport-in gate had never fired once.
+                         # 0.3.0 -> 0.4.0: GROUND-BALL rejection. Operator per-shot
                          # labels showed 30% of detected "shots" were balls rolled at
                          # the net, picked up, or bounced pre-serve. The ground
                          # homography is valid only at z=0, so an airborne struck ball
@@ -63,6 +68,19 @@ MIN_SERVE_RUN_S = 0.13  # a real serve launches a SUSTAINED run; a blip serve
 TELEPORT_IN_PX_PER_FRAME = 40.0  # ref px/frame @1920 (scaled by frame_width/1920):
                         # an impulse impact whose ball run TELEPORTED in (jumped
                         # from where our ball actually was) is the other court's ball.
+# LATCH rejection (operator per-shot review of all 125 detected shots, 2026-08-18). The
+# single-ball tracker sometimes locks onto a DIFFERENT object for a second or more -- a
+# neighbouring court's ball, or a lawnmower parked beside the court -- and 10 of the 34
+# labelled false positives come from exactly that. TELEPORT_IN_PX_PER_FRAME cannot see it:
+# it measures the jump into the contact's run, but by the contact the tracker is settled on
+# the wrong object and the step is small. The tell is the jump at the START of the latch.
+# Threshold is physical: across 84 operator-confirmed real shots the ball never exceeds 101
+# px/frame at 60fps/3840px, so 150 px/frame (75 ref @1920) leaves 50% headroom. Measured
+# in-pipeline: 5 of the 10 removed for the loss of 1 real shot (net -4 errors).
+# A 0.5s window loses no real shot but removes only 2, and 0.75s removes 4 and
+# still costs the same 1 -- 1.0s is the best net error count of the three.
+LATCH_JUMP_PX_PER_FRAME = 75.0   # ref px/frame @1920 (scaled by frame_width/1920)
+LATCH_WINDOW_S = 1.0  # half-window scanned either side of the contact
 SERVE_DEDUP_S = 2.0     # two serve detections this close with no rally shot between
                         # = a pre-serve artifact + the real serve; keep the longer run.
 # Unified point-boundary detection (operator method 2026-07-27). A rally is
@@ -300,6 +318,38 @@ def grounded_fraction(M: np.ndarray, fx, fy, known, frame: int, half_window: int
                 and -GROUND_PLAUSIBLE_MARGIN_FT <= cy <= COURT_LENGTH_FT + GROUND_PLAUSIBLE_MARGIN_FT):
             ok += 1
     return (ok / n) if n >= min_samples else None
+
+
+
+def max_latch_jump_pxpf(fx, fy, known, frame: int, half: int) -> float:
+    """Largest frame-to-frame ball displacement ANYWHERE within +/-`half` frames of `frame`.
+
+    The discriminator for "the tracker was following something that is not our ball". The
+    single-ball detector sometimes latches onto a neighbouring court's ball or a parked
+    object beside the court and stays latched for a second or more.
+
+    `teleport_in_pxpf` cannot see this. It measures the jump INTO the run containing the
+    contact, but by the contact frame the tracker has settled on the wrong object and the
+    step is small again -- measured 3-11 px/frame on the operator's labelled cases, LOWER
+    than real shots at up to 43, which is why that gate has never fired
+    (n_rejected_teleport_in = 0). The implausible jump is at the START of the latch, so this
+    scans a window rather than a single frame.
+
+    The threshold is physical rather than tuned: across 84 operator-confirmed real shots the
+    ball never exceeds 101 px/frame at 60fps/3840px, while latched junk reaches 2783.
+    """
+    lo, hi = max(0, frame - half), min(len(fx) - 1, frame + half)
+    prev = None
+    worst = 0.0
+    for i in range(lo, hi + 1):
+        if not known[i]:
+            continue
+        if prev is not None:
+            d = math.hypot(fx[i] - fx[prev], fy[i] - fy[prev]) / max(i - prev, 1)
+            if d > worst:
+                worst = d
+        prev = i
+    return worst
 
 
 # --- Core detection ----------------------------------------------------------
@@ -688,8 +738,11 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     min_serve_run = params["min_serve_run_frames"]
     teleport_thresh = params["teleport_in_px_per_frame"]
     serve_dedup_frames = params["serve_dedup_frames"]
+    latch_thresh = params["latch_jump_px_per_frame"]
+    latch_half = params["latch_window_frames"]
     n_rejected_serve_blip = 0
     n_rejected_teleport = 0
+    n_rejected_latch = 0
 
     # --- Impulse shots (rally hits) ----------------------------------------
     for f in accepted:
@@ -705,6 +758,15 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             if (z_run - a_run + 1) < min_serve_run:
                 n_rejected_teleport += 1
                 continue
+        # LATCH gate. The gate above has never once fired (n_rejected_teleport_in = 0 on
+        # the acceptance clip) because the AND with the blip length makes it unreachable,
+        # so it defends nothing. This one is independent and needs no run-length test:
+        # a displacement this large is not a ball trajectory at any speed, so whatever the
+        # tracker was following, it was not our ball.
+        if (contam_filter
+                and max_latch_jump_pxpf(fx, fy, known, f, latch_half) >= latch_thresh):
+            n_rejected_latch += 1
+            continue
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:
@@ -904,6 +966,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_rejected_handling": n_handling,
         "n_rejected_serve_blip": n_rejected_serve_blip,
         "n_rejected_teleport_in": n_rejected_teleport,
+        "n_rejected_latch": n_rejected_latch,
         "n_serve_deduped": n_serve_dedup,
         "n_rejected_ground_ball": n_ground_ball,
         "ball_visible_frac": round(ball_visible_frac, 4),
@@ -1008,6 +1071,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "contamination_filter": ball_source == "real",
         "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
         "teleport_in_px_per_frame": TELEPORT_IN_PX_PER_FRAME * res_scale,
+        "latch_jump_px_per_frame": LATCH_JUMP_PX_PER_FRAME * res_scale,
+        "latch_window_frames": int(round(LATCH_WINDOW_S * float(fps))),
         "serve_dedup_frames": int(round(SERVE_DEDUP_S * float(fps))),
         "serve_behind_baseline_ft": SERVE_BEHIND_BASELINE_FT,
         "serve_open_gap_frames": int(round(SERVE_OPEN_GAP_S * float(fps))),
@@ -1043,7 +1108,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"{stats['n_rejected_ball_gap']} gap-limited, "
              f"{stats['n_rejected_low_speed']} low-speed, "
              f"{stats['n_rejected_serve_blip']} serve-blip, "
-             f"{stats['n_rejected_teleport_in']} teleport-in)")
+             f"{stats['n_rejected_teleport_in']} teleport-in, "
+             f"{stats['n_rejected_latch']} wrong-object latch)")
 
     out = {
         "schema_version": SCHEMA_VERSION,
