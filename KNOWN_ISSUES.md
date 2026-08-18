@@ -89,10 +89,22 @@ has been measured and failed:
 GAME CONTEXT makes them not count. Hand-vs-paddle and receiver-swing signals both overlap;
 a real block/reset/dink is itself a non-swing shot.
 
-**What IS solved and should not be re-litigated:** ground-level between-point balls (rolled,
-picked up, bounced pre-serve) ARE removed by the Stage 5 v0.4.0 ground-ball filter — 6 of 9
-on the labelled block with zero real shots lost. What remains is the AIRBORNE, paddle-struck
-subset.
+**RETRACTED 2026-08-18 — this filter is inert and the "solved" claim below was wrong.**
+It formerly read: *"ground-level between-point balls ARE removed by the Stage 5 v0.4.0
+ground-ball filter — 6 of 9 on the labelled block with zero real shots lost … what remains
+is the AIRBORNE, paddle-struck subset."* Measured against the operator's full per-shot
+review of pb_5_minute_outdoor-7 (34 labelled false positives), `grounded_fraction` scores
+them at a **median 0.25 — identical to the median 0.25 of the 91 real shots** — and rejects
+**2 of 34**, one of those by luck. There is no gap left to threshold.
+
+The cause is a lesson, not a bug: the filter was tuned on 2026-08-03 against the OLD ball
+track, and its discriminating power was a property of that track's failure modes. Replacing
+it with TrackNet removed the signal. Because the issue was marked solved and
+not-to-be-re-litigated, nothing re-ran the measurement for two weeks. **A filter tuned
+against one detector does not transfer to another; any filter marked solved needs a standing
+score or it is only assumed to work.** That standing score now exists —
+`python -m tools.score_shots data/pb_5_minute_outdoor-7`. Run it before believing any claim
+in this section.
 
 **Blast radius (SYSTEM_DESIGN §0 rule 2):** shot / dink / volley / serve counts run high by
 the number of between-point balls; every rate computed over them inherits it. The USAPA

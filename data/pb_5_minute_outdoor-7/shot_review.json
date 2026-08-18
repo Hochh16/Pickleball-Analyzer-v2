@@ -82,5 +82,331 @@
   "#113 is mislabeled. Not a shot. User is carrying ball to get ready for serve. However, serve was missed at 5:01.78",
   "#117 is partner not user",
   "#124, #125 were not shots. Point had ended after #123 shot by user was a winner hit by opponents"
+ ],
+ "reviewed_against": {
+  "n_detected": 125,
+  "note": "shot ids resolved to clock times once; NEVER re-key this on shot_id"
+ },
+ "false_positives": [
+  {
+   "t_sec": 25.983,
+   "cause": "background object",
+   "shot_id_at_review": 11,
+   "note": "#11 is mislabeled. says user at :26.  not a shot. Red circle around object (lawn mower) off side of court."
+  },
+  {
+   "t_sec": 41.667,
+   "cause": "background object",
+   "shot_id_at_review": 15,
+   "note": "#15 is mislabeled. Says opponent took shot. It was opponent picking up the ball. Was also a red circle around lawnmower on the side."
+  },
+  {
+   "t_sec": 42.533,
+   "cause": "background object",
+   "shot_id_at_review": 16,
+   "note": "#16 is mislabeled. Circle around lawnmower.  No shot."
+  },
+  {
+   "t_sec": 48.617,
+   "cause": "ball rolling after net hit",
+   "shot_id_at_review": 18,
+   "note": "#18 is mislabeled. No shot. Ball was rolling along back fence."
+  },
+  {
+   "t_sec": 51.967,
+   "cause": "ball rolling after net hit",
+   "shot_id_at_review": 19,
+   "note": "#19 is mislabeled. No shot. Ball still rolling along back fence."
+  },
+  {
+   "t_sec": 55.083,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 20,
+   "note": "#20 is mislabeled. No shot. Ball was being thrown by opponent back to near side between points."
+  },
+  {
+   "t_sec": 72.333,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 24,
+   "note": "#24 is mislabeled. Not a shot. Ball was being fed by opponent to near side."
+  },
+  {
+   "t_sec": 114.267,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 44,
+   "note": "#44 is mislabeled.  Not a shot. Was a feed being thrown over net by opponent to near side."
+  },
+  {
+   "t_sec": 120.467,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 45,
+   "note": "#45 is mislabeled. Not a shot. Was being thrown by partner to user."
+  },
+  {
+   "t_sec": 146.5,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 56,
+   "note": "#56 is mislabeled. Not a shot. It was being fed back to near side by opponent hitting it over the net."
+  },
+  {
+   "t_sec": 159.433,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 58,
+   "note": "#58 is mislabeled. Not a shot. Was being fed by partner to far side"
+  },
+  {
+   "t_sec": 181.917,
+   "cause": "pick up / carry / no swing",
+   "shot_id_at_review": 68,
+   "note": "#68 is mislabeled. Was not a shot by user. It was opponent picking up ball on side of court between points"
+  },
+  {
+   "t_sec": 186.433,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 69,
+   "note": "#69 is mislabeled. Was not a shot. Ball was being thrown by one opponent to the other to get ready for a serve"
+  },
+  {
+   "t_sec": 195.9,
+   "cause": "adjacent court",
+   "shot_id_at_review": 71,
+   "note": "#71  is mislabeled. Was not a shot. Red circle was around ball on adjacent court."
+  },
+  {
+   "t_sec": 204.75,
+   "cause": "ball rolling after net hit",
+   "shot_id_at_review": 80,
+   "note": "#81 is mislabeled. Was not a shot. #80 was a shot by opponent into the net. Which was then rolling around the net."
+  },
+  {
+   "t_sec": 205.017,
+   "cause": "ball rolling after net hit",
+   "shot_id_at_review": 81,
+   "note": "#81 is mislabeled. Was not a shot. #80 was a shot by opponent into the net. Which was then rolling around the net."
+  },
+  {
+   "t_sec": 211.1,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 82,
+   "note": "#82 is mislabeled. Was not a shot. Ball was being passed from one opponent to the other for a serve"
+  },
+  {
+   "t_sec": 212.967,
+   "cause": "pick up / carry / no swing",
+   "shot_id_at_review": 83,
+   "note": "#83 is mislabeled. Not a shot. Opponent was getting ready to serve but did not hit the ball."
+  },
+  {
+   "t_sec": 215.3,
+   "cause": "pick up / carry / no swing",
+   "shot_id_at_review": 84,
+   "note": "#84 is mislabeled. Not a shot. User was walking back to get in position. Did not hit a ball"
+  },
+  {
+   "t_sec": 233.05,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 94,
+   "note": "#94 is mislabeled. Ball being fed by partner to opponents between rallies"
+  },
+  {
+   "t_sec": 236.35,
+   "cause": "adjacent court",
+   "shot_id_at_review": 95,
+   "note": "#95 is mislabeled.  Not a shot. Looks like ball is tagged on adjacent court"
+  },
+  {
+   "t_sec": 243.817,
+   "cause": "duplicate detection",
+   "shot_id_at_review": 96,
+   "note": "either #96 or #97 is mislabeled.  Opponent is serving once yet 2 shots were labeled."
+  },
+  {
+   "t_sec": 244.633,
+   "cause": "duplicate detection",
+   "shot_id_at_review": 97,
+   "note": "either #96 or #97 is mislabeled.  Opponent is serving once yet 2 shots were labeled."
+  },
+  {
+   "t_sec": 258.217,
+   "cause": "adjacent court",
+   "shot_id_at_review": 102,
+   "note": "#102 is mislabeld. Not a shot. Looks like it picked up a ball and person that came from adjacent court onto this one to pick up a ball.  Confusing, but should not be registered as a shot"
+  },
+  {
+   "t_sec": 262.067,
+   "cause": "adjacent court",
+   "shot_id_at_review": 103,
+   "note": "#103 is mislabeled. Not a shot. It was ball landing on adjacent court"
+  },
+  {
+   "t_sec": 274.7,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 104,
+   "note": "#104 is mislabeled. Not a shot. Opponent was throwing it to other opponent to get ready for a serve."
+  },
+  {
+   "t_sec": 280.933,
+   "cause": "duplicate detection",
+   "shot_id_at_review": 105,
+   "note": "#105, #106, #107 are all one shot. It is a serve by the opponent."
+  },
+  {
+   "t_sec": 281.6,
+   "cause": "duplicate detection",
+   "shot_id_at_review": 106,
+   "note": "#105, #106, #107 are all one shot. It is a serve by the opponent."
+  },
+  {
+   "t_sec": 282.533,
+   "cause": "duplicate detection",
+   "shot_id_at_review": 107,
+   "note": "#105, #106, #107 are all one shot. It is a serve by the opponent."
+  },
+  {
+   "t_sec": 290.533,
+   "cause": "adjacent court",
+   "shot_id_at_review": 112,
+   "note": "#112 is mislabeled. Not a shot. It was ball on adjacent court"
+  },
+  {
+   "t_sec": 295.85,
+   "cause": "feed or throw between points",
+   "shot_id_at_review": 113,
+   "note": "#113 is mislabeled. Not a shot. User is carrying ball to get ready for serve. However, serve was missed at 5:01.78"
+  },
+  {
+   "t_sec": 311.233,
+   "cause": "point already over",
+   "shot_id_at_review": 123,
+   "note": "#124, #125 were not shots. Point had ended after #123 shot by user was a winner hit by opponents"
+  },
+  {
+   "t_sec": 312.0,
+   "cause": "point already over",
+   "shot_id_at_review": 124,
+   "note": "#124, #125 were not shots. Point had ended after #123 shot by user was a winner hit by opponents"
+  },
+  {
+   "t_sec": 312.25,
+   "cause": "point already over",
+   "shot_id_at_review": 125,
+   "note": "#124, #125 were not shots. Point had ended after #123 shot by user was a winner hit by opponents"
+  }
+ ],
+ "missed": [
+  {
+   "t_sec": 68.7,
+   "who": "",
+   "true_type": "",
+   "into_net": true,
+   "note": "no label on shot. Ball was hit by opponent at the kitchen into the net"
+  },
+  {
+   "t_sec": 98.4,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "no label on shot. Was a drive at the kitchen by opponent"
+  },
+  {
+   "t_sec": 99.2,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "no label on shot. Was a lob near baseline by partner"
+  },
+  {
+   "t_sec": 139.2,
+   "who": "",
+   "true_type": "",
+   "into_net": true,
+   "note": "Missed shot. Was a dink by opponent that went into the net"
+  },
+  {
+   "t_sec": 151.9,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "Missed shot. Was a serve by user"
+  },
+  {
+   "t_sec": 156.2,
+   "who": "",
+   "true_type": "",
+   "into_net": true,
+   "note": "Missed shot. It was a drive from baseline by user into the net."
+  },
+  {
+   "t_sec": 173.1,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "no label on shot. Was a backhand dink by partner"
+  },
+  {
+   "t_sec": 194.6,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "no label on shot. Was a return by partner"
+  },
+  {
+   "t_sec": 227.8,
+   "who": "",
+   "true_type": "",
+   "into_net": true,
+   "note": "shot is missed. Was backhand drive at net by user into the net"
+  },
+  {
+   "t_sec": 250.8,
+   "who": "",
+   "true_type": "",
+   "into_net": false,
+   "note": "shot is missed. It was a backhand dink by partner"
+  }
+ ],
+ "wrong_player": [
+  {
+   "t_sec": 106.9,
+   "said": "user",
+   "actually": "partner",
+   "note": "was a shot by partner. Label says user"
+  },
+  {
+   "t_sec": 198.267,
+   "said": "user",
+   "actually": "partner",
+   "note": "#73 at 3:18.3 was hit by partner, not the user. And shot looked closer to 3:17.5. It was a backhand at the kitchen line by partner"
+  },
+  {
+   "t_sec": 200.133,
+   "said": "user",
+   "actually": "partner",
+   "note": "#75 was by partner, not the user"
+  },
+  {
+   "t_sec": 225.083,
+   "said": "user",
+   "actually": "partner",
+   "note": "#88 is mislabeled. It was a shot by partner, not the user"
+  },
+  {
+   "t_sec": 284.45,
+   "said": "user",
+   "actually": "partner",
+   "note": "#108 was a shot by partner, not user"
+  },
+  {
+   "t_sec": 286.633,
+   "said": "user",
+   "actually": "partner",
+   "note": "#110 was a shot by partner, not user"
+  },
+  {
+   "t_sec": 307.083,
+   "said": "user",
+   "actually": "partner",
+   "note": "#117 is partner not user"
+  }
  ]
 }
