@@ -1252,3 +1252,51 @@ investigated, and are listed so they are not mistaken for closed.
 
 5. **Shot numbering goes off by one after a miss** (:7.98). A display consequence of 1-4
    rather than its own defect, but it makes any future numbered review harder to read.
+
+## Ball HEIGHT from apparent size — feasibility PASSED (2026-08-19)
+
+The operator asked whether knowing the camera angle would let us position a volley. It would
+not: calibrating the court already determines the camera pose, and the homography IS that
+pose. The shortfall is arithmetic and per-frame — a ball position has 3 unknowns (X, Y, Z)
+and a pixel gives 2 equations. A pixel specifies a RAY; camera pose fixes the ray exactly but
+cannot say where along it the ball sits. "z = 0" is the third equation, which is why the
+ground homography works at all, and why it is exact at a bounce and nonsense in the air.
+
+Demonstrated on the indoor volley exchange (rally 3), ball projected through the homography:
+
+| time | pixel | → court (ft) |
+|---|---|---|
+| 73.9s | (1704, 744) | (−30.5, **67.4**) |
+| 74.8s | (2433, 657) | (−42.7, **178.8**) |
+| 76.3s | (1851, 681) | (−57.5, **120.3**) |
+
+On a 44 ft court. Every one reads "far side". Against that, 40 of 41 detected BOUNCES project
+inside the court (median y = 22.5 ft, right at the net) — same camera, same ball, same maths.
+The only difference is z.
+
+**Apparent ball size supplies the third equation, and is the only candidate that helps a
+VOLLEY.** A ballistic fit (the textbook answer) needs curvature, so it is weakest during the
+short flat exchanges where this problem bites. A pickleball is a known 2.9 inches, so its
+pixel diameter fixes range directly with no assumption about motion.
+
+`tools/measure_ball_size.py` tests it, with nothing tuned per court — px/ft comes from each
+clip's own calibration, and the measurement bias from each clip's own bounces:
+
+| clip | bounce (control) | in flight | AUC |
+|---|---|---|---|
+| indoor | 1.52 | 4.66 | 0.85 |
+| outdoor | 1.72 | 2.42 | 0.84 |
+
+**Both courts agree despite the outdoor ball being half the pixel size** (15 px near / 7 px
+far, vs 24 / 11 indoors) — so the signal is not a property of one venue, which was the
+operator's stated requirement. The bias sits at 1.5-1.7 rather than the ideal 1.0 because FWHM
+over-reads a small bright blob (motion blur, halo); it is stable, and each clip's bounces
+calibrate it out.
+
+**Caveats before building.** The AUC estimate is noisy — only 8-20 bounces in the control, and
+the same clip moves between 0.78 and 0.85 depending on the window; call it ~0.8. It is also
+per-FRAME, whereas the real question ("did the ball reach the far side between these two
+impacts?") aggregates over 30-60 frames, which should do much better — but that is an
+expectation, not yet measured. Turning a ratio into a court POSITION additionally needs the
+camera's ground position and height; those are recoverable per-clip from player boxes (feet
+at z=0, head at ~5.5 ft) without asking the operator for anything.
