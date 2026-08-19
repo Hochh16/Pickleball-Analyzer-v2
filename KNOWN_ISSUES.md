@@ -1219,3 +1219,36 @@ has to either avoid the question or get height another way. The one untried angl
 avoids it: instead of deleting all-but-one impact in a same-side run, keep them and let
 Stage 7's point structure arbitrate, since a rally with the wrong parity is detectable
 downstream where a single run is not.
+
+## Indoor review - operator observations NOT yet investigated (2026-08-18)
+
+From the same review that produced `missed_review.json`. The handling-filter cascade was
+chased because it accounted for 9 of the 21 missed shots; these were recorded and NOT
+investigated, and are listed so they are not mistaken for closed.
+
+1. **Wrong player, ~5 cases.** "#30 opponent" was the partner (1:15.6); "#47 says user but
+   it's the partner"; 2:52.7 "says #68 user when opponent hits it"; "#70 is user dink but
+   says partner". Note the outdoor clip's wrong-player class turned out to be the same-side
+   filter deleting the real shot, not an attribution bug — check that first here.
+
+2. **End-of-rally shot missed, 2 cases.** :19.57 partner drive that went out of bounds, the
+   last shot of the rally; 1:55.6 opponent drive hit out. Both are shots that END the point
+   by going out. Plausibly the same root as the outdoor "6 of 17 missed shots went into the
+   net" — a shot that terminates a rally has no return after it, so anything relying on a
+   following contact has nothing to anchor to.
+
+3. **Phantom shots after the point ended.** At 1:18.3 two circles appear at once — "#32
+   opponent, #33 partner … #31 by user was a winning shot missed by opponent. So there is
+   no #32 and #33. Ball is not visible but a few yellow circles appear (not around ball)."
+   Also #65, between points, with the marker on the partner's paddle handle. These are
+   detections with NO BALL, which the ball-visibility precondition is supposed to prevent.
+
+4. **The serve is detected at the BALL TOSS, not the strike.** Rally 9: "#67, opponent as
+   1st shot, however it does it while she is about to throw the ball up for the serve and
+   not when she actually hits the ball." `serve_appearance` fires when the ball first appears
+   after dead time — which is the toss, not the paddle contact. Consistent with the measured
+   serve offsets: one serve early by 0.58s, four LATE by 0.6-3.6s where a later shot
+   inherited the serve label after the real serve was missed.
+
+5. **Shot numbering goes off by one after a miss** (:7.98). A display consequence of 1-4
+   rather than its own defect, but it makes any future numbered review harder to read.
