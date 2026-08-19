@@ -1,0 +1,134 @@
+{
+ "schema_version": 1,
+ "clip": "pb_3_min_indoor_1_court_b",
+ "source": "operator review of the annotated full video, 2026-08-18, rallies 0/3/5/9",
+ "operator_summary": "if a serve is missed, often 2 or 3 shots after it are missed; a couple of misidentified players; a few missed during fast exchanges; misses the end-of-rally shot a couple of times; some nothing distinctive",
+ "missed": [
+  {
+   "t_sec": 65.6,
+   "who": "partner",
+   "shot_type": "return",
+   "note": ""
+  },
+  {
+   "t_sec": 67.6,
+   "who": "opponent",
+   "shot_type": "drive",
+   "note": ""
+  },
+  {
+   "t_sec": 70.4,
+   "who": "opponent",
+   "shot_type": "drive",
+   "note": ""
+  },
+  {
+   "t_sec": 71.2,
+   "who": "user",
+   "shot_type": "drive - backhand",
+   "note": ""
+  },
+  {
+   "t_sec": 73.9,
+   "who": "opponent",
+   "shot_type": "drive",
+   "note": ""
+  },
+  {
+   "t_sec": 74.3,
+   "who": "user",
+   "shot_type": "drive/volley",
+   "note": ""
+  },
+  {
+   "t_sec": 74.8,
+   "who": "opponent",
+   "shot_type": "drive/volley",
+   "note": ""
+  },
+  {
+   "t_sec": 75.6,
+   "who": "partner",
+   "shot_type": "drive/volley",
+   "note": "however, it says opponent #30"
+  },
+  {
+   "t_sec": 76.3,
+   "who": "opponent",
+   "shot_type": "drive/volley",
+   "note": ""
+  },
+  {
+   "t_sec": 78.3,
+   "who": "opponent and partner",
+   "shot_type": "",
+   "note": "2 circles at same time show #32 opponent, #33 partner.  #31 by user was a winning shot missed by opponent. So there is no #32 and #33 shots.  Ball is not visible but a few yellow circles appear (not around ball)"
+  },
+  {
+   "t_sec": 105.2,
+   "who": "partner",
+   "shot_type": "serve",
+   "note": ""
+  },
+  {
+   "t_sec": 106.5,
+   "who": "opponent",
+   "shot_type": "return",
+   "note": ""
+  },
+  {
+   "t_sec": 107.8,
+   "who": "user",
+   "shot_type": "drive",
+   "note": "however, it says partner SERVE"
+  },
+  {
+   "t_sec": 115.6,
+   "who": "opponent",
+   "shot_type": "drive",
+   "note": "shot was hit out by opponent"
+  },
+  {
+   "t_sec": 169.3,
+   "who": "user",
+   "shot_type": "return",
+   "note": "before that, it labels #67, opponent as 1st shot, however, it does it while she is about to throw the ball up for the serve and not when she actually hits the ball. So not sure it is catching the actual serve."
+  },
+  {
+   "t_sec": 171.3,
+   "who": "opponent",
+   "shot_type": "3rd shot drive",
+   "note": ""
+  },
+  {
+   "t_sec": 171.9,
+   "who": "user",
+   "shot_type": "backhand drive",
+   "note": ""
+  },
+  {
+   "t_sec": 172.7,
+   "who": "opponent",
+   "shot_type": "drop",
+   "note": "but says #68 user when opponent hits it and red circle is around user panel"
+  },
+  {
+   "t_sec": 173.5,
+   "who": "user",
+   "shot_type": "drive/volley",
+   "note": ""
+  },
+  {
+   "t_sec": 175.2,
+   "who": "partner",
+   "shot_type": "dink",
+   "note": ""
+  },
+  {
+   "t_sec": 176.3,
+   "who": "opponent",
+   "shot_type": "dink",
+   "note": ""
+  }
+ ]
+}

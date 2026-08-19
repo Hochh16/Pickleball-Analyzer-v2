@@ -1164,3 +1164,58 @@ hold 20 of the 22, in about 55 seconds of the clip:
 Outdoor recall is ~85% against ~73% here, so the ball track is weaker indoors and this is
 the next thing to work. A per-shot review is still worth having eventually, but it is no
 longer needed to answer the precision question.
+
+## Stage 5 - the HANDLING filter compounds every missed shot (OPEN, cause confirmed)
+
+The operator reviewed the annotated indoor video (`tools/annotate_full.py`) and reported
+21 timestamped missed shots, frozen in `data/pb_3_min_indoor_1_court_b/missed_review.json`.
+Their summary led with the pattern: *"if a serve is missed, often 2 or 3 other shots after
+it are missed."*
+
+That is confirmed, with a named cause. Checking each of their timestamps against detection
+with and without `reject_same_side_runs`:
+
+| of the 21 confirmed missed shots | |
+|---|---|
+| **the handling filter deleted it** | **9** |
+| never detected at all | 4 |
+| actually detected (timing/attribution, not a miss) | 8 |
+
+The deleted ones come in consecutive blocks — 67.6, 70.4, 71.2, 73.9, 74.3, 74.8s in rally 3
+— all through one fast drive/volley exchange.
+
+**The mechanism.** The filter collapses consecutive same-net-side impacts because a team
+cannot legally hit twice in a row. That is true of REAL play, but it assumes our detection
+is complete. When a shot is missed, the two real shots either side of it become
+"consecutive same-side", and the filter deletes one of THOSE. Every miss costs a second
+shot, so recall failures compound instead of adding up.
+
+The filter cannot simply be removed. On the indoor clip that lifts in-rally shots from 60 to
+89 (truth 82), but on the outdoor clip it produces **174 shots against ~108 true**, because
+outdoor has real between-point ball-handling and an adjacent court.
+
+### Two fixes attempted and REJECTED — both defeated by ball height
+
+1. **Did the ball cross the NET LINE between the two impacts?** (image-space line, the edge
+   the half-court polygons share.) Recovered 1 real shot and added 3 junk indoors, changed
+   outdoor by nothing. It fails exactly where it is needed: in a kitchen volley exchange the
+   ball stays ABOVE net height throughout, so against a ground-projected net line it never
+   changes sides. Ball visibility was ruled out as the explanation — the ball is visible for
+   a median 58 of 62 frames between in-rally impacts.
+
+2. **Did the ball come within paddle reach of an OPPOSING-side player?** Players stand on the
+   ground, so their side needs no height estimate. Excellent indoors — in-rally shots 60 →
+   **79** of 82, confirmed misses recovered 8/21 → **16/21**, serve recall 70% → 80%. But
+   outdoors it emits **160 shots** (fp 23 → 27, misattribution 1 → 6, serve 86%/86% →
+   79%/79%), and tightening the reach to 0.15x barely helps (still 148 shots, misattribution
+   5/7). A high ball merely LOOKS near a far-side player in image space — the same
+   z-ambiguity, third time.
+
+Neither shipped; the standing rule is that a change must not regress another venue.
+
+**What this needs.** Both rejected fixes ask "did the ball go to the other side", and both
+fail because that question needs the ball's HEIGHT, which one 6ft camera cannot give. A fix
+has to either avoid the question or get height another way. The one untried angle that
+avoids it: instead of deleting all-but-one impact in a same-side run, keep them and let
+Stage 7's point structure arbitrate, since a rally with the wrong parity is detectable
+downstream where a single run is not.

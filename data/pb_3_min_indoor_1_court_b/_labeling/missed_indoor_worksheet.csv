@@ -1,0 +1,36 @@
+rally,window,you_counted,we_detected,we_are_short_by,time_of_missed_shot,who_hit_it,shot_type,notes_why_we_might_have_missed_it
+0,0:03.00-0:20.00,17,13,4,,,,
+,,,,,:3.67,user,serve,
+,,,,,:5.34,opponent,return,
+,,,,,:07.21,user,3rd shot drop,
+,,,,,:7.98,,,"records opponent shot, however, detected count is at 1 and red circle says #2 opp (detected and shot label will now be off going forward)"
+,,,,,:19.57,partner,drive / volley,partner hits it but goes out of bounds; last shot in rally
+3,1:03.00-1:17.00,14,7,7,,,,
+,,,,,01:05.6,partner,return,
+,,,,,01:07.6,opponent,drive,
+,,,,,01:10.4,opponent,drive,
+,,,,,01:11.2,user,drive - backhand,
+,,,,,01:13.9,opponent,drive,
+,,,,,01:14.3,user,drive/volley,
+,,,,,01:14.8,opponent,drive/volley,
+,,,,,01:15.6,partner,drive/volley,"however, it says opponent #30"
+,,,,,01:16.3,opponent,drive/volley,
+,,,,,01:18.3,opponent and partner,,"2 circles at same time show #32 opponent, #33 partner.  #31 by user was a winning shot missed by opponent. So there is no #32 and #33 shots.  Ball is not visible but a few yellow circles appear (not around ball) "
+,,,,,,,,
+5,1:44.00-1:56.00,10,7,3,,,,
+,,,,,01:45.2,partner,serve,
+,,,,,01:46.5,opponent,return,
+,,,,,01:47.8,user,drive,"however, it says partner SERVE"
+,,,,,,,#47 says user but it's the partner who hit it,
+,,,,,01:55.6,opponent,drive,shot was hit out by opponent
+,,,,,,,,
+,,,,,,,,
+9,2:46.00-2:58.00,11,5,6,,,#65 says opponent. Partner's paddle handle has a yellow circle. And this is between points. All just walking back to set up.,
+,,,,,02:49.3,user,return,"before that, it labels #67, opponent as 1st shot, however, it does it while she is about to throw the ball up for the serve and not when she actually hits the ball. So not sure it is catching the actual serve. "
+,,,,,02:51.3,opponent,3rd shot drive,
+,,,,,02:51.9,user,backhand drive,
+,,,,,02:52.7,opponent,drop,but says #68 user when opponent hits it and red circle is around user panel
+,,,,,02:53.5,user,drive/volley,
+,,,,,02:55.2,partner,dink,
+,,,,,02:56.3,opponent,dink,
+,,,,,,,,#70 is user dink but says partner
