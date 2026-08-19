@@ -1300,3 +1300,50 @@ impacts?") aggregates over 30-60 frames, which should do much better — but tha
 expectation, not yet measured. Turning a ratio into a court POSITION additionally needs the
 camera's ground position and height; those are recoverable per-clip from player boxes (feet
 at z=0, head at ~5.5 ft) without asking the operator for anything.
+
+## Ball 3-D recovered from one camera — WORKING (2026-08-19)
+
+`tools/ball_3d.py`. Two measurements close the z gap, neither needing anything from the
+operator beyond the calibration already on disk.
+
+**Camera ground position, from player boxes.** For a camera at height H and a person of
+height h, the head projects through the homography to `C + k*(P_feet - C)`, so C, the feet
+and the projected head are COLLINEAR — every player in every frame is a line through the
+camera. Solved on both clips with a **median line residual of 0.0 ft**; the model is exact,
+not approximate. Camera height comes out at **6.7 ft indoor / 6.6 ft outdoor**, against a rig
+that is a ~6 ft camera — an independent check nobody supplied.
+
+**Ball range, from apparent size**, as in `tools/measure_ball_size.py`.
+
+    P_true = C + (P_ground - C) / k,   k = (measured_px / predicted_px) / bias
+    z      = H * (1 - 1/k)
+
+Validated indoor, frames 3600-4400:
+
+| | raw ground projection | reconstructed |
+|---|---|---|
+| z at bounces (should be 0) | — | **0.14 ft** |
+| court y in flight | 80.4 ft | **23.0 ft** (net is at 22) |
+| within the play envelope | 26% | **89%** |
+
+x,y do NOT depend on the assumed person height — only z in feet does.
+
+### Net hits: the signature is SUSTAINED z≈0 near the net
+
+Confirmed against the operator's timestamped net hits. At the 19.45s net hit the ball falls
+from 4.33 ft to the floor and stays pinned there beside the net for over two seconds
+(t=19.20-21.82, z=0.00, 0.1-3 ft from the net line) — matching their note exactly: *"from
+:19.45 until :24 ball was bouncing and rolling along net."*
+
+The discriminator is **not** z≈0 alone: ordinary play reaches z=0 on every bounce (control
+p10 = 0.00). It is z≈0 SUSTAINED. A bounce touches the floor for a frame or two; a dead ball
+stays there for seconds. Near the net that is a net hit; away from it, a ball hit out or
+rolling. This is the first route to net-hit detection that has produced a signal — the
+July 2026 deferral was made without height.
+
+### Weakest link
+
+`bias` is estimated from only 5-20 bounces and ranges 1.59-2.03 across clips and windows. It
+scales k directly, so absolute heights inherit that error. Widen the estimation window, or
+find a bounce-independent calibration, before anything depends on absolute z. Relative
+comparisons within one clip are far safer than cross-clip thresholds.
