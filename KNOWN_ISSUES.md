@@ -1656,3 +1656,32 @@ at the net — whereas `out` and `not-returned` rest on an inferred bounce posit
 Remaining indoor false ends: 4.69s (caused by a MISSED return, not by the end rule — the
 opponent did play the ball, we just did not detect it), 80.63s (very likely the 77s end
 detected late) and 101.33s (during a between-point stretch).
+
+## Ball 3-D VALIDATED on a held-out third court (2026-08-20)
+
+`indoor_C1_3min` — a different court, same rig — processed end to end and reconstructed with
+**nothing tuned for it**. This half of the validation needs no operator worksheet: bounces
+are the control, and the calibration derives itself from each clip.
+
+| clip | blob fit | camera height | z at bounces (should be 0) | in-flight envelope |
+|---|---|---|---|---|
+| indoor court B | 1.10·pred + 4.12 px | 6.66 ft | 0.28 ft | 48% → 91% |
+| outdoor | 1.32·pred + 1.66 px | 6.62 ft | 0.33 ft | 49% → 89% |
+| **indoor court C (held out)** | **1.16·pred + 3.74 px** | **6.41 ft** | **0.13 ft** | **52% → 87%** |
+
+Three cameras, three courts, and the blob fit lands in the same narrow family (a = 1.10-1.32,
+c = 1.66-4.12 px) with camera heights all recovering to ~6.4-6.7 ft against a 6 ft tripod.
+Court C's bounce control is the BEST of the three at 0.13 ft, and it is the one clip whose
+parameters were never looked at while tuning.
+
+That retires the doubt recorded when this method was first measured — that the ball-size
+signal might be a property of one venue. It is not.
+
+**Still outstanding:** the rally-END thresholds. Those were swept against 10 indoor points and
+7 outdoor net hits, and Court C's operator worksheet does not exist yet. Reconstruction
+generalising does NOT imply the end-detection thresholds generalise; they are scored
+separately and deliberately have not been run yet.
+
+Court C also carries the project's first CLICKED user identity (`basis: click, confidence
+0.95` rather than `starting-corner` at 0.5), and the user resolves to 2 track fragments
+against 11 on court B.
