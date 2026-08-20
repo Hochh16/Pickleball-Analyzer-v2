@@ -1347,3 +1347,31 @@ July 2026 deferral was made without height.
 scales k directly, so absolute heights inherit that error. Widen the estimation window, or
 find a bounce-independent calibration, before anything depends on absolute z. Relative
 comparisons within one clip are far safer than cross-clip thresholds.
+
+## Height separates "a shot was missed" from "ball-handling" — AUC 0.95 (2026-08-19)
+
+The test the ball-3D work was built for. `reject_same_side_runs` collapses consecutive
+same-side impacts, which is right for handling and catastrophic when a shot between them was
+MISSED — 9 of the operator's 21 confirmed misses. Two earlier attempts to tell the two cases
+apart died on ball height (net-line crossing, opposing-player reach).
+
+With height available, for every same-side pair the filter would collapse, take the maximum
+reconstructed height between the two impacts. Ground truth is the operator's missed-shot
+list, restricted to the four rallies they reviewed:
+
+| | n | median max height | clears the net |
+|---|---|---|---|
+| **CROSSED** (operator lists a shot between) | 7 | **5.21 ft** | 100% |
+| handling (no shot between) | 12 | 4.24 ft | 67% |
+
+**Separability AUC = 0.95**, well above the ~0.8 per-frame figure — aggregating over 30-60
+frames of flight does exactly what was predicted.
+
+Two things to note before building on it. The sample is small (7 vs 12 pairs), and the
+"handling" label is only as complete as the operator's review. And the discriminator is NOT
+"did the ball clear the net" — 67% of handling pairs clear it too, because they are mostly
+duplicate detections inside a live rally where the ball is legitimately airborne. It is the
+APEX MAGNITUDE that separates them, which is a weaker physical story than a clean geometric
+rule and deserves a larger labelled sample before it becomes a threshold.
+
+Reproduce: `python -m tools.test_crossing_signal <off-filter classified.json>`
