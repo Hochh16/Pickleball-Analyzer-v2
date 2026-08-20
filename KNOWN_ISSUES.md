@@ -1452,3 +1452,48 @@ Everything absolute rests on `bias`, which ranges **1.59-2.03** across clips and
 because it is estimated from only 5-20 bounces. Relative comparisons within a clip are sound;
 heights in feet, speeds in mph and any cross-venue threshold are not, until this is fixed.
 Do this first — it is cheap and everything else inherits its error.
+
+## Ball-size calibration: the GATING ITEM is fixed (2026-08-20)
+
+`bias` — the factor by which the measured ball blob over-reads its true size — ranged
+1.59-2.03 across clips and windows, and every absolute number inherited that. Four attempts,
+three of them wrong, and the wrong ones are worth recording:
+
+1. **Motion blur.** Hypothesis: blur smears the ball along its travel, so a diameter from
+   blob AREA grows with speed, and bounces (where the ball is slowest) under-correct fast
+   balls. **REFUTED** — correlation with pixel speed is −0.08, and the speed bands show no
+   trend (2.28, 2.74, 2.39, 2.82, 2.05). Using the blob's minor axis, which is
+   blur-invariant, changed nothing.
+2. **Fixed additive blur** (`measured = true + c`). **REFUTED** — fits far worse than
+   multiplicative (CV 1.001 vs 0.200).
+3. **A single constant, robustly estimated.** Rejecting blob merges (ratio ≥ 2.0, where the
+   ball fuses with a line, shadow or player — 6 of 43 indoor, 17 of 69 outdoor) narrowed the
+   spread from 1.59-2.03 to 1.44-1.68, and fitting over every bounce in the clip narrowed it
+   again to 1.40 / 1.51. **But the bounce control then reconstructed to z = 1.19 ft instead
+   of ~0.** No constant can be right, because the over-read is SIZE-DEPENDENT: measured
+   outdoors at 1.74 at pred 6 px, 1.53 at 12 px, 1.30 at 21 px. A per-window constant only
+   ever appeared to work because it matched that window's distances.
+4. **Linear fit `measured = a*pred + c`** — a small multiplicative over-read plus a fixed
+   blur width. This is what works.
+
+Fitted over every bounce in the clip, with merges rejected:
+
+| clip | fit | bounces |
+|---|---|---|
+| indoor | measured = **1.17**·pred + **2.94** px | 37 (6 rejected) |
+| outdoor | measured = **1.18**·pred + **3.24** px | 52 (17 rejected) |
+
+**Two different cameras, two resolutions, effectively the same fit** — it is capturing a real
+imaging property (the detector's point spread), not per-clip noise.
+
+Validated indoor, ONE calibration serving the whole clip:
+
+| window | z at bounces (should be 0) | flight court y | within envelope |
+|---|---|---|---|
+| 3600-4400 | 0.30 ft | 19.5 ft | 89% |
+| 1000-2000 | 0.77 ft | 19.1 ft | 93% |
+
+**Residual error is ~0.3-0.8 ft (4-9 in) in absolute height.** Good enough for sustained-z≈0
+net-hit detection and for crossing decisions (the net is 2.83 ft); NOT good enough to quote
+absolute heights to the inch. Cached per clip in `ball_size_calib.json`, since the walk over
+every bounce is expensive and the fit is a property of the camera, not the analysis window.

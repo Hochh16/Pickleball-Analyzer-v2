@@ -20,13 +20,13 @@ court calibration already on disk.
    diameter fixes distance. Comparing it against the size predicted at the ray's ground
    intersection gives the fraction of the way along the ray the ball actually sits:
 
-       P_true = C + (P_ground - C) / k_ball,     k_ball = measured_px / predicted_px / bias
+       P_true = C + (P_ground - C) / k_ball,     k_ball = true_px / predicted_px
        z      = H * (1 - 1/k_ball)
 
-   `bias` corrects the blob measurement over-reading (motion blur and halo inflate FWHM) and
-   is taken from THIS CLIP'S OWN BOUNCES, where the ball is genuinely at z=0. Nothing is
-   tuned per court: px/ft comes from the clip's calibration, C and H from its players, bias
-   from its bounces.
+   `true_px` is the measured blob corrected for the imaging over-read, which is fitted from
+   THIS CLIP'S OWN BOUNCES (where the ball is genuinely at z=0) as measured = a*pred + c.
+   Nothing is tuned per court: px/ft comes from the clip's calibration, C and H from its
+   players, and the blob fit from its bounces.
 
 NOTE: the reconstructed x,y do NOT depend on the assumed person height — only z in feet
 does. Position rests on C and the size ratio alone.
@@ -38,9 +38,12 @@ VALIDATED 2026-08-19 (indoor, frames 3600-4400):
     in flight, court y: 80.4 ft raw -> 23.0 ft reconstructed (the net is at 22)
     in flight, within the play envelope: 26% raw -> 89% reconstructed
 
-KNOWN WEAKNESS: `bias` is estimated from only 5-20 bounces and moves between 1.59 and 2.03
-across clips and windows. It is the least stable part and deserves a wider estimation
-window, or a bounce-independent calibration, before anything depends on absolute heights.
+CALIBRATION HISTORY, because the obvious approach fails: a single multiplicative `bias`
+estimated from the bounces inside the analysis window gave 1.59-2.03 across clips and
+windows. Rejecting blob merges narrowed that to 1.44-1.68, and fitting over every bounce in
+the clip narrowed it again — but the bounce control then reconstructed to z = 1.19 ft
+instead of ~0, because the over-read is SIZE-DEPENDENT and no constant can be right for both
+near and far balls. The linear fit is what actually works.
 
 Usage:
     python -m tools.ball_3d data/pb_3_min_indoor_1_court_b 3600 4400
@@ -58,7 +61,103 @@ import pandas as pd
 from tools.measure_ball_size import BALL_FT, measure_diameter, scale_map
 
 PERSON_FT = 5.6          # assumed standing height; scales z only, never x/y
-DEFAULT_BIAS = 1.7       # fallback when a clip has too few bounces to calibrate
+DEFAULT_A, DEFAULT_C = 1.25, 2.5   # fallback fit when a clip has too few bounces
+
+
+MERGE_REJECT_RATIO = 2.0   # measured/predicted above this = the blob merged with something
+
+
+CALIB_FILE = "ball_size_calib.json"
+
+
+def calibrate_bias(clip: Path, use_cache: bool = True) -> tuple[float, float, int, int]:
+    """Fit the blob-size over-read from EVERY bounce in the clip.
+
+    At a bounce the ball is genuinely at z=0, so the predicted size is the true size and
+    measured/predicted is the pure measurement error. Two things matter here, both learned
+    the hard way:
+
+    1. **Reject blob merges.** When the ball sits against a line, a shadow or a player, the
+       connected blob swallows it and measures 2-3x too large. Three of 17 outdoor bounces
+       did this (measuring 45-50 px against a predicted 20). They dragged the estimate from
+       1.57 to 1.72 and were the main reason "bias" looked unstable.
+    2. **Use the whole clip.** Estimating from whatever bounces fall inside the analysis
+       window gave 4-10 samples and a spread of 1.44-1.68 across windows. Every bounce in
+       the clip is ~41 samples, and decoding only those frames costs one cheap pass.
+
+    3. **The correction is NOT a single number.** A constant `bias` was tried first and
+       fails. Fitted over a whole clip it gives 1.40 indoors, and the bounce control then
+       reconstructs to z = 1.19 ft instead of ~0. The over-read is SIZE-DEPENDENT —
+       measured outdoors at 1.74 at pred 6 px, 1.53 at 12 px, 1.30 at 21 px — because a
+       roughly fixed blur width matters more for a small (distant) ball. A per-window
+       constant only appeared to work because it happened to match that window's
+       distances.
+
+       So fit `measured = a * pred + c`: a small multiplicative over-read plus a fixed
+       blur width. Outdoors that fits to a residual of 0.78 px against 2.32 px for the
+       best single constant.
+
+    Returns (a, c, n_used, n_rejected).
+    """
+    cache = clip / CALIB_FILE
+    if use_cache and cache.exists():
+        try:
+            d = json.loads(cache.read_text(encoding="utf-8"))
+            return float(d["a"]), float(d["c"]), int(d["n_used"]), int(d["n_rejected"])
+        except (ValueError, KeyError):
+            pass                              # unreadable or old-format cache: recompute
+
+    court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
+    _, px_per_ft = scale_map(court)
+    fps = float(court["video"]["fps"])
+    bdoc = json.loads((clip / "bounces.json").read_text(encoding="utf-8"))
+    bkey = next(k for k in bdoc if isinstance(bdoc[k], list))
+    want = sorted({int(round(float(b.get("t_sec", 0)) * fps)) for b in bdoc[bkey]})
+    if not want:
+        return DEFAULT_A, DEFAULT_C, 0, 0
+
+    ball = pd.read_parquet(clip / "ball.parquet")
+    ball = ball[ball.visible].set_index("frame_idx")
+    want = [f for f in want if f in ball.index]
+    if not want:
+        return DEFAULT_A, DEFAULT_C, 0, 0
+
+    cap = cv2.VideoCapture(str(clip / "video.mp4"))
+    obs, rejected, f, wanted = [], 0, 0, set(want)
+    hi = max(want)
+    while f <= hi:
+        if f in wanted:
+            ok, img = cap.read()
+            if not ok:
+                break
+            u, v = float(ball.loc[f, "pixel_x"]), float(ball.loc[f, "pixel_y"])
+            s = px_per_ft(u, v)
+            if s:
+                pred = BALL_FT * s
+                meas = measure_diameter(img, u, v, pred)
+                if meas and pred > 0:
+                    if meas / pred < MERGE_REJECT_RATIO:
+                        obs.append((pred, meas))
+                    else:
+                        rejected += 1
+        elif not cap.grab():
+            break
+        f += 1
+    cap.release()
+    if len(obs) < 8:
+        return DEFAULT_A, DEFAULT_C, len(obs), rejected
+    P = np.array([o[0] for o in obs], float)
+    Mn = np.array([o[1] for o in obs], float)
+    a, c = np.linalg.lstsq(np.vstack([P, np.ones_like(P)]).T, Mn, rcond=None)[0]
+    if not (np.isfinite(a) and np.isfinite(c)) or a <= 0.2:
+        return DEFAULT_A, DEFAULT_C, len(obs), rejected
+    # Cache it: this walks the whole clip, and it is a property of the CAMERA, not of
+    # whatever window is being reconstructed.
+    cache.write_text(json.dumps({"a": round(float(a), 4), "c": round(float(c), 4),
+                                 "n_used": len(obs), "n_rejected": rejected,
+                                 "merge_reject_ratio": MERGE_REJECT_RATIO}, indent=1),
+                     encoding="utf-8")
+    return float(a), float(c), len(obs), rejected
 
 
 def camera_ground(clip: Path, stride: int = 4):
@@ -96,7 +195,7 @@ def camera_ground(clip: Path, stride: int = 4):
     return C, PERSON_FT / (1.0 - 1.0 / kk), kk
 
 
-def reconstruct(clip: Path, f_lo: int, f_hi: int, bias: float | None = None):
+def reconstruct(clip: Path, f_lo: int, f_hi: int, calib=None):
     """Per-frame ball court position and height over [f_lo, f_hi]."""
     court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
     to_court, px_per_ft = scale_map(court)
@@ -123,7 +222,8 @@ def reconstruct(clip: Path, f_lo: int, f_hi: int, bias: float | None = None):
                 meas = measure_diameter(img, u, v, pred)
                 if meas:
                     gx, gy = to_court(u, v)
-                    rows.append({"frame": f, "t_sec": f / fps, "ratio": meas / pred,
+                    rows.append({"frame": f, "t_sec": f / fps, "pred": pred,
+                                 "ratio": meas / pred,
                                  "ground_x": gx, "ground_y": gy,
                                  "is_bounce": min((abs(f - b) for b in bounce_frames),
                                                   default=999) <= 2})
@@ -132,19 +232,25 @@ def reconstruct(clip: Path, f_lo: int, f_hi: int, bias: float | None = None):
 
     df = pd.DataFrame(rows)
     if df.empty:
-        return df, C, H, DEFAULT_BIAS
-    if bias is None:
-        b = df[df.is_bounce]
-        bias = float(np.median(b.ratio)) if len(b) >= 5 else DEFAULT_BIAS
+        return df, C, H, (DEFAULT_A, DEFAULT_C)
+    if calib is None:
+        a_fit, c_fit, _, _ = calibrate_bias(clip)
+    else:
+        a_fit, c_fit = calib
     # k < 1 would put the ball BEYOND its own ground intersection, which is impossible;
     # clamping saturates those readings at z = 0 rather than inventing negative heights.
-    df["k"] = (df.ratio / bias).clip(lower=1.0)
+    # Invert measured = a*pred + c to recover the ball's TRUE apparent size, then compare
+    # it against the size predicted at the ray's ground intersection.
+    # k < 1 would put the ball BEYOND its own ground intersection, which is impossible;
+    # clamping saturates those readings at z = 0 rather than inventing negative heights.
+    true_px = (df.ratio * df.pred - c_fit) / a_fit
+    df["k"] = (true_px / df.pred).clip(lower=1.0)
     g = np.stack([df.ground_x, df.ground_y], 1)
     t = (g - C) / df.k.to_numpy()[:, None]
     df["court_x_ft"] = C[0] + t[:, 0]
     df["court_y_ft"] = C[1] + t[:, 1]
     df["z_ft"] = H * (1.0 - 1.0 / df.k)
-    return df, C, H, bias
+    return df, C, H, (a_fit, c_fit)
 
 
 def main(argv=None) -> int:
@@ -155,14 +261,14 @@ def main(argv=None) -> int:
     ap.add_argument("f_hi", type=int)
     a = ap.parse_args(argv)
 
-    df, C, H, bias = reconstruct(a.clip, a.f_lo, a.f_hi)
+    df, C, H, calib = reconstruct(a.clip, a.f_lo, a.f_hi)
     if df.empty:
         print("no measurements")
         return 1
     L = float(json.loads((a.clip / "court.json").read_text(encoding="utf-8"))
               ["court_geometry_feet"]["length_ft"])
     print(f"{a.clip.name}: camera ({C[0]:.1f}, {C[1]:.1f}) ft at {H:.1f} ft high; "
-          f"bias {bias:.2f}; n={len(df)}")
+          f"blob fit measured = {calib[0]:.2f}*pred + {calib[1]:.2f} px; n={len(df)}")
     b, fl = df[df.is_bounce], df[~df.is_bounce]
     inside = lambda y: float(((y >= -15) & (y <= L + 15)).mean())
     if len(b):
