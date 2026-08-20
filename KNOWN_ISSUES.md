@@ -1729,7 +1729,7 @@ What did not generalise is the end-detection accuracy as a whole. Treat 9/10 as 
 optimistic end of the range and 6/10 as the realistic one, and do not enable the
 between-point derivation on these numbers.
 
-## Height CANNOT detect bounces — the precision boundary of the ball-3-D method (2026-08-20)
+## RETRACTED: "height cannot detect bounces" — the comparison was wrong (2026-08-20)
 
 The held-out verdict pointed at bounce detection: three of the four Court C missed ends were
 bounce-recall or shot false positives. A bounce ought to be trivial with height — a local
@@ -1780,6 +1780,45 @@ The reconstruction is strong for **sustained and aggregate** questions and weak 
 Averaging suppresses the noise; instantaneous tests are dominated by it. This is why the
 per-frame separability was ~0.8 while the aggregated crossing test reached 0.95.
 
-**So bounce detection cannot be improved with height.** Improving it means working on the
-existing pixel-space detector, which is a separate piece of work that does not involve the
-3-D track at all.
+**RETRACTION.** The conclusion above is wrong, and the operator caught the error: *"you seem
+to be comparing bounces against the 59 bounces I reported total for rallies. There are many
+more bounces, they are just not part of a rally."* Exactly right. 59 is the count of IN-PLAY
+SHOTS. Most floor contacts are not in play at all — between points the ball is dropped,
+bounced before serving and rolled back repeatedly — and not every shot bounces, since volleys
+do not. So "107-133 events against 59 shots" compared two different things and manufactured a
+failure.
+
+The ballistic test was flawed the same way: it fitted parabolas between consecutive detected
+SHOTS, and many segments ran 6-10 seconds (up to 643 frames) spanning multiple bounces and
+dead time, which no single parabola can fit. Refitted on single flight arcs the RMS residual
+drops from 1.16 ft to **0.59 ft** and recovered gravity has a median of 12.3 ft/s² with 24%
+of arcs within 2x of the true 32.2 — still loose, but not the refutation reported.
+
+**The correct test is the physical bound.** A pickleball may bounce at most once between
+shots, so inside a rally, floor contacts cannot exceed shots:
+
+| clip | in-play shots | height contacts in play | current pixel detector |
+|---|---|---|---|
+| court C | 59 | **45** | 28 |
+| court B | 82 | **62** | 34 |
+
+Both under the bound, both finding ~1.8x more in-play contacts than the pixel detector, plus
+54-87 between-point contacts the operator never counted. `tools/bounces_from_height.py`.
+
+### Downstream effect: recall up sharply, precision down
+
+Feeding those contacts to rally-end detection:
+
+| | pixel bounces | height bounces |
+|---|---|---|
+| court B (tuned on) | 9/10, precision 9/16 = 56% | 9/10, precision 9/25 = **36%** |
+| **court C (HELD OUT)** | **6/10, precision 6/14 = 43%** | **9/10, precision 9/19 = 47%** |
+
+The held-out clip improves on BOTH axes — recall 60% → 90%. Court B keeps its recall and
+loses precision, which is consistent with its 56% having been partly a product of tuning
+against that clip's pixel bounce list.
+
+Across both clips: ends found 15/20 → **18/20**, at 18 correct of 44 rather than 18 of 30.
+Shipped, because a missed end cannot be recovered later while a false one can still be
+filtered by rally structure — but note this makes the between-point derivation (which needs
+PRECISION) further away, not closer.

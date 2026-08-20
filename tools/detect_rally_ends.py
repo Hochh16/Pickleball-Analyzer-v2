@@ -109,7 +109,11 @@ def detect(clip: Path) -> list[dict]:
                    key=lambda s: s["t_sec"])
     b3 = pd.read_parquet(clip / "ball_3d.parquet").sort_values("t_sec")
 
-    bdoc = json.loads((clip / "bounces.json").read_text(encoding="utf-8"))
+    # Prefer height-derived floor contacts when present: they find ~1.8x more in-play
+    # bounces than the pixel-space detector while staying under the one-bounce-per-shot
+    # physical bound. bounces.json remains the ball-3D calibration source.
+    hp = clip / "bounces_height.json"
+    bdoc = json.loads((hp if hp.exists() else clip / "bounces.json").read_text(encoding="utf-8"))
     bkey = next(k for k in bdoc if isinstance(bdoc[k], list))
     bounce_t = sorted(float(b.get("t_sec", 0)) for b in bdoc[bkey])
 
