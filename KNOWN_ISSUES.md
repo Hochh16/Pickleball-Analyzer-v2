@@ -1876,3 +1876,49 @@ kind previously solved, and those are the residue the latch gate did not catch.
 
 Nothing shipped from this round. State unchanged and re-verified: 23/34 false positives, 94
 real shots kept, 1 wrong-player, serves 86%/86%, rally ends 9/10 on both clips.
+
+## Ball tracking is RESOLUTION-LIMITED, and the escalation was already planned (2026-08-20)
+
+Ball detection sits under everything — shots, bounces, rally ends, the 3-D reconstruction —
+and its recall (69-76% of frames) is the ceiling on all of them. The cause is measurable.
+
+**The detector runs at 1280x720 on 3840x2160 footage — a 3x downscale.**
+
+| | at 4K | at inference (720p) |
+|---|---|---|
+| ball at the near baseline | 24.3 px | 8.1 px |
+| ball at the far baseline | 11.3 px | **3.8 px** |
+
+A 3.8-pixel ball is at the edge of detectability. This is also why every ball coordinate is a
+multiple of 3: detections land on a 720p grid, so position is quantised to 3 px at 4K, which
+propagates into the height reconstruction as noise.
+
+**The project already decided to escalate.** `stages/finetune_ball_model/_v4_data.py:26`
+reads: *"Processing resolution (decision: start 720p; escalate to 1080p if recall low)"*.
+Recall is low. The escalation was never done.
+
+### Empirical support (and a confounded first attempt)
+
+The first test compared ball size before a tracking loss using `pred_px`, and appeared to
+REFUTE the hypothesis — losses looked biased toward LARGER balls. That measure is confounded:
+`pred_px` is the size at the ray's ground intersection, so a high ball reads small regardless
+of distance. Redone with the measured blob diameter:
+
+| | court C | outdoor |
+|---|---|---|
+| measured ball, all detections | 16.5 px | 10.5 px |
+| in the smallest third — baseline | 33% | 33% |
+| in the smallest third — just before a loss | **43%** | **52%** |
+| confidence, all vs just before a loss | 0.79 → **0.37** | 0.77 → **0.42** |
+
+Losses skew to small balls, and detector confidence collapses to ~0.4 immediately before one.
+The effect is strongest outdoors, where the ball is smallest on screen.
+
+### Feasibility
+
+Training data exists: **18,420 labelled ball positions across 12 clips**. The resolution is a
+pair of constants (`PROC_H, PROC_W`), and frames are cached per clip (`frames_720`).
+
+The work is: re-extract frames at 1080p, retrain (2.25x compute), re-infer (2.25x). At 1080p
+the far-baseline ball goes 3.8 → 5.7 px and position quantisation 3 → 2 px. Whether that
+converts into recall is exactly what the original decision note left open.
