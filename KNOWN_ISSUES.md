@@ -1537,3 +1537,35 @@ late, so the real over-firing is nearer 4.
 **Treat these numbers as provisional.** They come from 10 points and 7 net hits, and several
 thresholds were swept against them. A third labelled clip is needed before trusting the exact
 figures.
+
+## Between-point from measured ends: wired, NOT enabled — precision is the blocker (2026-08-20)
+
+The operator's insight was that between-point balls need no classifier: with accurate serves
+and rally-ends, between-point is simply everything between a point ending and the next serve.
+That is right, and Stage 7 already drops `is_between_point` shots — the flag just never had
+real boundaries (0 of 125 set on the acceptance clip).
+
+`segment_rallies.apply_rally_ends` now derives it from `rally_ends.json`. **It is OFF by
+default (`--use-rally-ends`), and the reason is measured, not cautious.**
+
+Rally-end detection runs at 64-70% precision. Every FALSE end marks the live play behind it
+as dead, and one missed serve (serve recall is 86%) means play never "resumes", so a single
+false end can flag an entire real rally. Capping the dead interval limits the damage but does
+not reverse the sign:
+
+| cap | labelled junk excluded | real shots lost |
+|---|---|---|
+| no cap | 15/28 | **29/89** |
+| 4s | 7/28 | 12/89 |
+| 8s | 9/28 | 16/89 |
+| 15s | 11/28 | 25/89 |
+
+Every setting costs roughly **1.3-1.5 real shots per junk shot removed**. Enabling it would
+make the analysis worse.
+
+**What it needs:** end precision materially above 70%. Recall is already there (9/10 indoor
+point-ends, 7/7 outdoor net hits), so this is entirely a false-positive problem, and the
+false ends are identified — indoor 5s, 101s, 127s, 156s. Fixing those turns this on.
+
+The default pipeline is unchanged and re-verified: 23/34 false positives, 94 real shots kept,
+1 wrong-player, serves 86%/86%, 14 rallies.

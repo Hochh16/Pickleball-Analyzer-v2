@@ -38,6 +38,7 @@ STAGE_VERSION = "0.3.0"  # 0.2.0 -> 0.3.0 (real ball): minimum-rally filter drop
 SERVE_FAULT_MAX_FRAMES = 60       # quick-next-serve = serve fault (~2s @ 30fps)
 NET_Y_FT = 22.0                   # net line in court coordinates
 KITCHEN_DEPTH_FT = 7.0            # kitchen extends 7 ft from net (each side)
+MAX_DEAD_AFTER_END_SEC = 15.0   # longest plausible gap between a point ending and the next serve
 REFERENCE_FPS = 30.0              # frame-count params tuned at 30fps; scale by fps/this
 # Real-ball rally boundaries: a point breaks when the BALL GOES OUT OF PLAY, not
 # when a hit is merely missed. During a point the ball is in flight (known almost
@@ -279,6 +280,60 @@ def segment_rallies(shots: List[dict],
     return rallies, dropped
 
 
+def apply_rally_ends(shots: List[dict], ends: List[dict], log=None,
+                     max_dead_s: float = MAX_DEAD_AFTER_END_SEC) -> int:
+    """Re-derive `is_between_point` from MEASURED point-ends.
+
+    Stage 5's `structure_points` has to infer where points end from shot timing alone,
+    because it runs before bounces and the 3-D ball track exist. That inference was the
+    weakest link in the pipeline: `is_between_point` came out set on 0 of 125 shots on the
+    acceptance clip, so every feed, throw, roll-back and post-point tap counted as a real
+    shot — 18 of the 23 remaining labelled false positives.
+
+    `tools/detect_rally_ends.py` measures the ends instead (ball dead at the net, bounce out,
+    bounce in and not returned). Given real boundaries the flag needs no classifier at all,
+    which is the operator's point: **between-point is simply everything between a point
+    ending and the next serve.** A fed ball and a rally lob can look identical in flight;
+    what separates them is only whether the point was live, and that is now known.
+
+    Play resumes at the next SERVE — or, failing that, after `max_dead_s`. The fallback
+    matters: serve recall is 86%, so waiting only for a serve means one missed serve after
+    one false end marks an ENTIRE live rally as dead. Measured without the cap, this flagged
+    36 shots on the acceptance clip and cost 29 real ones to exclude 15 pieces of junk.
+
+    Returns the number of shots newly flagged.
+    """
+    if not ends:
+        return 0
+    end_times = sorted(float(e["t_sec"]) for e in ends)
+    n = 0
+    for s in shots:
+        if s.get("is_between_point"):
+            continue
+        t = float(s["t_sec"])
+        prev_end = None
+        for et in end_times:
+            if et < t:
+                prev_end = et
+            else:
+                break
+        if prev_end is None:
+            continue                    # before the first end: play is live
+        if s.get("is_serve"):
+            continue                    # a serve re-opens play
+        if t - prev_end > max_dead_s:
+            continue                    # too long dead to still be one gap: play resumed
+        # live again only once a serve has occurred since that end
+        resumed = any(float(o["t_sec"]) > prev_end and float(o["t_sec"]) <= t
+                      and o.get("is_serve") for o in shots)
+        if not resumed:
+            s["is_between_point"] = True
+            n += 1
+    if log and n:
+        log.info("rally_ends.json: flagged %d additional between-point shot(s)", n)
+    return n
+
+
 def drop_micro_rallies(rally_groups: List[List[dict]], fps: float,
                        min_sec: float = MIN_RALLY_SEC,
                        min_shots: int = MIN_RALLY_SHOTS
@@ -451,6 +506,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     classified = load_json(classified_path)
     bounces_doc = load_json(bounces_path)
+    # Measured point-ends, when tools/detect_rally_ends.py has been run for this clip.
+    # Optional: without it the pipeline behaves exactly as before.
+    ends_path = folder / "rally_ends.json"
+    rally_ends = (load_json(ends_path).get("ends", []) if ends_path.exists() else [])
     if bounces_doc.get("schema_version") != 1:
         fail(f"bounces.json schema_version={bounces_doc.get('schema_version')} "
              f"unexpected (Stage 7 v1 expects 1)", ValueError)
@@ -483,6 +542,21 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     shots = sorted(classified.get("shots", []), key=lambda s: int(s["frame"]))
     bounces = sorted(bounces_doc.get("bounces", []),
                      key=lambda b: int(b["frame"]))
+
+    # Re-derive between-point from MEASURED ends before segmenting. OFF BY DEFAULT, and
+    # the reason is measured rather than cautious: rally-end detection currently runs at
+    # 64-70% precision, and every false end marks the live play behind it as dead. On the
+    # acceptance clip the trade came out consistently NEGATIVE — at an 8s cap it excluded 9
+    # labelled junk shots and cost 16 real ones, and no cap setting reversed that:
+    #
+    #     cap  4s   junk excluded  7/28   real shots lost 12/89
+    #     cap  8s   junk excluded  9/28   real shots lost 16/89
+    #     cap 15s   junk excluded 11/28   real shots lost 25/89
+    #
+    # The wiring is correct and this is exactly where between-point balls should be resolved
+    # (the operator's point: with real boundaries they need no classifier at all). It needs
+    # END PRECISION materially above 70% first. Enable with --use-rally-ends to re-measure.
+    n_flagged = apply_rally_ends(shots, rally_ends, log) if args.use_rally_ends else 0
 
     rally_groups, pre_rally = segment_rallies(
         shots, ball_known=ball_known,
@@ -629,6 +703,11 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p.add_argument("folder", type=Path,
                    help="per-video folder with classified.json, bounces.json, court.json")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--use-rally-ends", action="store_true",
+                   help="derive is_between_point from rally_ends.json. OFF by default: "
+                        "end precision is 64-70%% and every false end marks live play as "
+                        "dead, which measured NET NEGATIVE on the acceptance clip "
+                        "(9 junk excluded, 16 real shots lost).")
     p.add_argument("--min-rally-sec", type=float, default=MIN_RALLY_SEC,
                    dest="min_rally_sec",
                    help="drop a rally shorter than this AND below --min-rally-shots "
