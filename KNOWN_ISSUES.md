@@ -1497,3 +1497,42 @@ Validated indoor, ONE calibration serving the whole clip:
 net-hit detection and for crossing decisions (the net is 2.83 ft); NOT good enough to quote
 absolute heights to the inch. Cached per clip in `ball_size_calib.json`, since the walk over
 every bounce is expensive and the fit is a property of the camera, not the analysis window.
+
+## Rally END detection — FIRST SIGNAL on a problem recorded as undetectable (2026-08-20)
+
+"Stage 7 - RALLY END is undetectable" records six failed routes. All six failed for want of
+ball height. With `ball_3d.parquet` supplying it, `tools/detect_rally_ends.py` implements the
+operator's taxonomy directly:
+
+    hit into the net               -> hitter loses    (SUSTAINED z<=1ft within 5ft of the net)
+    ball bounces outside the court -> hitter loses    (bounce position, exact at z=0)
+    bounces in and is not returned -> hitter WINS     (bounce in + no contact for 2s)
+
+First run, indoor, against the operator's 10 point-end times:
+
+    7/10 found  —  recall 70%, precision 58%
+    by reason: 5 out, 5 net, 2 not-returned
+
+Not good enough to ship, but this is the first non-zero result the problem has ever produced.
+
+**Read the errors carefully — two of the five "false" detections are near-misses, not false
+positives.** 80.6s is almost certainly the 77s point end detected 3.6s late, and 155.7s sits
+just outside the 2.5s match window of the 159s end. The genuinely wrong one is 4.69s, which
+fires DURING a live rally (rally 0 runs 3-20s) — `NOT_RETURNED_S = 2.0` is too short, so a
+bounce mid-rally with a slightly delayed reply reads as a winner.
+
+Obvious next steps, in order:
+1. Raise `NOT_RETURNED_S` — a 2s gap happens inside live rallies.
+2. The net-hit timestamp is the START of the sustained-low run, which lags the actual net
+   contact by however long the ball takes to settle. Anchoring to the preceding contact would
+   land it closer to truth and recover 80.6s.
+3. Score on the OUTDOOR clip too (`ball_3d.parquet` is now built there as well), where the
+   operator listed 6 net hits explicitly — the net rule can be scored on its own rather than
+   only through point ends.
+
+Reconstruction quality on both clips, for reference:
+
+| clip | blob fit | z at bounces | in-flight envelope |
+|---|---|---|---|
+| indoor | 1.10·pred + 4.12 px | 0.28 ft | 48% raw -> 91% |
+| outdoor | 1.32·pred + 1.66 px | 0.33 ft | 49% raw -> 89% |
