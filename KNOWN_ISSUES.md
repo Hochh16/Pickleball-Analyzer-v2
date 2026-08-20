@@ -1569,3 +1569,49 @@ false ends are identified — indoor 5s, 101s, 127s, 156s. Fixing those turns th
 
 The default pipeline is unchanged and re-verified: 23/34 false positives, 94 real shots kept,
 1 wrong-player, serves 86%/86%, 14 rallies.
+
+## Rally-end restructure ATTEMPTED and REJECTED; and there is no third clip on disk (2026-08-20)
+
+### The false ends are the ball still FLYING
+
+Diagnosed the four indoor false ends against the reconstruction. Every one calls the point
+over while the ball is airborne:
+
+| false end | reason | ball height | travel |
+|---|---|---|---|
+| 4.69s | not-returned | **4.22 ft** | 26.4 ft |
+| 127.24s | out | **3.41 ft** | 7.3 ft |
+| 155.66s | out | **4.87 ft** | 28.6 ft |
+
+against every correct `net` end at z ≈ 0.00-0.76 ft and travel under 6 ft.
+
+### Anchoring on the dead ball instead — WORSE, measured
+
+That suggested a cleaner rule: a point ends when the ball STOPS BEING IN PLAY, so find dead
+intervals directly and read the reason off where the ball died (beside the net / outside the
+lines / inside the court). It is more principled and it is empirically worse:
+
+| | indoor point-ends | indoor precision | outdoor net hits |
+|---|---|---|---|
+| shipped (3 rules, shot-anchored) | **9/10** | **9/14 = 64%** | 7/7, 70% |
+| dead-interval anchored | 7/10 | 7/16 = 44% | 7/7, 70% |
+
+Swept the "how long after a contact" constraint over 2/3/4/6s; none reached the shipped
+version. **Reverted.**
+
+Why the tidier rule loses: the shipped `out` and `not-returned` rules read the BOUNCE stream,
+which still catches point-ends where the ball never visibly settles — it rolls out of frame,
+or is picked up straight away. Requiring the ball to come to rest on camera misses those. The
+two mechanisms are complementary, and firing early on a flying ball costs less than missing
+ends outright.
+
+### No third clip exists without new footage
+
+`videos/` holds three files: the indoor clip, the outdoor clip, and a 20-second excerpt. Every
+processed folder in `data/` traces back to one of those two full videos, so there is no
+independent third venue to validate against. Confirming these numbers needs NEW footage from
+the operator — a different court or session — then calibration, a pipeline run, `build_ball_3d`
+(~30-60 min of decode), and rally start/end times in the `_truth_worksheet.csv` format.
+
+Until then, every threshold in the rally-end work rests on 10 indoor points and 7 outdoor net
+hits, and several were swept against exactly those. Treat them as provisional.
