@@ -166,6 +166,33 @@ def detect(clip: Path) -> list[dict]:
                          "bounce_xy_ft": [round(bx, 1), round(by, 1)],
                          "outcome": "hitter_wins"})
 
+    # A point cannot end before the ball has been played ACROSS the net. Operator review
+    # of the flagged false ends settled this: the call at 127.24s lands on a serve by the
+    # partner ("1 shot since the serve, sides ['near']") — the ball had not yet crossed, so
+    # nothing could have ended. The call at 155.66s looks identical on timing (2.2s after a
+    # serve vs 1.96s) but has sides ['far', 'near'], a real exchange, and the operator
+    # confirms it IS the end of that point. Timing cannot separate those two; a side change
+    # can, and it is a rule of the game rather than a tuned threshold.
+    def _crossed_since(anchor_t: float, end_t: float) -> bool:
+        sides = [s.get("hitter_side") for s in shots
+                 if anchor_t <= s["t_sec"] <= end_t and s.get("hitter_side")]
+        return len(set(sides)) > 1
+
+    serve_t = [float(s["t_sec"]) for s in shots if s.get("is_serve")]
+    kept_ends = []
+    for e in ends:
+        # A NET end is self-evidencing — the ball demonstrably died at the net — and a serve
+        # INTO the net is a legitimate point end with no side change at all. Requiring one
+        # here cost a confirmed outdoor net hit. The rule belongs only on `out` and
+        # `not-returned`, which rest on an inferred bounce position rather than on the ball
+        # visibly going dead.
+        if e["reason"] != "net":
+            prior = [x for x in serve_t if x <= e["t_sec"]]
+            if prior and not _crossed_since(prior[-1], e["t_sec"]):
+                continue                # ball never left the serving side: not an end
+        kept_ends.append(e)
+    ends = kept_ends
+
     # one END per point: collapse anything within NOT_RETURNED_S of the previous one
     ends.sort(key=lambda e: e["t_sec"])
     merged: list[dict] = []

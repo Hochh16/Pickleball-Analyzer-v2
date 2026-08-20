@@ -83,5 +83,16 @@
    "server": "opp",
    "n_shots": 11
   }
+ ],
+ "operator_corrections": [
+  {
+   "t_sec": 155.66,
+   "applies_to_point": 8,
+   "note": "Operator reviewed the detector's flagged false positives 2026-08-20 and confirmed the end at 155.66s is CORRECT -- the opponent hit the ball out. The worksheet lists point 8 ending at 159s, so scoring against end_t_sec counts this real end as a false positive. Measured precision therefore UNDERSTATES the detector by at least one.",
+   "also_reviewed": {
+    "4.69": "genuinely false - partner waiting for a return; the ball in frame is a bounce on the opponent's side just before he returns it",
+    "127.24": "genuinely false - this is a SERVE by the partner, a point START"
+   }
+  }
  ]
 }

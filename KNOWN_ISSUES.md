@@ -1615,3 +1615,44 @@ the operator — a different court or session — then calibration, a pipeline r
 
 Until then, every threshold in the rally-end work rests on 10 indoor points and 7 outdoor net
 hits, and several were swept against exactly those. Treat them as provisional.
+
+## Rally ends: the side-change rule, from operator review of the false positives (2026-08-20)
+
+The operator viewed the three flagged indoor false ends and returned a verdict on each:
+
+| flagged end | operator's reading | verdict |
+|---|---|---|
+| 4.69s | *"the partner waiting for a return; the ball in frame is a bounce on the opponent's side right before he returns it"* | genuinely FALSE |
+| 127.24s | *"a serve by partner"* | genuinely FALSE — this is a point START |
+| 155.66s | *"the opponent hitting the ball out … either way, the end of rally you detected is correct"* | **actually CORRECT** |
+
+**Measured precision understates the detector.** 155.66s is a real end scored as a false
+positive only because the worksheet lists that point ending at 159s and the match window is
+2.5s. Recorded in `truth.json` under `operator_corrections`.
+
+### The fix: a point cannot end before the ball has crossed the net
+
+127.24s and 155.66s are inseparable on timing — 1.96s vs 2.22s after a serve. They separate
+completely on whether the ball was ever played across:
+
+| end | shots since serve | sides seen |
+|---|---|---|
+| 127.24 (false) | 1 | `['near']` — only the serve itself |
+| 155.66 (correct) | 2 | `['far', 'near']` — a real exchange |
+
+So an `out` or `not-returned` end now requires at least one hitter-side change since the last
+serve. That is a rule of the game, not a tuned threshold.
+
+**`net` ends are exempt, and the exemption was measured, not assumed:** a serve INTO the net
+is a legitimate point end with no side change at all, and requiring one cost a confirmed
+outdoor net hit (7/7 → 6/7). A net end is self-evidencing — the ball demonstrably went dead
+at the net — whereas `out` and `not-returned` rest on an inferred bounce position.
+
+| | before | after |
+|---|---|---|
+| indoor point-ends | 9/10, precision 9/14 | 9/10, **precision 9/13** (10/13 counting 155.66) |
+| outdoor net hits | 7/7, precision 7/10 | 7/7, precision 7/10 |
+
+Remaining indoor false ends: 4.69s (caused by a MISSED return, not by the end rule — the
+opponent did play the ball, we just did not detect it), 80.63s (very likely the 77s end
+detected late) and 101.33s (during a between-point stretch).
