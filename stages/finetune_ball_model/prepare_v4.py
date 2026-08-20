@@ -20,7 +20,7 @@ from pathlib import Path
 import cv2
 
 from stages.finetune_ball_model._v4_data import (
-    densify_labels, PROC_H, PROC_W, FRAME_STRIDE)
+    densify_labels, FRAMES_DIR, PROC_H, PROC_W, FRAME_STRIDE)
 
 
 def main(argv=None) -> int:
@@ -70,7 +70,7 @@ def main(argv=None) -> int:
         print("no usable samples")
         return 1
 
-    frames_dir = args.folder / "frames_720"
+    frames_dir = args.folder / FRAMES_DIR
     frames_dir.mkdir(exist_ok=True)
     lo, hi = min(needed), max(needed)
     print(f"{clip}: {len(samples)} samples, {len(needed)} unique frames "
@@ -99,7 +99,7 @@ def main(argv=None) -> int:
 
     manifest = {
         "schema_version": 1, "clip": clip, "proc_h": PROC_H, "proc_w": PROC_W,
-        "stride": args.stride, "frames_dir": "frames_720",
+        "stride": args.stride, "frames_dir": FRAMES_DIR,
         "src_w": src_w, "src_h": src_h, "n_samples": len(samples),
         "n_visible": sum(1 for s in samples if s["visible"]),
         "samples": samples,

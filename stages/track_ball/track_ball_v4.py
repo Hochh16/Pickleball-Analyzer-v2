@@ -91,8 +91,17 @@ def load_model(weights: Path, device) -> Tuple[TrackNet, tuple]:
     return model, ishape
 
 
-def to_proc(frame) -> np.ndarray:
-    rgb = cv2.cvtColor(cv2.resize(frame, (PROC_W, PROC_H), interpolation=cv2.INTER_AREA),
+def to_proc(frame, proc_hw=(PROC_H, PROC_W)) -> np.ndarray:
+    """Downscale one frame to the model's OWN processing resolution.
+
+    Driven by the checkpoint's `input_shape` rather than the module constant, so a model
+    trained at a different resolution runs correctly without editing code here. The ball is
+    only 3.8 px across at the far baseline once 4K is squeezed to 720p, which is what the
+    escalation to 1080p is meant to relieve — and a 1080p model fed 720p input, or the
+    reverse, would silently mis-detect rather than fail.
+    """
+    ph, pw = int(proc_hw[0]), int(proc_hw[1])
+    rgb = cv2.cvtColor(cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_AREA),
                        cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     return rgb.transpose(2, 0, 1)
 
@@ -328,7 +337,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     fps = cap.get(cv2.CAP_PROP_FPS)
     sw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     sh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    sx, sy = sw / PROC_W, sh / PROC_H
+    # map detections back to SOURCE pixels using the model's own resolution
+    sx, sy = sw / float(ishape[1]), sh / float(ishape[0])
 
     start = max(0, args.start_frame)
     end = n_total if args.max_frames is None else min(n_total, start + args.max_frames)
@@ -350,7 +360,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             break
         if src_cache is not None:
             src_cache[fidx] = fr
-        buf.append(to_proc(fr))
+        buf.append(to_proc(fr, ishape))
         if len(buf) > 3:
             buf.pop(0)
         if len(buf) == 3:
@@ -394,7 +404,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "video_width": sw,
         "video_height": sh,
         "detector": {"tool": "stages/track_ball/track_ball_v4.py",
-                     "weights": str(args.weights), "proc_hw": [PROC_H, PROC_W],
+                     "weights": str(args.weights), "proc_hw": [int(ishape[0]), int(ishape[1])],
                      "conf_thresh": args.conf, "max_gap_frames": MAX_GAP_FRAMES,
                      "topk": args.topk, "cand_floor": args.cand_floor,
                      "max_step_px": args.max_step_px,

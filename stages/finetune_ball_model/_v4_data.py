@@ -23,9 +23,20 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-# Processing resolution (decision: start 720p; escalate to 1080p if recall low)
-PROC_H, PROC_W = 720, 1280
-HEATMAP_SIGMA_PX = 3.0      # Gaussian std at processing res (~ball radius)
+# Processing resolution. The original note here read "start 720p; escalate to 1080p if
+# recall low". Recall IS low — the ball is detected in only 69-76% of frames — and the cause
+# is measurable: at 720p a 4K frame is squeezed 3x, so the ball is 8.1 px across at the near
+# baseline and just 3.8 px at the far one. Tracking losses skew to the smallest balls (43-52%
+# of losses in the smallest third of sizes against a 33% baseline) and detector confidence
+# collapses from ~0.78 to ~0.40 immediately before a loss. So: escalated.
+#
+# The frame cache directory is DERIVED from this, so 720p and 1080p caches sit side by side
+# and re-extracting never clobbers the other. `v4_manifest.json` records which one it used.
+PROC_H, PROC_W = 1080, 1920
+FRAMES_DIR = f"frames_{PROC_H}"
+# Gaussian std at processing res (~ball radius). Scales with the resolution: at 720p the ball
+# is ~4-8 px across, at 1080p ~6-12, so a fixed sigma would under-cover the target.
+HEATMAP_SIGMA_PX = 3.0 * (PROC_H / 720.0)
 FRAME_STRIDE = 1            # gap between the 3 stacked frames (tunable)
 
 
