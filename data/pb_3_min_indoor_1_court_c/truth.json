@@ -1,0 +1,101 @@
+{
+ "schema_version": 1,
+ "clip": "pb_3_min_indoor_1_court_c",
+ "source": "operator worksheet 2026-08-20, HELD OUT - no thresholds tuned against this clip",
+ "totals": {
+  "points": 10,
+  "shots": 59
+ },
+ "points": [
+  {
+   "point": 0,
+   "start_t_sec": 8.14,
+   "end_t_sec": 13.86,
+   "server": "user",
+   "n_shots": 5,
+   "end_reason": "not-returned",
+   "note": "ended with partner hitting drive and missed by opponent.  Winning shot bounced in on opponents side"
+  },
+  {
+   "point": 1,
+   "start_t_sec": 24.83,
+   "end_t_sec": 30.04,
+   "server": "user",
+   "n_shots": 4,
+   "end_reason": "net",
+   "note": "shot 4 was hit into the net by opponent"
+  },
+  {
+   "point": 2,
+   "start_t_sec": 39.7,
+   "end_t_sec": 41.62,
+   "server": "user",
+   "n_shots": 1,
+   "end_reason": "out",
+   "note": "serve was out. Hit long."
+  },
+  {
+   "point": 3,
+   "start_t_sec": 57.8,
+   "end_t_sec": 77.0,
+   "server": "partner",
+   "n_shots": 19,
+   "end_reason": "not-returned",
+   "note": "winning shot was by partner. Ball bounced on opposing side and noone hit it back"
+  },
+  {
+   "point": 4,
+   "start_t_sec": 86.0,
+   "end_t_sec": 92.2,
+   "server": "partner",
+   "n_shots": 5,
+   "end_reason": "not-returned",
+   "note": "winning shot by partner. Ball bounced on opposing side and noone hit it back"
+  },
+  {
+   "point": 5,
+   "start_t_sec": 104.0,
+   "end_t_sec": 107.0,
+   "server": "partner",
+   "n_shots": 2,
+   "end_reason": "out",
+   "note": "return was hit long"
+  },
+  {
+   "point": 6,
+   "start_t_sec": 113.0,
+   "end_t_sec": 118.0,
+   "server": "partner",
+   "n_shots": 4,
+   "end_reason": "net",
+   "note": "opponent hit winning shot at feet of user.  User hit the ball but it did Not go back over the net."
+  },
+  {
+   "point": 7,
+   "start_t_sec": 133.9,
+   "end_t_sec": 142.9,
+   "server": "opponent",
+   "n_shots": 9,
+   "end_reason": "out",
+   "note": "opponent hit last shot out of bounds"
+  },
+  {
+   "point": 8,
+   "start_t_sec": 150.3,
+   "end_t_sec": 154.3,
+   "server": "opponent",
+   "n_shots": 3,
+   "end_reason": "not-returned",
+   "note": "opponent hit last shot over the net and user could not get to it"
+  },
+  {
+   "point": 9,
+   "start_t_sec": 165.2,
+   "end_t_sec": 173.7,
+   "server": "opponent",
+   "n_shots": 7,
+   "end_reason": "out",
+   "note": "opponent hit shot that went long"
+  }
+ ]
+}

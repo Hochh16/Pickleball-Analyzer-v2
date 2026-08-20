@@ -1685,3 +1685,46 @@ separately and deliberately have not been run yet.
 Court C also carries the project's first CLICKED user identity (`basis: click, confidence
 0.95` rather than `starting-corner` at 0.5), and the user resolves to 2 track fragments
 against 11 on court B.
+
+## HELD-OUT VERDICT: rally-end thresholds did NOT generalise (2026-08-20)
+
+Court C scored cold, with nothing tuned against it. The result is worse than the clip the
+thresholds were fitted on, which is what a held-out test is for.
+
+| | court B (tuned on) | **court C (held out)** |
+|---|---|---|
+| point-ends found | 9/10 (90%) | **6/10 (60%)** |
+| precision | 9/16 (56%) | **6/14 (43%)** |
+| end REASON correct | n/a | **3/6** |
+
+**Correction to earlier figures.** Court B was previously reported at 9/13 precision. Its
+`classified.json` had been left in a handling-filter-OFF experimental state (105 shots
+instead of 71) since the crossing probe, and never re-run. Re-running the committed detector
+gives **9/16 = 56%**, not 69%. Every Court B precision number quoted before this entry is
+too high.
+
+### The four Court C misses are UPSTREAM failures, not end-rule failures
+
+Ball data is present at all four (210-304 rows, ball reaches z = 0.00 at every one):
+
+| missed end | truth reason | why it failed |
+|---|---|---|
+| 13.86s | not-returned | **no bounce detected at all** in the 6s window — `out`/`not-returned` both need one |
+| 41.62s | out | **nearest bounce is 5.4s late** (47.05s); the real landing was missed |
+| 92.20s | not-returned | bounce found correctly at 92.19s, but a **spurious shot 1.2s later** made it look returned |
+| 30.04s | net | the net rule's low+near-net fraction never reached 65% (22 of 304 rows) |
+
+So three of four are bounce-detector recall or shot false positives, and only one is an
+end-rule threshold. **Rally-end detection is bottlenecked by the stages beneath it**, and
+tuning its own thresholds further would be fitting noise on top of that.
+
+### What still holds
+
+The 3-D reconstruction generalised cleanly (see the previous entry: Court C's bounce control
+is the best of the three at 0.13 ft). The side-change rule also generalised — disabling it
+changes neither clip's recall and *lowers* precision on both (B 56%→52%, C 43%→38%), so it
+earns its place.
+
+What did not generalise is the end-detection accuracy as a whole. Treat 9/10 as the
+optimistic end of the range and 6/10 as the realistic one, and do not enable the
+between-point derivation on these numbers.
