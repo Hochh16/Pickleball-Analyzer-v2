@@ -1374,7 +1374,7 @@ duplicate detections inside a live rally where the ball is legitimately airborne
 APEX MAGNITUDE that separates them, which is a weaker physical story than a clean geometric
 rule and deserves a larger labelled sample before it becomes a threshold.
 
-Reproduce: `python -m tools.test_crossing_signal <off-filter classified.json>`
+Reproduce: `python -m tools.probe_crossing_signal <off-filter classified.json>`
 
 ## What ball height unlocks — the plan (2026-08-19)
 
