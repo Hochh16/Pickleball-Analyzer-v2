@@ -1375,3 +1375,80 @@ APEX MAGNITUDE that separates them, which is a weaker physical story than a clea
 rule and deserves a larger labelled sample before it becomes a threshold.
 
 Reproduce: `python -m tools.test_crossing_signal <off-filter classified.json>`
+
+## What ball height unlocks — the plan (2026-08-19)
+
+With `tools/ball_3d.py` working, several things recorded here as blocked are worth reopening.
+Operator refinements to this plan are folded in below and change it materially.
+
+### Between-point balls are DERIVED, not classified
+
+The 18-of-23 remaining outdoor false positives (feeds, throws, balls rolling after a net hit,
+shots after the point ended, pick-ups) were being treated as a classification problem, and it
+resisted every attempt: 7 of 11 feeds are struck with a paddle, so they are physically real
+shots that only game context excludes.
+
+**Operator's point: if serves and rally-ends are accurate, between-point needs no classifier
+at all — it is everything between a rally end and the next serve.** That is already the
+design (`structure_points` sets `is_between_point` from rally boundaries); it was blocked
+only because rally ends were undetectable. So this whole category collapses into the
+rally-boundary work rather than needing its own solution.
+
+It also disposes of a bad idea: a fed ball was going to be identified by its low, slow arc.
+The operator points out a lob during a rally has a low slow arc too. Correct — and moot, if
+the boundaries carry it.
+
+### Rally end — the operator's taxonomy, now measurable
+
+| rule | measurement | evidence |
+|---|---|---|
+| hit into the net → hitter loses | **sustained** z≈0 near the net | demonstrated at the 19.45s net hit: falls 4.33 ft → 0.00 and stays pinned 2+ seconds, 0.1-3 ft from the net line |
+| bounces outside the court → hitter loses | bounce position (exact at z=0) | positions already trustworthy — 40 of 41 land inside the court |
+| bounces in, not returned → hitter wins | bounce in court + no following contact | computable once bounces are reliable |
+
+Note the discriminator for a net hit is z≈0 **sustained**, not z≈0 — ordinary play reaches
+z=0 on every bounce. A bounce touches the floor for a frame or two; a dead ball stays for
+seconds.
+
+Bounce DETECTION also improves: currently a pixel y-flip heuristic, it becomes a local
+minimum of z at z≈0. Bounce POSITION was never the weak part.
+
+This reopens "Stage 7 - RALLY END is undetectable" (six routes failed). All six failed for
+want of height.
+
+### Serves
+
+Behind-the-baseline and the time gap are already implemented and need no height (the
+hitter's feet are at z=0, so their position is exact). What is new is **contact at or below
+the hip** — measurable now for both the ball and the hip, since the same camera model applies
+to any pose keypoint.
+
+**Operator's caution: a drive can also be struck below the hip, so the hip rule is not
+sufficient alone — it is the CONJUNCTION (behind the baseline + opening time gap + at or
+below the hip + the ball rising from a toss beforehand) that makes a serve hard to confuse
+with anything else.** Build it as a combined test, never as a single rule.
+
+Height also attacks the toss bug the operator found: `serve_appearance` fires when the ball
+first APPEARS after dead time, which is the toss, not the strike. A toss is unmistakable in
+height — the ball rises with no impulse; the strike is the impulse at the bottom.
+
+**Caveat:** contact frames are the WORST place to measure ball size (paddle occlusion, motion
+blur, the ball against a bright body). Validate before trusting a hip comparison.
+
+### Also unlocked
+
+- **Shot type** — drive/dink/drop/lob is currently inferred from pixel velocities; apex height
+  in feet IS the physical definition. Most likely fix for the 42% type-error rate.
+- **Ball speed in real units** — 3-D positions plus frame rate give ft/s. Previously only
+  px/frame, which conflates depth: the same shot reads slower at the far baseline purely
+  because it is farther away. Needs fitting over a flight segment, not frame differences,
+  since differentiating a noisy position amplifies noise.
+- **Volleys** — becomes "no bounce since the last contact" rather than an inference.
+- **Adjacent-court balls** — reconstruct to positions off our court.
+
+### GATING ITEM: the bias constant
+
+Everything absolute rests on `bias`, which ranges **1.59-2.03** across clips and windows
+because it is estimated from only 5-20 bounces. Relative comparisons within a clip are sound;
+heights in feet, speeds in mph and any cross-venue threshold are not, until this is fixed.
+Do this first — it is cheap and everything else inherits its error.
