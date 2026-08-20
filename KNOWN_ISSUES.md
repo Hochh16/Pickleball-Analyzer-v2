@@ -1822,3 +1822,57 @@ Across both clips: ends found 15/20 → **18/20**, at 18 correct of 44 rather th
 Shipped, because a missed end cannot be recovered later while a false one can still be
 filtered by rally structure — but note this makes the between-point derivation (which needs
 PRECISION) further away, not closer.
+
+## The remaining 23 shot false positives: three approaches measured and rejected (2026-08-20)
+
+Attacked as the "cheap target" for precision. It is not cheap. Current breakdown on the
+acceptance clip: feeds/throws 7, duplicates 5, rolling after a net hit 3, point already over
+3, pick-up/no-swing 2, adjacent court 2, background object 1.
+
+**1. Reject shots taken while the ball is DEAD.** With height available, a shot during a
+sustained low, non-travelling ball should be impossible. Measured at each labelled shot
+(±0.4s window):
+
+| group | median low-frac | median travel | judged dead |
+|---|---|---|---|
+| REAL shots | 0.07 | 23.2 ft | 0% |
+| ball rolling after net hit | **0.04** | 23.4 ft | **0%** |
+| point already over | 0.09 | 22.1 ft | 0% |
+
+No separation at all — the "rolling" false positives do not read as low. At those moments the
+tracker is not on the ball, so its height is meaningless. The dead-ball state works for rally
+ENDS (where the ball genuinely is on the floor) and not here.
+
+**2. Derive between-point from the improved rally ends.** Re-measured now that end recall is
+9/10 on both clips. It got WORSE, not better, exactly as predicted when the height bounces
+landed: more ends (20 → 33 outdoor) means more live play marked dead.
+
+| | junk excluded | real shots lost |
+|---|---|---|
+| earlier ends, 4s cap | 7/28 | 12/89 |
+| **improved ends, 4s cap** | 12/28 | **37/89** |
+| improved ends, 8s cap | 14/28 | 47/89 |
+
+Still off by default. Confirms that end PRECISION, not recall, is what gates this.
+
+**3. Identify duplicates by the absence of a bounce or side change.** A duplicate detection of
+one strike should have neither between its parts. Measured over consecutive shot pairs under
+3s apart:
+
+| group | has bounce between | side change between | neither |
+|---|---|---|---|
+| REAL pair | 55% | 99% | 0% |
+| duplicate | 83% | 83% | **0%** |
+
+The opposite of the hypothesis: duplicates have MORE bounces between their parts than real
+pairs do, and nearly as many side changes. They look like genuine exchanges.
+
+### Where this leaves precision
+
+13 of the 23 (feeds, rolling, point-over) are game-context errors that reduce to the
+between-point problem, which is gated on end precision. 5 are duplicates with no measured
+discriminator. Only the 3 contamination cases (adjacent court, background object) are of a
+kind previously solved, and those are the residue the latch gate did not catch.
+
+Nothing shipped from this round. State unchanged and re-verified: 23/34 false positives, 94
+real shots kept, 1 wrong-player, serves 86%/86%, rally ends 9/10 on both clips.

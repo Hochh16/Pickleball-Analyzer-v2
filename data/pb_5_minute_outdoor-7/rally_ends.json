@@ -1,0 +1,361 @@
+{
+ "schema_version": 1,
+ "ends": [
+  {
+   "t_sec": 10.13,
+   "reason": "out",
+   "by_shot_t": 7.85,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    7.8,
+    48.0
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 20.22,
+   "reason": "net",
+   "by_shot_t": 15.6,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 28.72,
+   "reason": "out",
+   "by_shot_t": 27.88,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    2.5,
+    48.5
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 39.4,
+   "reason": "net",
+   "by_shot_t": 35.52,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 50.17,
+   "reason": "out",
+   "by_shot_t": 48.62,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    7.5,
+    47.8
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 57.27,
+   "reason": "not-returned",
+   "by_shot_t": 55.08,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    14.8,
+    12.2
+   ],
+   "outcome": "hitter_wins"
+  },
+  {
+   "t_sec": 70.6,
+   "reason": "net",
+   "by_shot_t": 67.6,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 87.25,
+   "reason": "out",
+   "by_shot_t": 84.33,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    -9.1,
+    22.7
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 98.67,
+   "reason": "not-returned",
+   "by_shot_t": 97.38,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    2.6,
+    7.4
+   ],
+   "outcome": "hitter_wins"
+  },
+  {
+   "t_sec": 105.18,
+   "reason": "out",
+   "by_shot_t": 104.6,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    8.3,
+    48.4
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 111.02,
+   "reason": "net",
+   "by_shot_t": 110.18,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 121.2,
+   "reason": "out",
+   "by_shot_t": 120.47,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    7.0,
+    -2.5
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 132.12,
+   "reason": "out",
+   "by_shot_t": 131.43,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    7.6,
+    45.8
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 139.23,
+   "reason": "net",
+   "by_shot_t": 138.22,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 155.82,
+   "reason": "net",
+   "by_shot_t": 153.68,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 160.53,
+   "reason": "out",
+   "by_shot_t": 159.05,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    -3.1,
+    42.6
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 174.82,
+   "reason": "out",
+   "by_shot_t": 174.0,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    -1.4,
+    21.9
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 177.35,
+   "reason": "out",
+   "by_shot_t": 175.1,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    -7.7,
+    22.0
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 180.13,
+   "reason": "net",
+   "by_shot_t": 180.13,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 183.8,
+   "reason": "out",
+   "by_shot_t": 181.92,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    1.9,
+    46.5
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 200.73,
+   "reason": "out",
+   "by_shot_t": 198.63,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    -6.7,
+    55.5
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 203.12,
+   "reason": "out",
+   "by_shot_t": 202.05,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    -1.5,
+    54.3
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 205.55,
+   "reason": "net",
+   "by_shot_t": 205.02,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 211.78,
+   "reason": "out",
+   "by_shot_t": 209.4,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    5.7,
+    46.4
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 221.25,
+   "reason": "out",
+   "by_shot_t": 219.77,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    4.7,
+    45.6
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 225.02,
+   "reason": "out",
+   "by_shot_t": 223.4,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    4.3,
+    45.6
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 229.37,
+   "reason": "net",
+   "by_shot_t": 227.8,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 252.8,
+   "reason": "net",
+   "by_shot_t": 251.17,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 276.05,
+   "reason": "out",
+   "by_shot_t": 274.7,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    11.2,
+    47.8
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 284.83,
+   "reason": "out",
+   "by_shot_t": 283.72,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    7.7,
+    47.9
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 289.48,
+   "reason": "out",
+   "by_shot_t": 285.45,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    12.3,
+    -1.1
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 297.0,
+   "reason": "out",
+   "by_shot_t": 295.85,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    -4.6,
+    -4.6
+   ],
+   "outcome": "hitter_loses"
+  },
+  {
+   "t_sec": 312.13,
+   "reason": "out",
+   "by_shot_t": 310.47,
+   "hitter_side": "near",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    -11.9,
+    54.9
+   ],
+   "outcome": "hitter_loses"
+  }
+ ]
+}
