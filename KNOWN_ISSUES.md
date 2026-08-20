@@ -1728,3 +1728,58 @@ earns its place.
 What did not generalise is the end-detection accuracy as a whole. Treat 9/10 as the
 optimistic end of the range and 6/10 as the realistic one, and do not enable the
 between-point derivation on these numbers.
+
+## Height CANNOT detect bounces — the precision boundary of the ball-3-D method (2026-08-20)
+
+The held-out verdict pointed at bounce detection: three of the four Court C missed ends were
+bounce-recall or shot false positives. A bounce ought to be trivial with height — a local
+minimum of z at z≈0. It is not, and the reason draws a clean line under what the
+reconstruction can and cannot do.
+
+**The per-frame height is far too noisy for an instantaneous event.**
+
+| | court C | court B |
+|---|---|---|
+| frame-to-frame \|Δz\|, median | 0.12 ft | 0.10 ft |
+| frame-to-frame \|Δz\|, p90 | **0.73 ft** | **0.65 ft** |
+| times z dips below 0.35 ft | **230** | 214 |
+
+230 floor crossings on a clip with 59 real shots. Direct z-minimum detection yields 107-133
+events against ~40 real bounces, no matter how the arrival/departure heights are constrained.
+
+**Smoothing does not rescue it.** More smoothing brings the COUNT to something plausible but
+destroys agreement with the bounces we know are real — there is no setting that gives both:
+
+| smoothing | events (court C) | confirms current detector |
+|---|---|---|
+| none | 133 | 34/40 |
+| 5 frames | 83 | 29/40 |
+| 9 frames | 60 (plausible!) | 24/40 |
+| 15 frames | 38 | 15/40 |
+
+**Ballistic fitting does not rescue it either.** Fitting z(t) as a parabola between contacts
+gives a median RMS residual of **1.16 ft**, and the recovered gravity constant comes out at
+−16.1, −0.5, 0.5, 104.5, 3.1, 26.5, 1.1 ft/s² across segments — against a true 32.2. The
+height track does not follow projectile physics at the per-frame level.
+
+### The boundary this draws
+
+The reconstruction is strong for **sustained and aggregate** questions and weak for
+**instantaneous** ones, and every result so far fits that line:
+
+| works | measured |
+|---|---|
+| dead ball over 0.5s (net hits) | 7/7 outdoor net hits |
+| apex over a whole flight (did the ball cross?) | AUC 0.95 |
+| z at bounces, aggregated over ~150 samples | 0.13-0.33 ft |
+| **fails** | |
+| per-frame height | ±0.7 ft at p90 |
+| a single bounce instant | 107-133 false events |
+| ballistic curvature over one flight | gravity off by 1-3x, wrong sign |
+
+Averaging suppresses the noise; instantaneous tests are dominated by it. This is why the
+per-frame separability was ~0.8 while the aggregated crossing test reached 0.95.
+
+**So bounce detection cannot be improved with height.** Improving it means working on the
+existing pixel-space detector, which is a separate piece of work that does not involve the
+3-D track at all.
