@@ -1498,41 +1498,42 @@ net-hit detection and for crossing decisions (the net is 2.83 ft); NOT good enou
 absolute heights to the inch. Cached per clip in `ball_size_calib.json`, since the walk over
 every bounce is expensive and the fit is a property of the camera, not the analysis window.
 
-## Rally END detection — FIRST SIGNAL on a problem recorded as undetectable (2026-08-20)
+## Rally END detection — WORKING, precision is the open side (2026-08-20)
 
 "Stage 7 - RALLY END is undetectable" records six failed routes. All six failed for want of
 ball height. With `ball_3d.parquet` supplying it, `tools/detect_rally_ends.py` implements the
 operator's taxonomy directly:
 
-    hit into the net               -> hitter loses    (SUSTAINED z<=1ft within 5ft of the net)
+    hit into the net               -> hitter loses    (SUSTAINED low + near the net + not moving)
     ball bounces outside the court -> hitter loses    (bounce position, exact at z=0)
     bounces in and is not returned -> hitter WINS     (bounce in + no contact for 2s)
 
-First run, indoor, against the operator's 10 point-end times:
+| | recall | precision |
+|---|---|---|
+| indoor point-ends (operator truth, 10) | **9/10** | 9/14 |
+| outdoor net hits (operator-confirmed, 7) | **7/7** | 7/10 |
 
-    7/10 found  —  recall 70%, precision 58%
-    by reason: 5 out, 5 net, 2 not-returned
+**Two mistakes on the way, both instructive.**
 
-Not good enough to ship, but this is the first non-zero result the problem has ever produced.
+1. *A dead ball is a statistical state, not a clean one.* The first version required an
+   unbroken run of low+near-net samples, which rejected the operator's 19.45s net hit
+   outright — the ball is plainly dead on the floor for 4+ seconds, yet its reconstructed
+   court_y wanders 18.6-30.2 ft and z crosses 1.0 ft repeatedly. Asking for a FRACTION of a
+   window instead took outdoor net recall from 4/7 to 7/7.
+2. *A window-scan bug that silently returned nothing.* The loop extended its window while
+   `ts[b+1] - ts[a] < sustain_s`, guaranteeing the very next check `if ts[b] - ts[a] <
+   sustain_s: break` always fired — so it broke at the first index every time and found
+   nothing. Outdoor net detection read 0/7 and looked like a modelling failure; it was a
+   two-line indexing error. **Symptoms that look like "the idea does not work" are worth one
+   unit test before they are believed** — three lines of synthetic data caught it instantly.
+3. *Low near the net is not sufficient.* Kitchen dinking puts the ball there repeatedly. A
+   dead ball also stops TRAVELLING (`DEAD_TRAVEL_FT`), which lifted outdoor net precision
+   from 7/12 to 7/10.
 
-**Read the errors carefully — two of the five "false" detections are near-misses, not false
-positives.** 80.6s is almost certainly the 77s point end detected 3.6s late, and 155.7s sits
-just outside the 2.5s match window of the 159s end. The genuinely wrong one is 4.69s, which
-fires DURING a live rally (rally 0 runs 3-20s) — `NOT_RETURNED_S = 2.0` is too short, so a
-bounce mid-rally with a slightly delayed reply reads as a winner.
+**Precision is the open side** — roughly 1.4 detected ends per real one. Indoor false calls
+sit at 5s, 81s, 101s, 127s and 156s; 81s is very likely the 77s end (the only miss) detected
+late, so the real over-firing is nearer 4.
 
-Obvious next steps, in order:
-1. Raise `NOT_RETURNED_S` — a 2s gap happens inside live rallies.
-2. The net-hit timestamp is the START of the sustained-low run, which lags the actual net
-   contact by however long the ball takes to settle. Anchoring to the preceding contact would
-   land it closer to truth and recover 80.6s.
-3. Score on the OUTDOOR clip too (`ball_3d.parquet` is now built there as well), where the
-   operator listed 6 net hits explicitly — the net rule can be scored on its own rather than
-   only through point ends.
-
-Reconstruction quality on both clips, for reference:
-
-| clip | blob fit | z at bounces | in-flight envelope |
-|---|---|---|---|
-| indoor | 1.10·pred + 4.12 px | 0.28 ft | 48% raw -> 91% |
-| outdoor | 1.32·pred + 1.66 px | 0.33 ft | 49% raw -> 89% |
+**Treat these numbers as provisional.** They come from 10 points and 7 net hits, and several
+thresholds were swept against them. A third labelled clip is needed before trusting the exact
+figures.

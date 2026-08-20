@@ -21,6 +21,27 @@ from the net line.
 height error is 0.3-0.8 ft (see the calibration note in KNOWN_ISSUES). The signature survives
 that slack precisely because it is about DURATION, not a precise height.
 
+Two things the first version got wrong, both worth keeping in mind:
+
+* **A dead ball is a statistical state, not a clean one.** Requiring an unbroken run of
+  in-band samples rejected the operator's 19.45s net hit outright — the ball is plainly dead
+  on the floor, yet its reconstructed court_y wanders 18.6-30.2 ft and z crosses 1.0 ft
+  repeatedly. `_dead_start` asks for a FRACTION of the window instead.
+* **Low near the net is not sufficient** — a kitchen dink exchange puts the ball there over
+  and over. A dead ball also stops TRAVELLING, hence `DEAD_TRAVEL_FT`.
+
+MEASURED 2026-08-20:
+
+| | recall | precision |
+|---|---|---|
+| indoor point-ends (operator truth, 10) | **9/10** | 9/14 |
+| outdoor net hits (operator-confirmed, 7) | **7/7** | 7/10 |
+
+Recall is strong; precision is the open side — it still calls roughly 1.4 ends for every real
+one. Note both figures come from small samples (10 points, 7 net hits) and several thresholds
+were swept against them, so treat the exact numbers as provisional until a third clip is
+labelled.
+
 Usage:
     python -m tools.detect_rally_ends data/pb_3_min_indoor_1_court_b
     python -m tools.detect_rally_ends data/pb_3_min_indoor_1_court_b --score
@@ -37,25 +58,45 @@ import pandas as pd
 MAX_LOOK_S = 6.0        # how far past a contact to look for its outcome
 LOW_Z_FT = 1.0          # at or below this height counts as "on the floor"
 SUSTAIN_S = 0.5         # ...for at least this long = the ball is DEAD, not bouncing
-NET_BAND_FT = 5.0       # within this of the net line = "at the net"
+NET_BAND_FT = 8.0       # within this of the net line = "at the net"
+DEAD_FRAC = 0.65        # share of samples in the window that must be low+near-net
+DEAD_TRAVEL_FT = 6.0    # a DEAD ball barely moves; a dink crosses the net at speed
 OUT_MARGIN_FT = 1.0     # tolerance outside the lines before calling a bounce OUT
 NOT_RETURNED_S = 2.0    # no contact this long after a bounce = nobody played it
 SCORE_TOL_S = 2.5       # match window when scoring against operator truth
 
 
-def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
-    """[start, end] index pairs of consecutive True runs."""
-    out, i, n = [], 0, len(mask)
-    while i < n:
-        if mask[i]:
-            j = i
-            while j + 1 < n and mask[j + 1]:
-                j += 1
-            out.append((i, j))
-            i = j + 1
-        else:
-            i += 1
-    return out
+def _dead_start(mask: np.ndarray, ts: np.ndarray, sustain_s: float, frac: float,
+                xs: np.ndarray | None = None, ys: np.ndarray | None = None,
+                max_travel_ft: float | None = None) -> float | None:
+    """First time at which the ball is DEAD: mostly low and near the net, and stays that way.
+
+    Deliberately NOT a contiguous run. The reconstruction flickers — at the operator's
+    19.45s net hit the ball is unmistakably dead on the floor beside the net, yet its
+    reconstructed court_y wanders between 18.6 and 30.2 ft and z crosses 1.0 ft repeatedly.
+    Requiring an unbroken run of in-band samples rejected that outright, and with it the
+    three earliest net hits on the clip.
+
+    A dead ball is a statistical state, not a clean one: over any window of `sustain_s`,
+    at least `frac` of the samples sit low and near the net.
+    """
+    n = len(mask)
+    if n == 0:
+        return None
+    for a in range(n):
+        end_t = ts[a] + sustain_s
+        if ts[-1] < end_t:
+            break                                  # not enough data left to judge
+        b = int(np.searchsorted(ts, end_t, side="right"))
+        w = mask[a:b]
+        if not len(w) or w.mean() < frac:
+            continue
+        if max_travel_ft is not None and xs is not None and ys is not None:
+            span = max(float(np.ptp(xs[a:b])), float(np.ptp(ys[a:b])))
+            if span > max_travel_ft:
+                continue                           # still travelling: a rally, not a dead ball
+        return float(ts[a])
+    return None
 
 
 def detect(clip: Path) -> list[dict]:
@@ -80,15 +121,15 @@ def detect(clip: Path) -> list[dict]:
         if w.empty:
             continue
 
-        # --- 1. NET HIT: the ball goes to the floor beside the net and stays there -----
+        # --- 1. NET HIT: the ball goes to the floor beside the net and STAYS there -----
+        # Being low near the net is not enough on its own: a kitchen dink exchange puts the
+        # ball there over and over. A dead ball also stops TRAVELLING, so require the court
+        # position to be near-stationary over the window as well.
         near_net = (w.z_ft <= LOW_Z_FT) & ((w.court_y_ft - net_y).abs() <= NET_BAND_FT)
-        m = near_net.to_numpy()
-        ts = w.t_sec.to_numpy()
-        hit_net = None
-        for a, z in _runs(m):
-            if ts[z] - ts[a] >= SUSTAIN_S:
-                hit_net = float(ts[a])
-                break
+        hit_net = _dead_start(near_net.to_numpy(), w.t_sec.to_numpy(),
+                              SUSTAIN_S, DEAD_FRAC,
+                              w.court_x_ft.to_numpy(), w.court_y_ft.to_numpy(),
+                              DEAD_TRAVEL_FT)
         if hit_net is not None and hit_net < t_next + SUSTAIN_S:
             ends.append({"t_sec": round(hit_net, 2), "reason": "net",
                          "by_shot_t": round(t0, 2),
