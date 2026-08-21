@@ -201,6 +201,37 @@ class VideoReader:
             self._remember(idx, frame)
         return frame
 
+    def warm_to(self, idx: int, log: bool = True) -> None:
+        """Walk the decoder up to `idx` BEFORE the UI is built, reporting progress.
+
+        The reader is sequential by design (cap.set is not frame-accurate on long-GOP H.264
+        and silently misfiled an entire earlier labelling session). That is correct but slow
+        to start when labelling a targeted range: the first render_current_frame() blocks for
+        minutes, and because it runs inside __init__ — before root.mainloop() — Tk has built
+        the window but cannot draw it. It looks exactly like a hang.
+
+        So do the walk up front, on the console, where a wait is legible.
+        """
+        if idx <= self._next:
+            return
+        import time as _t
+        t0 = _t.time()
+        total = idx - self._next
+        if log:
+            print(f"seeking to frame {idx} ({total} frames to skip)... "
+                  f"the window opens when this finishes")
+        while self._next < idx:
+            if not self.cap.grab():
+                return
+            self._next += 1
+            if log and self._next % 1000 == 0:
+                done = total - (idx - self._next)
+                rate = done / max(_t.time() - t0, 1e-6)
+                eta = (idx - self._next) / max(rate, 1e-6)
+                print(f"   {done}/{total} ({done / total:.0%}), ~{eta:.0f}s left", flush=True)
+        if log:
+            print(f"   ready in {_t.time() - t0:.0f}s")
+
     def release(self):
         self.cap.release()
 
@@ -495,6 +526,11 @@ def main():
     data = load_or_init_labels(args.out, args.video, video.n_frames,
                                video.fps, video.width, video.height,
                                args.sample_every)
+
+    # Walk to the first frame BEFORE building the UI. LabelApp renders its first frame
+    # inside __init__, which runs before root.mainloop(), so on a targeted range Tk creates
+    # the window and then cannot draw it for minutes — indistinguishable from a hang.
+    video.warm_to(frame_indices[0])
 
     root = tk.Tk()
     root.title(f"label_ball — {args.out.name}")
