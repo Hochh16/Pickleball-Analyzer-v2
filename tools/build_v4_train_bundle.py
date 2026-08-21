@@ -25,24 +25,22 @@ OUT = ROOT / "data" / "pb_v4_upload.zip"
 # gym with green courts -- so holding pb_3min_indoor out is a TRUE UNSEEN-VENUE test,
 # not merely a different camera angle. Indoor visible samples 1,354 -> 8,390 (6.2x),
 # taking indoor from ~13% of the training set to ~44%.
-# 2026-08-20, the 1080p escalation: five clips (pb_3min, pb_4min, pb_5min, pb_3min_court2,
-# pb_3min_indoor -- 4,136 labels, 22% of the set) have a frames_720 cache but NO video.mp4
-# and no record of its source path, on disk or in Drive. They CANNOT be re-extracted, so the
-# 1080p set drops them. Losing pb_3min_indoor also costs the true unseen-venue held-out clip
-# described below; indoor_C1 has to serve that role instead.
-# test_clip is EXCLUDED deliberately: it carries ball_synth_truth.json, so its labels come
-# from the SYNTHETIC ball fixture, and it is the smoke test's own clip. Training on it would
-# mean training on generated data and contaminating the fixture that validates the stage.
+# The clip list is UNCHANGED by the 1080p escalation. Five of these keep only a frame cache
+# in data/ and no video.mp4; their 4K sources live in `Dropbox/Pickleball Videos` and are
+# re-extracted from there in place via `prepare_v4 --video` (1-4 GB each, not worth copying).
+# Identity was verified rather than assumed — each candidate was decoded at three cached
+# frame indices and compared against the frames_720 JPEGs, giving a mean pixel difference of
+# 1.2-1.3, i.e. JPEG noise alone.
 #
-# indoor_b / indoor_c / outdoor are added. They are real footage at 1920x1080@30 rather than
-# the 4K60 the product asks for, and were not in the 720p set. Two reasons to include them
-# now. First, arithmetic: without them the recoverable set is 3,583 labels against the
-# original 7,719, and with them it is 11,576 — larger than what the current model saw.
-# Second, they mix cleanly at this resolution: a 4K source downscaled to 1080p puts the ball
-# at 5.7-12 px, and these sources are ~6-12 px natively, so the model sees one size
-# distribution rather than two.
-CLIPS = ["pb_2min", "indoor_B1_3min", "indoor_C1_3min",
-         "indoor_b", "indoor_c", "outdoor"]
+# NOT added, though they are labelled and their videos are present: indoor_b, indoor_c and
+# outdoor (1920x1080@30, 7,993 labels). The operator excluded them from training originally
+# because tracking on them was too blurry, and that judgement stands — a bigger set is not
+# worth teaching the detector from footage it cannot track. test_clip is excluded too: it
+# carries ball_synth_truth.json, so its labels come from the SYNTHETIC fixture, and it is the
+# smoke test's own clip.
+CLIPS = ["pb_2min", "pb_3min", "pb_4min", "pb_5min",
+         "pb_3min_court2", "pb_3min_indoor",
+         "indoor_B1_3min", "indoor_C1_3min"]
 REPO_FILES = ["stages/__init__.py",
               "stages/track_ball/__init__.py",
               "stages/track_ball/_tracknet_model.py"]

@@ -29,6 +29,11 @@ def main(argv=None) -> int:
     p.add_argument("--clip", default=None, help="clip name (default folder name)")
     p.add_argument("--stride", type=int, default=FRAME_STRIDE)
     p.add_argument("--jpeg-quality", type=int, default=92)
+    p.add_argument("--video", type=Path, default=None,
+                   help="source video, when it does not sit in the clip folder. Five labelled "
+                        "clips keep only their frame cache locally; their 4K sources live in "
+                        "Dropbox, and they are 1-4 GB each, so this points at them in place "
+                        "rather than copying.")
     p.add_argument("--force", action="store_true")
     args = p.parse_args(argv)
 
@@ -38,7 +43,8 @@ def main(argv=None) -> int:
         print(f"no labels: {label_path}")
         return 1
     d = json.loads(label_path.read_text(encoding="utf-8"))
-    video_path = d.get("video_path") or str(args.folder / "video.mp4")
+    video_path = (str(args.video) if args.video
+                  else d.get("video_path") or str(args.folder / "video.mp4"))
     if not Path(video_path).exists():
         # fall back to the local copy if the recorded path isn't reachable
         local = args.folder / "video.mp4"

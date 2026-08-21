@@ -1,6 +1,7 @@
 """Stage 4.5 v4 — frame-cache (JPEG) dataset + manifest-driven train/eval.
 
-This is the path the Colab notebook uses: reads small 720p JPEGs produced by
+This is the path the Colab notebook uses: reads small pre-extracted JPEGs (at
+PROC_H x PROC_W, currently 1080p) produced by
 prepare_v4.py (fork-safe, fast) instead of seeking 4K video. Reuses the focal
 loss, model, heatmap, and peak/recall logic from _v4_data/train_v4.
 """
