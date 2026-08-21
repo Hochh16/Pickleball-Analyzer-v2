@@ -1972,3 +1972,52 @@ is a fine-tune of the current model.
 
 **Ball tracking therefore remains at 720p and 69-76% recall, and it remains the ceiling on
 shots, bounces and rally ends.**
+
+## Where the next labelling hours should go (2026-08-20)
+
+With the 1080p escalation dead, more training data at 720p is the remaining lever on ball
+tracking. Two measurements decide where to spend it, and both point away from the obvious
+answer.
+
+**Not new clips.** The three unlabelled 4K videos in Dropbox (`PB 3 min indoor 2 Court B`,
+`PB 3 min indoor 2 court C`, `PB 5 min indoor 1 court A`) are ALL INDOOR — the venue that is
+already 43% labelled and where the detector is stronger (ball 16.5 px, 43% of losses on small
+balls). Labelling them costs a full session each: `indoor_C1_3min`'s 1,555 labels were made
+between 16:43 and 23:48.
+
+**Existing clips are barely labelled, and the gap is in the weak venue:**
+
+| clip | venue | coverage | visible labels |
+|---|---|---|---|
+| pb_5min | outdoor | **13%** | 606 |
+| pb_4min | outdoor | 15% | 555 |
+| pb_2min | outdoor | 20% | 361 |
+| pb_3min | outdoor | 20% | 637 |
+| pb_3min_court2 | outdoor | 24% | 575 |
+| pb_3min_indoor | indoor | 28% | 492 |
+| indoor_B1_3min | indoor | 43% | 1170 |
+| indoor_C1_3min | indoor | 43% | 1255 |
+
+**71,908 unlabelled frames sit inside clips that are already labelled and calibrated** —
+51,675 of them outdoor. No new video, no new calibration, and it targets the weaker venue.
+
+### tools/propose_labels.py — label where the detector is struggling
+
+Labelling the next stretch in sequence spends hours uniformly, and most of a rally is already
+easy. The detector announces its own failures (confidence falls from ~0.78 to ~0.40 just
+before a loss), so the tool ranks unlabelled stretches by trouble and emits contiguous RANGES,
+because `label_ball.py` steps through frames in order and jumping around costs more than the
+label itself.
+
+Two corrections made while building it, both from reading the output rather than trusting it:
+
+* **Restrict to rally windows.** Without that the top proposal was 8.3 seconds at 91%
+  dropout — between points, where the ball is genuinely gone.
+* **Rank by model UNCERTAINTY, not by dropout.** A stretch that is nearly all dropout is
+  usually the ball absent, not missed. The valuable frames are where the model sees something
+  and is unsure. Stretches above `MAX_DROPOUT` are pushed to the back and labelled "ball
+  probably absent".
+
+Top of the queue for the outdoor acceptance clip (`--labels data/pb_5min`), ~440 labels:
+84.6-89.3s, 89.4-92.9s, 142.7-145.7s, 289.8-294.2s, 0.0-3.0s, 125.4-128.4s — all at median
+confidence 0.34-0.42, against ~0.77 for the clip as a whole.
