@@ -1922,3 +1922,53 @@ pair of constants (`PROC_H, PROC_W`), and frames are cached per clip (`frames_72
 The work is: re-extract frames at 1080p, retrain (2.25x compute), re-infer (2.25x). At 1080p
 the far-baseline ball goes 3.8 → 5.7 px and position quantisation 3 → 2 px. Whether that
 converts into recall is exactly what the original decision note left open.
+
+## The 1080p escalation FAILED — TrackNet is not resolution-agnostic (2026-08-20)
+
+The escalation was attempted and reverted. Training ran to **recall 0.000 on all four venue
+splits for 21 epochs**, against a warm-start baseline reported as 0.9024.
+
+**Cause: `BatchNormOverWidth`.** This TrackNet is faithful to Dettor's Keras
+`BatchNormalization(axis=-1)` applied to NCHW data, which normalises the WIDTH axis, so every
+norm layer's parameter count equals the width at its position (1280/640/320/160 at 720p). At
+1920 wide they all change shape and **no 720p checkpoint can load into a 1080p model**:
+
+    size mismatch for enc1.0.2.weight: checkpoint [1280] vs model [1920]
+
+The Colab run did not fail. It loaded the conv weights, left **every normalization layer
+randomly initialised**, printed "warm-started from baseline", and trained from a mangled
+state. The oscillation between fp 0.000 (predicts nothing) and fp 1.000 (predicts everything)
+at epochs 6, 7 and 14 is that broken state saturating.
+
+Two things made it look healthy for longer than it should have:
+
+* The reported `val_recall 0.9024` is read from the checkpoint's own metadata
+  (`_sd.get('val_recall')`), NOT measured at 1080p. It was the 720p run's own score.
+* Sample counts are identical at both resolutions (densification does not depend on
+  resolution), so the split reconciliation matched perfectly either way.
+
+`_tracknet_model.py` states the constraint in its docstring: *"If TrackNet is ever used at a
+non-(288,512) resolution, every BN will need to be re-instantiated with the new widths."* It
+was not checked before proposing the escalation.
+
+### What survives
+
+* **The 720p model is excellent at 720p.** Measured locally on 40 labelled pb_2min frames:
+  **40/40 peaks within tolerance, median error 1.5 px.** The detector is not broken; it is
+  resolution-bound.
+* **Inference now follows the checkpoint's `input_shape`** for the resize and the scale-back,
+  instead of a module constant. That change is kept and is a genuine fix — it is what would
+  make a future resolution change safe rather than silent.
+* **The 1080p frame caches are kept** (`frames_1080/`, 23,159 JPEGs) for whenever a
+  from-scratch attempt is made. Manifests point back at `frames_720`.
+
+### What escalating would actually take
+
+Not a fine-tune. Either train from scratch at 1920 wide with no pretrained starting point, or
+replace `BatchNormOverWidth` with a channel-wise norm (`nn.BatchNorm2d`) — which makes the
+architecture resolution-independent but discards every existing weight, so also a
+from-scratch train. Both are a different size of project from what was proposed, and neither
+is a fine-tune of the current model.
+
+**Ball tracking therefore remains at 720p and 69-76% recall, and it remains the ceiling on
+shots, bounces and rally ends.**

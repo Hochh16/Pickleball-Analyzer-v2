@@ -23,16 +23,24 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-# Processing resolution. The original note here read "start 720p; escalate to 1080p if
-# recall low". Recall IS low — the ball is detected in only 69-76% of frames — and the cause
-# is measurable: at 720p a 4K frame is squeezed 3x, so the ball is 8.1 px across at the near
-# baseline and just 3.8 px at the far one. Tracking losses skew to the smallest balls (43-52%
-# of losses in the smallest third of sizes against a 33% baseline) and detector confidence
-# collapses from ~0.78 to ~0.40 immediately before a loss. So: escalated.
+# Processing resolution. The note here used to read "start 720p; escalate to 1080p if recall
+# low", and recall IS low (the ball is found in 69-76% of frames, and at 720p a 4K frame is
+# squeezed 3x so the ball is only 3.8 px across at the far baseline). The escalation was
+# attempted on 2026-08-20 and REVERTED, because the architecture cannot do it as a fine-tune:
 #
-# The frame cache directory is DERIVED from this, so 720p and 1080p caches sit side by side
-# and re-extracting never clobbers the other. `v4_manifest.json` records which one it used.
-PROC_H, PROC_W = 1080, 1920
+#   TrackNet here uses BatchNormOverWidth, a custom norm whose PARAMETER COUNT equals the
+#   width at each layer (1280/640/320/160 at 720p). It is faithful to Dettor's Keras
+#   BatchNormalization(axis=-1) on NCHW data, which normalises the WIDTH axis. At 1920 wide
+#   every one of those layers changes shape, so no 720p checkpoint can load into a 1080p
+#   model. The Colab run loaded the conv weights, left EVERY norm layer randomly initialised,
+#   printed "warm-started", and trained to recall 0.000 across all four venues for 21 epochs.
+#   _tracknet_model.py says this in its own docstring: "If TrackNet is ever used at a
+#   non-(288,512) resolution, every BN will need to be re-instantiated with the new widths."
+#
+# Escalating therefore means training FROM SCRATCH at the new width, with no pretrained
+# starting point — a different and much larger project than a fine-tune. The 1080p frame
+# caches are built and kept (frames_1080/) for whenever that is attempted.
+PROC_H, PROC_W = 720, 1280
 FRAMES_DIR = f"frames_{PROC_H}"
 # Gaussian std at processing res (~ball radius). Scales with the resolution: at 720p the ball
 # is ~4-8 px across, at 1080p ~6-12, so a fixed sigma would under-cover the target.
