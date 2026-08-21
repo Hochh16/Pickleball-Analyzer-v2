@@ -1,32 +1,41 @@
-"""Propose WHICH frames to label next, ranked by how much the detector is struggling there.
+"""Propose WHICH frames to label next: the frames where the detector is UNRELIABLE.
 
-Labelling is the most expensive thing in this project — `indoor_C1_3min`'s 1,555 labels took
-a session running 16:43 to 23:48 — so where those hours go matters more than how many there
-are. Labelling the next unlabelled stretch in sequence spends them uniformly, and most of a
-rally is easy for the detector already.
+Corrected 2026-08-20, after the first batch. This tool was built to find balls the detector
+was MISSING. It does not find those, and they barely exist: measured against the operator's
+labels the detector's recall is **94-96%** with a median error of ~4 px, and dropout runs
+bracketed by confident detections either side (where the ball cannot have teleported, so it
+was there) total only ~226 frames in a whole 5-minute clip.
 
-Two measurements say where the effort should go instead:
+What it actually finds is the real defect — **the detector inventing a ball where there is
+none**, which it does in 25% of frames indoors and 49% outdoors. That single failure is
+behind the wrong-object latch, the between-point false shots, and rally-end precision.
 
-* Coverage is worst exactly where the model is weakest. The outdoor clips are 13-24% labelled
-  against 43% for indoor B1/C1, and outdoor is the harder venue — the ball measures 10.5 px
-  there against 16.5 px indoors, and tracking losses skew harder to small balls (52% of losses
-  fall in the smallest third of sizes, against 43% indoors).
-* The detector announces its own failures. Confidence collapses from ~0.78 to ~0.40 in the
-  frames immediately before it loses the ball, so the frames worth labelling are already
-  identifiable without anyone watching the video.
+Low confidence is the signal, and it is a strong one:
 
-So this ranks unlabelled stretches by trouble: gaps where the track dropped out, and runs of
-low-confidence detections. It emits contiguous RANGES rather than scattered frames, because
-`label_ball.py` steps through frames in order and jumping around costs far more per label
-than the label itself.
+| | median confidence |
+|---|---|
+| known hallucinations (n=388) | **0.33** |
+| true detections (n=2,890) | **0.84** |
 
-A proposal is not ground truth. A gap may be the ball genuinely out of shot, and those frames
-are still worth labelling — "not visible" is a valid label and teaches the detector not to
-hallucinate.
+Choosing the threshold is a purity/coverage trade, measured across all three labelled clips:
+
+| conf below | hallucinations caught | true detections swept in | purity |
+|---|---|---|---|
+| 0.35 | 54% | 4% | 66% |
+| **0.40** | **64%** | **5%** | **62%** |
+| 0.50 | 77% | 10% | 50% |
+| 0.60 | 86% | 19% | 38% |
+
+At 0.40 roughly two thirds of proposed frames are genuine negatives, and the third that turn
+out to hold a ball are hard positives worth having anyway. Both labels teach something.
+
+Ranges are contiguous because `label_ball.py` walks frames in order; jumping around costs far
+more than the label itself. Expect to press the "not visible" key for most of a batch — that
+is the point, not a sign the batch is wrong.
 
 Usage:
     python -m tools.propose_labels data/pb_5_minute_outdoor-7 --labels data/pb_5min
-    python -m tools.propose_labels data/pb_5_minute_outdoor-7 --labels data/pb_5min --budget 600
+    python -m tools.propose_labels data/pb_5_minute_outdoor-7 --labels data/pb_5min --budget 300
 """
 from __future__ import annotations
 
@@ -37,11 +46,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-LOW_CONF = 0.50         # detections below this are the model saying it is unsure
+LOW_CONF = 0.40         # 62% of detections below this are hallucinations (measured)
 GAP_MIN_FRAMES = 4      # a dropout shorter than this is normal occlusion, not a failure
 MERGE_GAP_S = 1.0       # stretches closer than this are merged into one range
 MIN_RANGE_S = 0.5       # ignore ranges too short to be worth navigating to
-MAX_DROPOUT = 0.85      # above this the ball is probably genuinely absent, not missed
+MAX_DROPOUT = 0.98      # almost pure dropout carries little to label either way
 SAMPLE_EVERY = 3        # label_ball.py's stride, used to estimate the label count
 
 
@@ -106,10 +115,11 @@ def propose(clip: Path, labelled: set[int], fps: float,
                     break
                 j += 1
             a, b = int(fr[i]), int(fr[j])
-            in_rally = (not windows) or any(
-                lo - 2.0 <= a / fps <= hi + 2.0 or lo - 2.0 <= b / fps <= hi + 2.0
-                for lo, hi in windows)
-            if in_rally and (b - a) / fps >= MIN_RANGE_S:
+            # NOT restricted to rally windows any more. The first batch was, on the theory that
+            # in-play frames were the valuable ones; it landed on a stretch that was 82%
+            # hallucination, which is exactly what is wanted. Between-point frames are where
+            # the detector invents balls, so excluding them excluded the target.
+            if (b - a) / fps >= MIN_RANGE_S:
                 seg = slice(i, j + 1)
                 ranges.append({
                     "start_frame": a, "end_frame": b,
@@ -128,7 +138,8 @@ def propose(clip: Path, labelled: set[int], fps: float,
     # where the model DOES see something and is unsure, so they go last.
     for r in ranges:
         r["likely_absent"] = r["dropout_frac"] > MAX_DROPOUT
-    ranges.sort(key=lambda r: (r["likely_absent"], r["median_conf"], -r["dropout_frac"]))
+    # Lowest confidence first: that is where the detector is most likely inventing a ball.
+    ranges.sort(key=lambda r: (r["likely_absent"], r["median_conf"]))
     return ranges
 
 
@@ -138,35 +149,67 @@ def main(argv=None) -> int:
     ap.add_argument("clip", type=Path, help="folder with ball.parquet (an analysed session)")
     ap.add_argument("--labels", type=Path, default=None,
                     help="folder holding ball_labels.json (defaults to the clip)")
-    ap.add_argument("--budget", type=int, default=500,
+    ap.add_argument("--budget", type=int, default=300,
                     help="stop once this many labels have been proposed")
+    ap.add_argument("--video", type=Path, default=None,
+                    help="source video, for printing a ready-to-run label_ball command")
     a = ap.parse_args(argv)
 
     court = json.loads((a.clip / "court.json").read_text(encoding="utf-8"))
     fps = float(court["video"]["fps"])
     labelled = load_labelled(a.labels or a.clip)
-    windows = rally_windows(a.clip)
-    ranges = propose(a.clip, labelled, fps, windows)
+    ranges = propose(a.clip, labelled, fps, None)
 
-    print(f"{a.clip.name}: {len(ranges)} trouble stretches outside the labelled region")
+    # Merge stretches that are close together. Each separate labelling run costs a fresh
+    # sequential seek -- minutes on a 4K clip -- so a few long ranges beat many short ones,
+    # even though some easy frames come along for the ride.
+    merge_frames = int(4.0 * fps)
+    picked: list[dict] = []
+    for r in sorted(ranges, key=lambda x: (x["likely_absent"], x["median_conf"])):
+        if sum(x["n_labels"] for x in picked) >= a.budget:
+            break
+        placed = False
+        for q in picked:
+            if (r["start_frame"] - q["end_frame"] <= merge_frames
+                    and r["start_frame"] >= q["start_frame"]):
+                q["end_frame"] = max(q["end_frame"], r["end_frame"])
+                q["median_conf"] = min(q["median_conf"], r["median_conf"])
+                placed = True
+                break
+            if (q["start_frame"] - r["end_frame"] <= merge_frames
+                    and r["end_frame"] <= q["end_frame"]):
+                q["start_frame"] = min(q["start_frame"], r["start_frame"])
+                q["median_conf"] = min(q["median_conf"], r["median_conf"])
+                placed = True
+                break
+        if not placed:
+            picked.append(dict(r))
+        for q in picked:
+            q["n_labels"] = int((q["end_frame"] - q["start_frame"]) // SAMPLE_EVERY) + 1
+
+    picked.sort(key=lambda r: -r["n_labels"])
+    total = sum(r["n_labels"] for r in picked)
+
+    print(f"{a.clip.name}: {len(ranges)} unreliable stretches outside the labelled region")
     if labelled:
         print(f"  already labelled: frames {min(labelled)}-{max(labelled)} "
               f"({len(labelled)} labels)")
     print()
-    if windows:
-        print(f"  restricted to the {len(windows)} detected rally windows")
-    print(f"  {'start':>9}{'end':>9}{'secs':>7}{'labels':>8}{'dropout':>9}{'conf':>7}  note")
-    used = 0
-    for r in ranges:
-        if used >= a.budget:
-            break
-        used += r["n_labels"]
-        print(f"  {r['start_s']:>8.1f}s{r['end_s']:>8.1f}s{r['seconds']:>7.1f}"
-              f"{r['n_labels']:>8}{r['dropout_frac']:>9.0%}{r['median_conf']:>7.2f}"
-              f"  {'ball probably absent' if r['likely_absent'] else 'model unsure'}")
+    print(f"  {'frames':>16}{'start':>9}{'end':>9}{'labels':>8}{'conf':>7}")
+    for r in picked:
+        span = f"{r['start_frame']}-{r['end_frame']}"
+        print(f"  {span:>16}"
+              f"{r['start_frame'] / fps:>8.1f}s{r['end_frame'] / fps:>8.1f}s"
+              f"{r['n_labels']:>8}{r['median_conf']:>7.2f}")
     print()
-    print(f"  {used} labels across {min(len(ranges), sum(1 for _ in ranges))} stretches "
-          f"(budget {a.budget})")
+    print(f"  {total} labels in {len(picked)} run(s)  (budget {a.budget})")
+    print("  expect to press the not-visible key often -- that is the point")
+    if a.video:
+        out = (a.labels or a.clip) / "ball_labels.json"
+        print()
+        for r in picked:
+            print(f'python tools/label_ball.py --video "{a.video}" --out {out} '
+                  f'--start-frame {r["start_frame"]} --end-frame {r["end_frame"]}')
     return 0
 
 
