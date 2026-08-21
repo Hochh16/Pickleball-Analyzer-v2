@@ -2021,3 +2021,53 @@ Two corrections made while building it, both from reading the output rather than
 Top of the queue for the outdoor acceptance clip (`--labels data/pb_5min`), ~440 labels:
 84.6-89.3s, 89.4-92.9s, 142.7-145.7s, 289.8-294.2s, 0.0-3.0s, 125.4-128.4s — all at median
 confidence 0.34-0.42, against ~0.77 for the clip as a whole.
+
+## Ball detection is NOT recall-limited — it HALLUCINATES (2026-08-20)
+
+The whole ball-tracking effort today rested on "the ball is detected in only 69-76% of
+frames". That number was never the detector's recall: it is the share of ALL frames with a
+detection, and most of the rest are frames where the ball genuinely is not there — between
+points, off camera, in a hand.
+
+Measured properly, against the operator's own labels:
+
+| clip | labelled VISIBLE | detector found it | median error | labelled NOT VISIBLE | detector claimed a ball anyway |
+|---|---|---|---|---|---|
+| pb_5min (outdoor) | 606 | **96%** | 4.1 px | 193 | **49%** |
+| indoor B1 | 1170 | **95%** | 3.8 px | 384 | **35%** |
+| indoor C1 | 1255 | **94%** | 4.7 px | 300 | **25%** |
+
+**Recall is 94-96% and position is accurate to ~4 px. The failure is false positives: on the
+outdoor clip the detector claims a ball in HALF the frames where there is none.**
+
+That single fact explains a long list of things fought separately today:
+
+* the wrong-object latch (a lawnmower, a neighbouring court's ball) — the detector is
+  *supposed* to output nothing there and instead outputs something
+* "ball rolling after a net hit" false shots reading as NOT low in the height reconstruction —
+  the tracker was on a different object, so its height was meaningless
+* 230 crossings of the z floor on a clip with 59 in-play shots
+* between-point false shots, the largest remaining false-positive class
+* rally-end false positives at 36-47% precision
+
+### The labelling experiment worked, for the opposite reason
+
+The 166 hard frames were proposed to find MISSED balls. The operator labelled them and
+reported the ball visible in only ~25. Measured: 30 visible of 166, while the detector claimed
+a ball in 32% of those frames. So the stretch was not the model missing balls — it was the
+model inventing them, and being unsure while doing it.
+
+Those **136 "not visible" labels are therefore aimed at the real defect**, not the imagined
+one. Whether 166 labels against 18,424 samples can move it is a separate question, but they
+are the right kind.
+
+### What this changes
+
+Genuinely-missed balls are RARE. Counting dropout runs bracketed by confident detections
+either side (the ball cannot teleport, so it was there) gives only ~226 frames — about 75
+labels' worth — in the whole 5-minute outdoor clip.
+
+So more labels of the ball IN FLIGHT will not help much. What would help is more NEGATIVE
+labels: frames where the ball is absent and the detector currently invents one. That is the
+opposite of what `tools/propose_labels.py` was built to find, and its ranking should be
+inverted — hunt stretches where the detector is CONFIDENT but the ball is out of play.
