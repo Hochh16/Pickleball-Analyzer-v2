@@ -181,13 +181,22 @@ class VideoReader:
             self._rewind()
         frame = None
         while self._next <= idx:
+            if self._next < idx:
+                # SKIP without decoding. grab() advances the decoder exactly one frame,
+                # same as read(), but does not pay to turn it into a picture we throw away.
+                # This matters for a targeted range: reaching frame 5076 of a 4K clip meant
+                # decoding 5,076 frames at ~4-5 fps, so the first frame took ~18 minutes to
+                # appear. Frame-exactness is unchanged — it is still a sequential walk, and
+                # cap.set(CAP_PROP_POS_FRAMES) is still never used.
+                if not self.cap.grab():
+                    return None
+                self._next += 1
+                continue
             ok, fr = self.cap.read()
             if not ok:
                 return None
-            cur = self._next
             self._next += 1
-            if cur == idx:
-                frame = fr
+            frame = fr
         if frame is not None:
             self._remember(idx, frame)
         return frame
