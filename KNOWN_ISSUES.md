@@ -2146,3 +2146,68 @@ correct.
 and `--force` is not given, it skips the video entirely and rewrites just the manifest. That
 turns "regenerate rather than edit" into a two-second operation, which is what makes the rule
 practical to follow.
+
+## Hallucination: two fixes attempted, both rejected (2026-08-22)
+
+Ball detection's real defect is inventing balls (25% indoors, 49% outdoors) rather than
+missing them (recall 94-96%). Two attacks on it, both measured, neither shipped.
+
+### 1. Retrain with targeted negative labels — NO
+
+The operator labelled 442 frames chosen by `propose_labels`, yielding **347 negatives** and 79
+confirmed hallucinations, lifting the not-visible share of the training set from 11.2% to
+12.7%. Training ran correctly this time (recall non-zero from epoch 0, unlike the two earlier
+broken runs) and produced **nothing usable**:
+
+| | baseline | best of 17 epochs |
+|---|---|---|
+| mean recall | **0.902** | 0.851 |
+| home false-positive rate | **0.018** | 0.088-0.248 |
+
+The notebook keeps an epoch only when `home_fp <= 0.06`. **Every epoch was rejected**, so no
+checkpoint was written and the baseline is untouched. Worse, the false-positive rate was
+5-10x the baseline from epoch 0 — the opposite of the intended effect, and present before any
+drift could accumulate.
+
+**347 negatives against 16,617 positives is too weak a signal to change the behaviour**, while
+the extra training itself pushes the model toward firing more. More labelling of this kind is
+not the lever.
+
+### 2. A confidence floor at inference — NO (regresses one venue)
+
+The detector's confidence separates its failure modes well (hallucinations median 0.33, true
+detections 0.84) and the tracker's `cand_floor` of 0.15 lets sub-threshold detections into the
+track. Suppressing them post-hoc costs nothing to test. On the acceptance clip it looks
+excellent:
+
+| threshold | shots | false positives | real kept | serve rec/prec |
+|---|---|---|---|---|
+| shipped | 117 | 23/34 | 94 | 86% / 86% |
+| **0.40** | 104 | **14/34** | 90 | 86% / 80% |
+
+Nine junk removed for four real shots, precision 80% → 87%. But across venues it does not
+hold:
+
+| clip | | in-play shots (truth) | junk | serve |
+|---|---|---|---|---|
+| Court B | shipped | 60 (82) | 11 | 70/88 |
+| Court B | 0.40 | **50** | 9 | **50/62** |
+| Court C (held out) | shipped | 56 (59) | 12 | 70/88 |
+| Court C | 0.40 | **56** | **7** | **80/80** |
+
+Court C and outdoor improve; **Court B loses 10 in-play shots to remove 2 junk**. It is not a
+calibration difference — the confidence distributions are nearly identical across all three
+clips (p10 0.34-0.38, 11-14% below 0.40). On Court B the low-confidence detections simply sit
+disproportionately at real shot moments.
+
+Under the standing rule that a change must not regress another venue, this does not ship as a
+default. It is a legitimate per-clip option and the numbers above say what it costs.
+
+### Where this leaves ball detection
+
+Its false positives cannot be filtered by confidence without losing real shots somewhere, and
+cannot be trained away with targeted negatives at any volume the operator can reasonably
+produce. The remaining untried levers are the LOSS FUNCTION (the current focal loss normalises
+by positive count, so negatives are cheap to get wrong) and the TRACKER'S SELECTION (the
+continuity DP will happily follow a confident-looking wrong object, which is what the latch
+gate patches downstream).
