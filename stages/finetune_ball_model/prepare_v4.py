@@ -86,21 +86,32 @@ def main(argv=None) -> int:
     if not cap.isOpened():
         print(f"cannot open {video_path}")
         return 1
-    cap.set(cv2.CAP_PROP_POS_FRAMES, lo)
+    # Walk from frame 0 rather than cap.set(CAP_PROP_POS_FRAMES, lo). That seek is NOT
+    # frame-accurate on long-GOP H.264: it lands on a nearby keyframe, and since the loop
+    # then counts indices from `lo`, every extracted frame would be misfiled by the drift.
+    # That exact bug already invalidated one labelling session (see the remap_note in
+    # ball_labels.json). It has been harmless only because `lo` was always ~2; targeted
+    # labelling now puts real ranges deep into the clip.
+    #
+    # grab() advances the decoder one frame without paying to decode a picture we discard,
+    # so walking from 0 costs little even when `lo` is 17,000 frames in.
     written = 0
-    for idx in range(lo, hi + 1):
+    for idx in range(0, hi + 1):
+        if idx < lo or idx not in needed:
+            if not cap.grab():
+                break
+            continue
         ok, fr = cap.read()
         if not ok:
             break
-        if idx in needed:
-            out = frames_dir / f"{idx}.jpg"
-            if args.force or not out.exists():
-                small = cv2.resize(fr, (PROC_W, PROC_H), interpolation=cv2.INTER_AREA)
-                cv2.imwrite(str(out), small,
-                            [cv2.IMWRITE_JPEG_QUALITY, args.jpeg_quality])
-            written += 1
-            if written % 200 == 0:
-                print(f"  {written}/{len(needed)} frames...")
+        out = frames_dir / f"{idx}.jpg"
+        if args.force or not out.exists():
+            small = cv2.resize(fr, (PROC_W, PROC_H), interpolation=cv2.INTER_AREA)
+            cv2.imwrite(str(out), small,
+                        [cv2.IMWRITE_JPEG_QUALITY, args.jpeg_quality])
+        written += 1
+        if written % 200 == 0:
+            print(f"  {written}/{len(needed)} frames...", flush=True)
     cap.release()
 
     manifest = {

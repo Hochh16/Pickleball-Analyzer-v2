@@ -2071,3 +2071,41 @@ So more labels of the ball IN FLIGHT will not help much. What would help is more
 labels: frames where the ball is absent and the detector currently invents one. That is the
 opposite of what `tools/propose_labels.py` was built to find, and its ranking should be
 inverted — hunt stretches where the detector is CONFIDENT but the ball is out of play.
+
+## Negative-mining batch complete; ready to retrain (2026-08-20)
+
+The operator labelled 442 frames proposed by `tools/propose_labels.py` in negative-mining
+mode, on the outdoor clip where the detector hallucinates worst.
+
+| | |
+|---|---|
+| new labels | 442 (95 visible, **347 not visible**) |
+| detector claimed a ball in those frames | 155 |
+| **confirmed hallucinations** (operator: none, detector: ball) | **79** |
+| predicted purity / actual | 62% / **51%** |
+
+Training set: 18,424 → **19,032 samples**, negatives 2,068 → **2,415 (+17%)**, so the
+not-visible share moves 11.2% → 12.7%. That is a real shift rather than a rounding error, but
+it is modest, and 79 confirmed hallucinations is a small teaching signal against 16,617
+positives. **A null result is a plausible outcome and would itself be informative** — it would
+say the hallucination rate is not label-starved.
+
+### Two bugs fixed while preparing the batch
+
+Both were latent landmines rather than things the operator hit:
+
+* `prepare_v4` used **`cap.set(CAP_PROP_POS_FRAMES, lo)`** and then counted indices from
+  `lo`. That seek is not frame-accurate on long-GOP H.264, so any drift would misfile EVERY
+  extracted frame — the exact bug recorded in `ball_labels.json`'s `remap_note` that
+  invalidated an earlier session. It was harmless only because `lo` had always been ~2;
+  targeted labelling now puts ranges 17,000 frames deep. It walks from frame 0 with `grab()`
+  instead, which is also faster than the old full decode.
+* `label_ball` rendered its first frame inside `__init__`, before `root.mainloop()`, so a
+  targeted `--start-frame` built the window and then could not draw it for minutes. The
+  operator reported it as "the video does not open". The seek now happens up front on the
+  console with progress and an ETA.
+
+Verified after re-extraction: the ball reads 61-72 brightness above frame median at every
+sampled labelled position, so nothing shifted.
+
+Bundle: `data/pb_v4_upload.zip`, 3.50 GB, 24,497 JPEGs at 720p.
