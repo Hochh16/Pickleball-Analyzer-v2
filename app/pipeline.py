@@ -13,7 +13,8 @@ hours per 5-min clip). So the run:
               vision pass on Colab (stages/infer_vision.ipynb) and uploads the
               outputs (players/track_roles/poses/ball + metas) back, which
               AUTO-RESUMES the run (same decouple mechanism the ball step used).
-  - post    : 5 detect_shots -> 5.5 detect_bounces -> 5.7 ball_trajectory ->
+  - post    : 5 detect_shots -> 5.5 detect_bounces -> ball-3D -> 5 and 5.5 AGAIN ->
+              5.7 ball_trajectory ->
               6 classify_shots -> 7 segment_rallies -> 8 compute_metrics -> 9 rate ->
               10 plan_improvement -> build_report (all light/local). The Stage-11
               annotated-overlay render is intentionally skipped: the box overlay
@@ -72,6 +73,20 @@ VISION_STEPS = [
 POST_STEPS = [
     Step("shots", "Detect shots", module="stages.detect_shots.detect_shots", args=["--force"]),
     Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces", args=["--force"]),
+    # Stage 5 gets a SECOND pass, because its best shot filter needs an input that only
+    # exists after Stage 5.5. `reject_same_side_runs` deletes a real shot every time one is
+    # missed, and the way to tell "a shot happened between these two impacts" from
+    # ball-handling is whether the ball crossed the net -- which needs the ball in 3-D, which
+    # needs bounces to calibrate. So: shots -> bounces -> reconstruct -> shots again ->
+    # bounces again. Pass 1 still produces a complete, valid shots.json on the excursion
+    # rule alone; pass 2 recovers what the run filter over-deleted (court B in-rally shots
+    # 61 -> 66 of 82, outdoor real shots kept 97 -> 102, at a cost of one between-point
+    # detection). build_ball_3d decodes the video once, which is the expensive part.
+    Step("ball3d", "Ball in 3-D", module="tools.build_ball_3d", args=["--force"]),
+    Step("shots2", "Detect shots (2nd pass)",
+         module="stages.detect_shots.detect_shots", args=["--force"]),
+    Step("bounces2", "Detect bounces (2nd pass)",
+         module="stages.detect_bounces.detect_bounces", args=["--force"]),
     Step("trajectory", "Ball trajectory", module="stages.ball_trajectory.ball_trajectory", args=["--force"]),
     Step("classify", "Classify shots", module="stages.classify_shots.classify_shots", args=["--force"]),
     Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies", args=["--force"]),

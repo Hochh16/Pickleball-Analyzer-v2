@@ -127,6 +127,36 @@ HANDLING_SPREAD_S = 8.0
 # against one serve GAINED on court B (70% -> 80%). Serves come out net level across the
 # three clips; shots do not, and shots are what the operator counts.
 SAME_SIDE_EXCURSION_PX = 600.0   # ref px @1920, scaled by frame_width/1920
+# Same split, asked properly, when the 3-D reconstruction is on disk: did the ball actually
+# go to the OTHER SIDE of the net between the two impacts? That question was rejected twice
+# before because the ground homography is valid only at z=0, so an airborne ball projects
+# far past the net and the test fired everywhere. tools/build_ball_3d.py fixes the input --
+# z at bounces reads 0.17-0.32 ft and 87-91% of in-flight frames land inside the play
+# envelope, against 48-52% for the raw projection.
+#
+# One frame past the net is still not evidence: `bias` is fit from a few hundred bounces and
+# scales the range directly, so a single outlier would split nearly every pair. Requiring the
+# ball to STAY past the net is what makes it usable -- at a 1-frame threshold court C reads 89
+# in-play shots against 59 true, at 10 frames it reads 61. This is the difference between this
+# attempt and the one rejected in July: the same question, asked of a valid reconstruction and
+# of a sustained run rather than a single frame.
+#
+# Measured through the full pipeline, on top of the excursion split:
+#
+#                        | excursion only | + net crossing
+#   outdoor real kept    |       97       |     102
+#   outdoor false pos    |     22/34      |    22/34
+#   outdoor wrong player |      1/7       |     1/7
+#   court B in-play (82) |       61       |      66
+#   court B junk         |       10       |      11
+#   court B misses found |     11/21      |    12/21
+#   court C in-play (59) |       57       |      58
+#   court C junk         |       12       |      12
+#
+# Serves are unchanged on all three clips. The only cost anywhere is one extra between-point
+# detection on court B.
+SAME_SIDE_CROSS_MARGIN_FT = 5.0   # ft past the net line before it counts as the other side
+SAME_SIDE_CROSS_FRAMES = 10       # consecutive frames it must stay there (at 60fps = 0.17s)
 # Adjacent-court contamination gates (real ball only). On a multi-court venue the
 # single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
 # producing phantom shots/serves. Two trajectory-coherence gates reject them:
@@ -460,7 +490,11 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
                           reset_frames: int, fps: float = 60.0,
                           ball_xy: Optional[Tuple[np.ndarray, np.ndarray,
                                                   np.ndarray]] = None,
-                          excursion_px: Optional[float] = None
+                          excursion_px: Optional[float] = None,
+                          ball_court_y: Optional[Dict[int, float]] = None,
+                          net_y_ft: float = 22.0,
+                          cross_margin_ft: float = SAME_SIDE_CROSS_MARGIN_FT,
+                          cross_frames: int = SAME_SIDE_CROSS_FRAMES
                           ) -> Tuple[List[dict], int]:
     """Net-side alternation / ball-handling rejection. Every rally shot crosses
     the net, so the striker's net side must alternate; a run of consecutive
@@ -530,12 +564,32 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
                 return True
         return False
 
+    def ball_crossed(f0: int, f1: int, side: Optional[str]) -> bool:
+        """Did the RECONSTRUCTED ball stay past the net long enough to have gone over?"""
+        if not ball_court_y or side is None or cross_frames < 1:
+            return False
+        best = cur = 0
+        for g in range(f0, f1 + 1):
+            v = ball_court_y.get(g)
+            if v is None:
+                cur = 0
+                continue
+            beyond = (v >= net_y_ft + cross_margin_ft) if side == "near" \
+                else (v <= net_y_ft - cross_margin_ft)
+            cur = cur + 1 if beyond else 0
+            if cur > best:
+                best = cur
+                if best >= cross_frames:
+                    return True
+        return False
+
     for s in shots_sorted:
         side = side_by_track.get(s["track_id"])
         same_run = (run and side is not None and side == prev_side
                     and prev_frame is not None
                     and (s["frame"] - prev_frame) <= reset_frames
-                    and not ball_left(prev_frame, s["frame"]))
+                    and not ball_left(prev_frame, s["frame"])
+                    and not ball_crossed(prev_frame, s["frame"], side))
         if same_run:
             run.append(s)
         else:
@@ -650,7 +704,9 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
 
 def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
            log: logging.Logger, params: dict,
-           side_by_track: Optional[Dict[int, str]] = None) -> Tuple[List[dict], dict, List[str]]:
+           side_by_track: Optional[Dict[int, str]] = None,
+           ball_court_y: Optional[Dict[int, float]] = None
+           ) -> Tuple[List[dict], dict, List[str]]:
     n = len(df_ball)
     fx = df_ball["pixel_x"].to_numpy(copy=True)
     fy = df_ball["pixel_y"].to_numpy(copy=True)
@@ -938,7 +994,12 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         shots, n_handling = reject_same_side_runs(
             shots, side_by_track or {}, params["handling_reset_frames"],
             params["fps"], ball_xy=(fx, fy, known),
-            excursion_px=params.get("same_side_excursion_px"))
+            excursion_px=params.get("same_side_excursion_px"),
+            ball_court_y=ball_court_y,
+            net_y_ft=params["net_y_ft"],
+            cross_margin_ft=params.get("same_side_cross_margin_ft",
+                                       SAME_SIDE_CROSS_MARGIN_FT),
+            cross_frames=params.get("same_side_cross_frames", SAME_SIDE_CROSS_FRAMES))
     else:
         n_handling = 0
     impulse_frames = sorted(s["frame"] for s in shots)
@@ -1139,6 +1200,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     players_by_frame, n_player_rows, side_by_track = index_players(
         players_path, court["net_y_ft"], user_tids, participant_tids)
     poses = index_poses(poses_path)
+    # The 3-D reconstruction, when it exists. It is built by tools/build_ball_3d.py, which
+    # needs bounces.json from Stage 5.5 -- i.e. AFTER this stage. So the first pass over a new
+    # video runs without it and a re-run picks it up; the log line below says which happened,
+    # and `ball_3d_frames` in the output records it.
+    ball_court_y = None
+    if not args.no_ball_3d:
+        b3 = folder / "ball_3d.parquet"
+        if b3.exists():
+            d3 = pd.read_parquet(b3, columns=["frame", "court_y_ft"])
+            ball_court_y = {int(f): float(v) for f, v in
+                            zip(d3["frame"], d3["court_y_ft"]) if not math.isnan(v)}
 
     # fps consistency
     fps = court["fps"] or ball_meta.get("video_fps")
@@ -1204,6 +1276,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "rally_gap_frames": int(round(RALLY_GAP_S * float(fps))),
         "handling_reset_frames": int(round(HANDLING_RESET_S * float(fps))),
         "same_side_excursion_px": same_side_excursion,
+        "same_side_cross_margin_ft": SAME_SIDE_CROSS_MARGIN_FT,
+        "same_side_cross_frames": (SAME_SIDE_CROSS_FRAMES if args.no_ball_3d is False
+                                   else 0),
+        "ball_3d_frames": len(ball_court_y) if ball_court_y else 0,
         "handling_filter": ball_source == "real",
         "contamination_filter": ball_source == "real",
         "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
@@ -1228,10 +1304,19 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     log.info(f"ball={len(df_ball)} frames ({ball_source}); "
              f"players={n_player_rows} non-transient rows; "
              f"poses indexed for {len(poses)} (frame,track) pairs")
+    if ball_court_y:
+        log.info(f"ball_3d.parquet present: {len(ball_court_y)} reconstructed frames; "
+                 f"same-side runs also split on a real net crossing "
+                 f"(>= {params['same_side_cross_frames']} frames past net"
+                 f"{params['same_side_cross_margin_ft']:+.0f} ft)")
+    else:
+        log.info("no ball_3d.parquet: same-side runs split on ball EXCURSION only. Run "
+                 "tools.build_ball_3d and re-run this stage to enable the net-crossing "
+                 "split (it recovers real shots the run filter would delete).")
 
     shots, stats, warnings = detect(df_ball, players_by_frame, poses,
                                     court["image_to_court"], log, params,
-                                    side_by_track)
+                                    side_by_track, ball_court_y)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': shots are derived from "
@@ -1293,6 +1378,9 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
                    dest="max_ball_speed_px_per_frame",
                    help="absolute px override (default: MAX_BALL_SPEED scaled by "
                         "frame_width/1920)")
+    p.add_argument("--no-ball-3d", action="store_true", dest="no_ball_3d",
+                   help="ignore ball_3d.parquet even when present: same-side runs then "
+                        "split on ball excursion only (the first-pass behaviour)")
     p.add_argument("--same-side-excursion-px", type=float, default=None,
                    dest="same_side_excursion_px",
                    help="absolute px override (default: SAME_SIDE_EXCURSION_PX scaled by "

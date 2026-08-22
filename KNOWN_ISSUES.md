@@ -1167,7 +1167,33 @@ longer needed to answer the precision question.
 
 ## Stage 5 - the HANDLING filter compounds every missed shot (PARTLY FIXED 2026-08-22)
 
-> **Update.** A third fix shipped: split a same-side run wherever the BALL made a large
+> **Update 2 (2026-08-22, later).** A FOURTH fix shipped on top, and it is the net-crossing
+> question that was rejected in July -- asked again now that `tools/build_ball_3d.py` makes
+> the ball's court position valid in flight (z at bounces 0.17-0.32 ft, 87-91% of in-flight
+> frames inside the play envelope, against 48-52% raw). Two things had to change for it to
+> work. The reconstruction had to replace the raw ground projection, and the test had to
+> require a SUSTAINED crossing: at a 1-frame threshold court C reads 89 in-play shots against
+> 59 true, at 10 frames it reads 61. On top of the excursion split: outdoor real shots kept
+> 97 -> **102** (false positives flat at 22/34, wrong player flat at 1/7), court B in-rally
+> 61 -> **66** and confirmed misses 11/21 -> **12/21**, court C in-rally 57 -> **58**. Serves
+> unchanged on all three clips; the only cost anywhere is one extra between-point detection
+> on court B.
+>
+> Also measured and REJECTED on the way: splitting on the ball's APEX HEIGHT (the AUC-0.95
+> signal recorded further down). It reproduces the old indoor-good/outdoor-bad pattern --
+> 243 outdoor shots against ~110 true at a 4.5 ft threshold. That probe's 0.95 was measured
+> on 19 pairs inside four reviewed rallies, where "handling" means a duplicate detection; it
+> does not describe the whole clip, where most same-side pairs are between points and a
+> tossed ball clears 4.5 ft easily. Apex magnitude is the weaker question; "did it go over"
+> is the right one.
+>
+> **This costs a second Stage 5 pass.** `build_ball_3d` needs bounces.json (Stage 5.5), which
+> needs shots (Stage 5). The pipeline now runs shots -> bounces -> ball-3D -> shots -> bounces.
+> Pass 1 still produces a complete shots.json on the excursion rule alone, so nothing breaks
+> if the reconstruction is missing; `detect_shots` logs which path it took and records
+> `ball_3d_frames` in its output.
+
+> **Update 1.** A third fix shipped: split a same-side run wherever the BALL made a large
 > excursion between two impacts (`SAME_SIDE_EXCURSION_PX`, 600 ref px @1920). It sidesteps
 > what killed the two attempts below — it never asks which SIDE of the net the ball was on,
 > only how far it travelled in the image, so no height estimate is involved. Measured on all
@@ -1224,12 +1250,17 @@ outdoor has real between-point ball-handling and an adjacent court.
 
 Neither shipped; the standing rule is that a change must not regress another venue.
 
-3. **Did the BALL leave and come back?** — SHIPPED, see the update at the top of this
-   section. Both rejected fixes ask "did the ball go to the other side", which needs the
+3. **Did the BALL leave and come back?** — SHIPPED, see update 1 at the top of this section. Both rejected fixes ask "did the ball go to the other side", which needs the
    height one 6 ft camera cannot give. This one asks only "did the ball go anywhere", a plain
    2-D distance in the image, and that is enough to tell a catch or a carry from a rally
    exchange. It recovers less than fix 2 did indoors, but it is the only one of the three
    that costs nothing outdoors.
+
+4. **Did the ball cross the NET, measured on the 3-D reconstruction?** — SHIPPED, see update 2.
+   This is fix 1 asked again with a valid input and a sustained-run test. Worth noting for
+   next time: fix 1 was not a bad idea, it was a good idea run on a projection that is
+   nonsense above z=0. The lesson is to check what an input is worth before concluding the
+   question is unanswerable.
 
 **What this still needs.** The excursion split addressed the cheap half. What remains is
 that a run, however long, still collapses to exactly ONE shot: on the acceptance clip the

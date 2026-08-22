@@ -311,6 +311,36 @@ def run_smoke_test() -> int:
         f"no ball data leaves the old behaviour ({len(k_none)} kept, drop {d_none})")
     results.append(okD2)
 
+    # --- Phase D3: the net-crossing split, from the 3-D reconstruction ---
+    # Only available on a re-run (ball_3d.parquet needs bounces from Stage 5.5), and only
+    # trustworthy as a SUSTAINED crossing -- the per-frame reconstruction is noisy enough
+    # that a single outlier frame would split nearly every pair.
+    print()
+    print("Phase D3: net-crossing split")
+    net = 22.0
+    parked = {f: 10.0 for f in range(90, 180)}                     # never leaves the near side
+    k_park, d_park = reject_same_side_runs(
+        run, side, 90, 60.0, ball_court_y=parked, net_y_ft=net, cross_frames=10)
+    blip = dict(parked)
+    for f in (120, 121):                                          # two stray frames only
+        blip[f] = 40.0
+    k_blip, d_blip = reject_same_side_runs(
+        run, side, 90, 60.0, ball_court_y=blip, net_y_ft=net, cross_frames=10)
+    over = dict(parked)
+    for a, b in zip((100, 114, 130, 150), (114, 130, 150, 168)):
+        for f in range((a + b) // 2 - 6, (a + b) // 2 + 6):        # 12 frames on the far side
+            over[f] = 40.0
+    k_over, d_over = reject_same_side_runs(
+        run, side, 90, 60.0, ball_court_y=over, net_y_ft=net, cross_frames=10)
+    okD3 = (len(k_park) == 1 and d_park == 4
+            and len(k_blip) == 1 and d_blip == 4
+            and len(k_over) == 5 and d_over == 0)
+    (_pass if okD3 else _fail)(
+        f"net-crossing split: ball staying near-side collapses to {len(k_park)}/5; "
+        f"a 2-frame blip past the net does NOT split it ({len(k_blip)}/5); "
+        f"a sustained crossing between each impact keeps {len(k_over)}/5")
+    results.append(okD3)
+
     print()
     print(f"{sum(results)}/{len(results)} checks passed")
     return 0 if all(results) else 1
