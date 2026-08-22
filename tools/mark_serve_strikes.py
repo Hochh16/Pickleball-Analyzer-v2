@@ -20,15 +20,24 @@ Usage:
     python tools/mark_serve_strikes.py data/pb_5_minute_outdoor-7 --limit 6
     python tools/mark_serve_strikes.py data/pb_3_min_indoor_1_court_b --report
 
-Keys:
-    Right / d       next frame            Left / a    previous frame
-    Up / w          +10 frames            Down / s    -10 frames
-    Space           play / pause, slowly (a quarter speed)
-    z               zoom in (follows the BALL when it is detected), or back out
-    ENTER / m       MARK this frame as the paddle strike, go to the next serve
-    n               skip this serve (server off-screen, or you cannot tell)
-    b               back to the previous serve to redo it
-    Esc             save and quit  (progress is saved after every mark anyway)
+Three keys do the job:
+
+    Right arrow (or Space)   forward one frame, marking nothing
+    Left arrow (or Backspace)   back one frame
+    ENTER                    MARK this frame as the strike, go to the next serve
+
+Right/Left and Space/Backspace are both bound because label_ball.py trained the second pair
+and this tool should not fight that habit.
+
+Everything else is optional and can be ignored:
+
+    Up / Down    jump 10 frames, to cross the window quickly
+    z            zoom in (follows the ball), or back out to the full frame
+    p            play forward slowly, press again to stop
+    n            skip this serve -- use it whenever you cannot tell; a skip is worth
+                 more than a guess
+    b            go back to the previous serve and redo it
+    Esc          save and quit (it also saves after every single mark)
 
 Writes serve_strikes.json in the clip folder. Re-running resumes: serves already marked are
 skipped, so it is safe to do a few at a time.
@@ -229,14 +238,19 @@ class Marker:
         tk.Label(root, textvariable=self.status, anchor="w", justify="left",
                  font=("Consolas", 11)).pack(fill="x")
         self.help = tk.StringVar()
-        self.help.set("ENTER mark strike   n skip   b previous serve   "
-                      "arrows/wasd step   SPACE play   z zoom   Esc save+quit")
+        self.help.set(
+            "  RIGHT/SPACE next frame     LEFT/BACKSPACE previous frame"
+            "     ENTER = strike is HERE\n"
+            "  optional:  n skip this serve   z zoom   up/down jump 10   p play   "
+            "b redo last serve   Esc quit")
         tk.Label(root, textvariable=self.help, anchor="w",
                  font=("Consolas", 10), fg="#555").pack(fill="x")
 
-        for k in ("<Right>", "<d>", "<D>"):
+        # Space forward / Backspace back are the label_ball.py bindings. Arrow keys do the
+        # same thing; nobody should have to remember which tool they are in.
+        for k in ("<Right>", "<space>", "<d>", "<D>"):
             root.bind(k, lambda e: self.step(1))
-        for k in ("<Left>", "<a>", "<A>"):
+        for k in ("<Left>", "<BackSpace>", "<a>", "<A>"):
             root.bind(k, lambda e: self.step(-1))
         for k in ("<Up>", "<w>", "<W>"):
             root.bind(k, lambda e: self.step(10))
@@ -250,7 +264,8 @@ class Marker:
         root.bind("<B>", lambda e: self.prev_serve())
         root.bind("<z>", lambda e: self.toggle_zoom())
         root.bind("<Z>", lambda e: self.toggle_zoom())
-        root.bind("<space>", lambda e: self.toggle_play())
+        root.bind("<p>", lambda e: self.toggle_play())
+        root.bind("<P>", lambda e: self.toggle_play())
         root.bind("<Escape>", lambda e: self.quit())
         root.protocol("WM_DELETE_WINDOW", self.quit)
 
@@ -323,6 +338,8 @@ class Marker:
         self.playing = not self.playing
         if self.playing:
             self.tick()
+        else:
+            self.render()      # otherwise the status line still reads PLAYING
 
     def tick(self):
         if not self.playing:
