@@ -82,10 +82,19 @@ def main(argv=None) -> int:
     print(f"{clip}: {len(samples)} samples, {len(needed)} unique frames "
           f"to extract over [{lo},{hi}] from {video_path}")
 
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"cannot open {video_path}")
-        return 1
+    # If every needed JPEG is already cached and we are not forcing, skip the video
+    # entirely and just rewrite the manifest. The manifest carries x_proc/y_proc, which are
+    # resolution-dependent, so it must be REGENERATED whenever PROC_H/PROC_W changes -- and
+    # editing it by hand is how seven clips ended up with 1080p coordinates against 720p
+    # frames, silently training the model to fire on empty court.
+    if not args.force and all((frames_dir / f"{i}.jpg").exists() for i in needed):
+        print(f"  all {len(needed)} frames already cached; rewriting manifest only")
+        cap = None
+    else:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"cannot open {video_path}")
+            return 1
     # Walk from frame 0 rather than cap.set(CAP_PROP_POS_FRAMES, lo). That seek is NOT
     # frame-accurate on long-GOP H.264: it lands on a nearby keyframe, and since the loop
     # then counts indices from `lo`, every extracted frame would be misfiled by the drift.
@@ -96,7 +105,7 @@ def main(argv=None) -> int:
     # grab() advances the decoder one frame without paying to decode a picture we discard,
     # so walking from 0 costs little even when `lo` is 17,000 frames in.
     written = 0
-    for idx in range(0, hi + 1):
+    for idx in ([] if cap is None else range(0, hi + 1)):
         if idx < lo or idx not in needed:
             if not cap.grab():
                 break
@@ -112,7 +121,8 @@ def main(argv=None) -> int:
         written += 1
         if written % 200 == 0:
             print(f"  {written}/{len(needed)} frames...", flush=True)
-    cap.release()
+    if cap is not None:
+        cap.release()
 
     manifest = {
         "schema_version": 1, "clip": clip, "proc_h": PROC_H, "proc_w": PROC_W,

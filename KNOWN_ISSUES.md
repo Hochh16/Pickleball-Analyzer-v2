@@ -2109,3 +2109,40 @@ Verified after re-extraction: the ball reads 61-72 brightness above frame median
 sampled labelled position, so nothing shifted.
 
 Bundle: `data/pb_v4_upload.zip`, 3.50 GB, 24,497 JPEGs at 720p.
+
+## The second 0.000 run: hand-edited manifests, 1080p coords on 720p frames (2026-08-22)
+
+The retrain reported `mean_rec 0.000` again, on a run whose data was demonstrably correct
+(`train 14845`, up exactly the 608 samples pb_5min gained). Different cause from the 1080p
+failure, and this one was mine.
+
+Reverting the 1080p experiment, the manifests were patched IN PLACE — `frames_dir`, `proc_h`
+and `proc_w` set back to 720p — while `x_proc`/`y_proc` were left at the 1080p scale
+`prepare_v4` had written. Those coordinates are resolution-dependent (source/2 at 1080p,
+source/3 at 720p), so **seven of eight clips had every label ~1.5x off the ball**. The model
+was trained to fire on empty court, and the target heatmaps never covered a ball at all.
+
+    clip              manifest    max x_proc   (frame is 1280 wide)
+    pb_3min_court2    1280x720       1645
+    indoor_C1_3min    1280x720       1790
+    indoor_B1_3min    1280x720       1540
+    ...                              only pb_5min was correct, having been regenerated
+
+It failed silently and looked exactly like the earlier bug — recall 0.000 across all venues —
+which is what makes it worth recording: two unrelated faults produce the same symptom.
+
+**A manifest is only valid for the frame cache it was generated against.** It must be
+REGENERATED when the resolution changes, never edited.
+
+### tools/test_manifest_coords.py
+
+Checking the numbers alone cannot catch this: 1080p coordinates look perfectly plausible in a
+1280x720 frame whenever the ball stays left of x=1280, which is most of the time. The test
+checks against PIXELS instead — at a labelled position there must be something bright, since
+a pickleball is the brightest small object on a court. Measured 29-85 above frame median when
+correct.
+
+`prepare_v4` also gained a manifest-only fast path: when every needed JPEG is already cached
+and `--force` is not given, it skips the video entirely and rewrites just the manifest. That
+turns "regenerate rather than edit" into a two-second operation, which is what makes the rule
+practical to follow.
