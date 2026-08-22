@@ -1240,11 +1240,14 @@ and no keep-one rule can be right about them. The untried angle: instead of dele
 all-but-one, keep them and let Stage 7's point structure arbitrate, since a rally with the
 wrong parity is detectable downstream where a single run is not.
 
-## Indoor review - operator observations NOT yet investigated (2026-08-18)
+## Indoor review - operator observations, INVESTIGATED 2026-08-22
+
+Each of the five is measured below against the current pipeline. Two are closed, two are open
+with a named cause, and one turned out to be the opposite of what it looked like.
 
 From the same review that produced `missed_review.json`. The handling-filter cascade was
-chased because it accounted for 9 of the 21 missed shots; these were recorded and NOT
-investigated, and are listed so they are not mistaken for closed.
+chased first because it accounted for 9 of the 21 missed shots; these five were recorded and
+left alone until now.
 
 1. **Wrong player, ~5 cases.** "#30 opponent" was the partner (1:15.6); "#47 says user but
    it's the partner"; 2:52.7 "says #68 user when opponent hits it"; "#70 is user dink but
@@ -1272,6 +1275,58 @@ investigated, and are listed so they are not mistaken for closed.
 
 5. **Shot numbering goes off by one after a miss** (:7.98). A display consequence of 1-4
    rather than its own defect, but it makes any future numbered review harder to read.
+
+### Findings
+
+**1. Wrong player — OPEN, and it is a ROLE error, not just is_user.** Both operator times
+still resolve to the wrong player after today's changes, and in each case the credited player
+is on the WRONG SIDE OF THE NET:
+
+| time | operator says | detected as | association |
+|---|---|---|---|
+| 75.6s | partner (near) | opp_a (far) | wrist, **113 px** |
+| 172.7s | opponent (far) | user (near) | wrist, **17 px** |
+
+The two fail differently. At 75.6s the association is weak — 113 px to a far-side wrist — and
+is the z-ambiguity again: an airborne ball on the near side looks close to a far-side player
+in image space. At 172.7s the association is tight (17 px to the user's wrist) and a SECOND
+shot follows at 173.66s credited to opp_b, so the likelier reading is one strike detected
+twice with the earlier copy landing on the near player — the duplicate class, not attribution.
+Note the outdoor clip's wrong-player class turned out to be the same-side filter deleting the
+real shot; that is not what is happening here.
+
+**2. End-of-rally shot missed — CLOSED.** Both cases are now detected: 19.57s at 18.58s and
+115.6s at 114.47s. (Operator times are hand-typed, so ~1s of offset is expected.) The concern
+that a rally-terminating shot has no following contact to anchor to does not appear to bite.
+
+**3. Phantom shots with no ball — OPEN, confirmed as the residual hallucination class.** At
+78.3s three shots are emitted with the ball "visible" throughout — median detector confidence
+**0.37 to 0.49**. That is above the 0.30 accept threshold, so neither of today's ball fixes
+touches it: the weak-support bound only reaches picks under 0.30, and a 0.40 confidence floor
+(measured and rejected, see above) would catch one of the three. This is the same class as the
+"background object" false positive outdoors, and it stays with ball detection.
+
+**4. The serve is detected at the ball TOSS — the aggregate says the OPPOSITE.** Measured
+signed offset of every matched serve against operator truth:
+
+| clip | median offset | early | late |
+|---|---|---|---|
+| court B | **+0.82s** | 2 | 6 |
+| court C | **+1.22s** | 3 | 5 |
+| outdoor | **+0.78s** | 2 | 10 |
+
+Serves are systematically LATE by about a second, not early, on all three clips — 21 of 28
+matched serves land after the operator's time and not one lands within +/-0.15s. If the
+detector were firing at the toss the bias would run the other way. **This needs the operator
+before anything is changed**: `start_t_sec` in truth.json may mark the paddle strike (in
+which case we are a second late everywhere) or the start of the service motion (in which case
+a ~0.8s lag is roughly the toss-to-strike interval and the timing is right). The two readings
+call for opposite fixes, so the question is worth asking rather than guessing. The specific
+case the operator called out (rally 9, "#67") is real either way; what is not established is
+that it is the general rule.
+
+**5. Shot numbering off by one — unchanged**, and still a display consequence rather than its
+own defect.
 
 ## Ball HEIGHT from apparent size — feasibility PASSED (2026-08-19)
 
