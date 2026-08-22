@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from stages.detect_shots.detect_shots import main as detect_main, reject_same_side_runs
@@ -255,20 +256,60 @@ def run_smoke_test() -> int:
     # an alternating rally is fully kept
     rally = [{"frame": f, "track_id": t} for f, t in [(0, 1), (20, 2), (40, 1), (60, 2)]]
     k_rally, d_rally = reject_same_side_runs(rally, side, 90)
-    # a same-side run (handling -> shot) collapses to its LAST impact (the shot)
-    run = [{"frame": f, "track_id": 1} for f in (100, 114, 130, 150, 168)]
+    # A TIGHT same-side run is a strike plus a tracking wobble: keep the STRONGEST, not the
+    # last. (This asserted "last" until v0.5.1, which is what "wrong player" turned out to
+    # be -- the old rule deleted a 172-degree paddle reversal and kept a 26-degree wobble.)
+    run = [{"frame": f, "track_id": 1, "turn_rate_deg": t, "speed_change_ratio": 0.0}
+           for f, t in [(100, 20.0), (114, 172.0), (130, 15.0), (150, 26.0), (168, 10.0)]]
     k_run, d_run = reject_same_side_runs(run, side, 90)
+    # A run SPREAD over seconds is genuine handling (bounce, bounce, serve): keep the LAST.
+    spread = [{"frame": f, "track_id": 1, "turn_rate_deg": t, "speed_change_ratio": 0.0}
+              for f, t in [(0, 172.0), (300, 20.0), (560, 30.0)]]
+    k_spread, d_spread = reject_same_side_runs(spread, side, 600, 60.0)
     # same side after a long gap (> reset) is a new rally, kept
     newrally = [{"frame": 0, "track_id": 1}, {"frame": 200, "track_id": 1}]
     k_new, d_new = reject_same_side_runs(newrally, side, 90)
     okD = (len(k_rally) == 4 and d_rally == 0
-           and len(k_run) == 1 and d_run == 4 and k_run[0]["frame"] == 168
+           and len(k_run) == 1 and d_run == 4 and k_run[0]["frame"] == 114
+           and len(k_spread) == 1 and d_spread == 2 and k_spread[0]["frame"] == 560
            and len(k_new) == 2 and d_new == 0)
     (_pass if okD else _fail)(
         f"alternation filter: rally kept {len(k_rally)}/4 (drop {d_rally}); "
-        f"handling run -> last shot kept {[s['frame'] for s in k_run]} (drop {d_run}); "
+        f"tight run -> strongest kept {[s['frame'] for s in k_run]} (drop {d_run}); "
+        f"spread run -> last kept {[s['frame'] for s in k_spread]} (drop {d_spread}); "
         f"new-rally kept {len(k_new)}/2")
     results.append(okD)
+
+    # --- Phase D2: the ball-excursion split inside a same-side run ---
+    # The run premise is "nobody hit it in between", which is exactly what a MISSED shot
+    # violates -- and then the filter deletes a second real shot. A ball that travelled a
+    # long way from the first impact and came back did not stay in the hitter's hands, so
+    # the two impacts are separate shots however the sides were attributed.
+    print()
+    print("Phase D2: ball-excursion split")
+    n_fr = 200
+    known_arr = np.ones(n_fr, dtype=bool)
+    # ball parked at the hitter the whole time: genuine handling, no split
+    still_x = np.full(n_fr, 500.0)
+    still_y = np.full(n_fr, 900.0)
+    k_still, d_still = reject_same_side_runs(
+        run, side, 90, 60.0, ball_xy=(still_x, still_y, known_arr), excursion_px=450.0)
+    # ball leaves and comes back between every pair: separate shots, nothing dropped
+    away_x = still_x.copy()
+    for a, b in zip((100, 114, 130, 150), (114, 130, 150, 168)):
+        away_x[(a + b) // 2] = 500.0 + 900.0
+    k_away, d_away = reject_same_side_runs(
+        run, side, 90, 60.0, ball_xy=(away_x, still_y, known_arr), excursion_px=450.0)
+    # no ball given -> unchanged from the shipped behaviour
+    k_none, d_none = reject_same_side_runs(run, side, 90, 60.0)
+    okD2 = (len(k_still) == 1 and d_still == 4
+            and len(k_away) == 5 and d_away == 0
+            and len(k_none) == len(k_run) and d_none == d_run)
+    (_pass if okD2 else _fail)(
+        f"excursion split: parked ball still collapses to {len(k_still)}/5 (drop {d_still}); "
+        f"ball leaving between each impact keeps {len(k_away)}/5 (drop {d_away}); "
+        f"no ball data leaves the old behaviour ({len(k_none)} kept, drop {d_none})")
+    results.append(okD2)
 
     print()
     print(f"{sum(results)}/{len(results)} checks passed")

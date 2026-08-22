@@ -89,6 +89,44 @@ HANDLING_RESET_S = 3.0  # consecutive same-net-side impacts within this window =
 # collapsed to 50%, because Stage 7 derives serves from the surviving shot sequence. Do not
 # change it without re-running score_serves; the two stages are coupled through this value.
 HANDLING_SPREAD_S = 8.0
+# The handling filter rests on a statement about the PLAYER: you cannot legally hit twice in
+# a row, so consecutive same-side impacts are one player handling the ball. That premise
+# assumes detection is COMPLETE -- when a shot is missed, the two real shots either side of
+# it become "consecutive same-side" and one of them is deleted too. Measured on the indoor
+# clip, that accounted for 9 of the operator's 21 confirmed missed shots.
+#
+# The physically stronger statement is about the BALL: between two genuine shots it has to
+# leave and come back, while during handling (a catch, a bounce, a carry) it stays near the
+# hitter. Splitting a run wherever the ball made a real excursion is a plain 2-D distance in
+# the image, so unlike the two fixes rejected before it (net-line crossing, opposing-player
+# reach) it never has to decide which SIDE of the net the ball was on -- the question that
+# needs a height one 6 ft camera cannot give.
+#
+# Swept through the FULL pipeline on all three scored clips (an offline sweep over the
+# impulse shots alone disagrees, because serves are derived from the surviving shot sequence
+# in structure_points and only the real pipeline shows that). Reference px @1920:
+#
+#   split at  | outdoor: real kept  false pos  wrong plr  serve | court B: in-play  junk  serve
+#     off     |          95           22/34       1/7     93/81 |          59        11   70/88
+#     800 px  |          95           22/34       1/7     93/81 |          59        11   70/88
+#     700 px  |          96           22/34       1/7     86/80 |          61        10   80/89
+#   * 600 px  |          97           22/34       1/7     86/80 |          61        10   80/89
+#     500 px  |          98           22/34       2/7     86/80 |          61        11   80/89
+#     400 px  |         101           22/34       3/7     79/73 |          62        11   80/89
+#
+# Held-out court C is flat at every threshold above 500 px (57 in-play, 12 junk, serve 80/80).
+#
+# 600 px is where the shot gain is exhausted before the costs start: below 500 px the
+# wrong-player count climbs (recovered impacts start being credited to the wrong striker) and
+# by 400 px serve accuracy collapses. Operator-labelled false positives never move at any
+# threshold, on any clip -- the split returns shots the filter had over-deleted; it does not
+# invent new ones.
+#
+# The one cost at 600 px is on the acceptance clip's serves: one true serve stops being
+# detected (recall 93% -> 86%, which is the figure that stood before the tracker fix), traded
+# against one serve GAINED on court B (70% -> 80%). Serves come out net level across the
+# three clips; shots do not, and shots are what the operator counts.
+SAME_SIDE_EXCURSION_PX = 600.0   # ref px @1920, scaled by frame_width/1920
 # Adjacent-court contamination gates (real ball only). On a multi-court venue the
 # single-ball detector grabs a NEIGHBORING court's ball when ours is occluded,
 # producing phantom shots/serves. Two trajectory-coherence gates reject them:
@@ -419,7 +457,10 @@ def reject_same_track_repeats(shots: List[dict], gap_frames: int
 
 
 def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
-                          reset_frames: int, fps: float = 60.0
+                          reset_frames: int, fps: float = 60.0,
+                          ball_xy: Optional[Tuple[np.ndarray, np.ndarray,
+                                                  np.ndarray]] = None,
+                          excursion_px: Optional[float] = None
                           ) -> Tuple[List[dict], int]:
     """Net-side alternation / ball-handling rejection. Every rally shot crosses
     the net, so the striker's net side must alternate; a run of consecutive
@@ -443,8 +484,14 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     true handling run the real shot is still the most impulsive event in the run, so the
     original case is preserved.
 
-    Runs are split by a side change or a gap longer than reset_frames (a new rally).
-    Returns (kept, n_dropped)."""
+    Runs are split by a side change, a gap longer than reset_frames (a new rally), or -- when
+    `ball_xy` and `excursion_px` are given -- by the BALL having left and come back between
+    two impacts. That last split is what stops a missed shot from costing a second real one:
+    the run premise ("nobody hit it in between") is exactly what a missed shot violates, and
+    a ball that travelled `excursion_px` away from the first impact did not stay in the
+    hitter's hands. See SAME_SIDE_EXCURSION_PX for the measurement.
+
+    `ball_xy` is (fx, fy, known) indexed by frame. Returns (kept, n_dropped)."""
     fps_local = float(fps) or 60.0
     shots_sorted = sorted(shots, key=lambda x: x["frame"])
     kept: List[dict] = []
@@ -470,11 +517,25 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
         kept.append(run[-1] if span >= HANDLING_SPREAD_S else max(run, key=strength))
         n_dropped += len(run) - 1
 
+    def ball_left(f0: int, f1: int) -> bool:
+        """Did the ball travel `excursion_px` away from the impact at f0 before f1?"""
+        if ball_xy is None or not excursion_px:
+            return False
+        fx_, fy_, known_ = ball_xy
+        if not (0 <= f0 < len(fx_)) or not known_[f0]:
+            return False
+        hi = min(f1 + 1, len(fx_))
+        for g in range(f0, hi):
+            if known_[g] and math.hypot(fx_[g] - fx_[f0], fy_[g] - fy_[f0]) >= excursion_px:
+                return True
+        return False
+
     for s in shots_sorted:
         side = side_by_track.get(s["track_id"])
         same_run = (run and side is not None and side == prev_side
                     and prev_frame is not None
-                    and (s["frame"] - prev_frame) <= reset_frames)
+                    and (s["frame"] - prev_frame) <= reset_frames
+                    and not ball_left(prev_frame, s["frame"]))
         if same_run:
             run.append(s)
         else:
@@ -876,7 +937,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     if params.get("handling_filter"):
         shots, n_handling = reject_same_side_runs(
             shots, side_by_track or {}, params["handling_reset_frames"],
-            params["fps"])
+            params["fps"], ball_xy=(fx, fy, known),
+            excursion_px=params.get("same_side_excursion_px"))
     else:
         n_handling = 0
     impulse_frames = sorted(s["frame"] for s in shots)
@@ -1105,6 +1167,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     max_ball_speed = (args.max_ball_speed_px_per_frame
                       if args.max_ball_speed_px_per_frame is not None
                       else MAX_BALL_SPEED_PX_PER_FRAME * res_scale)
+    same_side_excursion = (args.same_side_excursion_px
+                           if args.same_side_excursion_px is not None
+                           else SAME_SIDE_EXCURSION_PX * res_scale)
     if abs(res_scale - 1.0) > 1e-6:
         log.info(f"resolution scale {res_scale:.3f} (frame_width {fw} / "
                  f"{REFERENCE_WIDTH_PX:.0f}); px thresholds scaled accordingly")
@@ -1138,6 +1203,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "serve_gap_frames": int(round(MIN_SERVE_GAP_S * float(fps))),
         "rally_gap_frames": int(round(RALLY_GAP_S * float(fps))),
         "handling_reset_frames": int(round(HANDLING_RESET_S * float(fps))),
+        "same_side_excursion_px": same_side_excursion,
         "handling_filter": ball_source == "real",
         "contamination_filter": ball_source == "real",
         "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
@@ -1227,6 +1293,11 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
                    dest="max_ball_speed_px_per_frame",
                    help="absolute px override (default: MAX_BALL_SPEED scaled by "
                         "frame_width/1920)")
+    p.add_argument("--same-side-excursion-px", type=float, default=None,
+                   dest="same_side_excursion_px",
+                   help="absolute px override (default: SAME_SIDE_EXCURSION_PX scaled by "
+                        "frame_width/1920); a same-side run splits where the ball "
+                        "travelled this far, 0 to disable the split")
     p.add_argument("--log-level", default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"], dest="log_level")
     return p.parse_args(argv)

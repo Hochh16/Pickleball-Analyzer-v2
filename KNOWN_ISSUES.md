@@ -1165,7 +1165,18 @@ Outdoor recall is ~85% against ~73% here, so the ball track is weaker indoors an
 the next thing to work. A per-shot review is still worth having eventually, but it is no
 longer needed to answer the precision question.
 
-## Stage 5 - the HANDLING filter compounds every missed shot (OPEN, cause confirmed)
+## Stage 5 - the HANDLING filter compounds every missed shot (PARTLY FIXED 2026-08-22)
+
+> **Update.** A third fix shipped: split a same-side run wherever the BALL made a large
+> excursion between two impacts (`SAME_SIDE_EXCURSION_PX`, 600 ref px @1920). It sidesteps
+> what killed the two attempts below — it never asks which SIDE of the net the ball was on,
+> only how far it travelled in the image, so no height estimate is involved. Measured on all
+> three scored clips: outdoor real shots kept 95 → **97** with operator-labelled false
+> positives flat at 22/34 and wrong-player flat at 1/7; court B in-rally shots 59 → **61**,
+> between-point junk 11 → **10**, confirmed missed shots recovered 10/21 → **11/21**, serve
+> 70/88 → **80/89**; held-out court C unchanged. One acceptance-clip serve is lost against
+> one gained on court B. Details in the constant's comment. The section below stands as the
+> diagnosis; the cascade is reduced, not eliminated.
 
 The operator reviewed the annotated indoor video (`tools/annotate_full.py`) and reported
 21 timestamped missed shots, frozen in `data/pb_3_min_indoor_1_court_b/missed_review.json`.
@@ -1194,7 +1205,7 @@ The filter cannot simply be removed. On the indoor clip that lifts in-rally shot
 89 (truth 82), but on the outdoor clip it produces **174 shots against ~108 true**, because
 outdoor has real between-point ball-handling and an adjacent court.
 
-### Two fixes attempted and REJECTED — both defeated by ball height
+### Two earlier fixes attempted and REJECTED — both defeated by ball height
 
 1. **Did the ball cross the NET LINE between the two impacts?** (image-space line, the edge
    the half-court polygons share.) Recovered 1 real shot and added 3 junk indoors, changed
@@ -1213,12 +1224,21 @@ outdoor has real between-point ball-handling and an adjacent court.
 
 Neither shipped; the standing rule is that a change must not regress another venue.
 
-**What this needs.** Both rejected fixes ask "did the ball go to the other side", and both
-fail because that question needs the ball's HEIGHT, which one 6ft camera cannot give. A fix
-has to either avoid the question or get height another way. The one untried angle that
-avoids it: instead of deleting all-but-one impact in a same-side run, keep them and let
-Stage 7's point structure arbitrate, since a rally with the wrong parity is detectable
-downstream where a single run is not.
+3. **Did the BALL leave and come back?** — SHIPPED, see the update at the top of this
+   section. Both rejected fixes ask "did the ball go to the other side", which needs the
+   height one 6 ft camera cannot give. This one asks only "did the ball go anywhere", a plain
+   2-D distance in the image, and that is enough to tell a catch or a carry from a rally
+   exchange. It recovers less than fix 2 did indoors, but it is the only one of the three
+   that costs nothing outdoors.
+
+**What this still needs.** The excursion split addressed the cheap half. What remains is
+that a run, however long, still collapses to exactly ONE shot: on the acceptance clip the
+runs reaching the filter include lengths of 9, 10, 13, 14, 18 and 21, and 118 of the 226
+deletions come from runs of five or more. A 21-impact "handling sequence" is not a real
+thing; those are rally exchanges whose side attribution has collapsed onto a single track,
+and no keep-one rule can be right about them. The untried angle: instead of deleting
+all-but-one, keep them and let Stage 7's point structure arbitrate, since a rally with the
+wrong parity is detectable downstream where a single run is not.
 
 ## Indoor review - operator observations NOT yet investigated (2026-08-18)
 
