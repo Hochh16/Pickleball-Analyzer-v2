@@ -1262,6 +1262,30 @@ Neither shipped; the standing rule is that a change must not regress another ven
    nonsense above z=0. The lesson is to check what an input is worth before concluding the
    question is unanswerable.
 
+### After both splits: 7 of court B's 9 remaining misses are still keep-one deletions
+
+Measured 2026-08-22, after the excursion and net-crossing splits shipped. Of the operator's
+21 confirmed missed shots on court B, 9 are still missing, and **7 of those 9 exist as an
+impulse impact that the keep-one rule deletes** (70.4, 74.3, 74.8, 169.3, 171.3, 171.9,
+175.2s). Only 2 were never detected at all. The lever is keep-one, not detection.
+
+They cluster in two fast kitchen exchanges (rally 3 and rally 9), which suggested the crossing
+margin was the problem — a dink lands in the kitchen, 7 ft from the net, so it may never get
+5 ft past it. Swept, and it is not: no (margin, duration) pair recovers them without paying
+elsewhere.
+
+| margin / frames | outdoor shots | outdoor fp | court B in-play (82) | misses | court C in-play (59) |
+|---|---|---|---|---|---|
+| **5 ft / 10 f (shipped)** | 132 | **16/34** | 67 | 14/21 | **61** |
+| 3 ft / 10 f | 140 | 16/34 | **70** | **15/21** | 64 |
+| 3 ft / 15 f | 130 | 17/34 | 66 | 13/21 | 58 |
+| 2 ft / 15 f | 132 | 18/34 | 66 | 13/21 | 59 |
+| 1 ft / 20 f | 131 | 16/34 | 65 | 13/21 | 54 |
+| 0 ft / 35 f | 127 | 17/34 | 63 | 12/21 | 53 |
+
+Loosening buys court B three in-play shots and costs court C the same three in over-detection.
+The knob is exhausted; what remains needs a different mechanism.
+
 **What this still needs.** The excursion split addressed the cheap half. What remains is
 that a run, however long, still collapses to exactly ONE shot: on the acceptance clip the
 runs reaching the filter include lengths of 9, 10, 13, 14, 18 and 21, and 118 of the 226
