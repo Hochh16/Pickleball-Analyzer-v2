@@ -2451,3 +2451,45 @@ Nineteen of twenty-two sit on a real ball in genuine motion. They are `detect_sh
 real ball event a *shot* when it is a feed, a roll, a pick-up, a dead-ball touch, or the second
 impact of one strike. No amount of better ball detection removes them; they need a live-point /
 struck-shot distinction. That is where the next accuracy work belongs.
+
+## The RATING is limited by measurement, not by shot accuracy or video length (2026-08-22)
+
+First end-to-end look after the day's Stage 5 work. Shot counts moved 5-12%; the rating did
+not, and the reason is worth recording before more effort goes into shot counts.
+
+Every clip rates with a **+/-1.0 band**, which spans "solid intermediate" to "advanced" and is
+not actionable advice:
+
+| | rating | range | confidence |
+|---|---|---|---|
+| court B (3 min) | 4.16 | 3.0 - 5.0 | 0.38 |
+| outdoor (5 min) | 3.98 | 3.0 - 5.0 | 0.40 |
+| **both aggregated (8 min)** | 4.05 | 3.0 - 5.0 | **0.44** |
+
+Doubling the video moves confidence 0.40 -> 0.44 and does not narrow the band at all. What it
+DOES do is flip the constraint: five of seven dimensions stop reporting `limited_by:
+sample_size` and start reporting `limited_by: measurement`. More video will not fix those.
+(The two ratings for the same player, 4.16 and 3.98, agree within 0.18 — the estimate is
+stable; it is the confidence that is not.)
+
+**Where the weight actually sits.** `third_shot` carries **weight 0.18**, the second heaviest
+dimension, and its driver metrics read:
+
+    third_shot_drop_rate : null
+    third_shot_by_type   : {"drive": 2}
+    n_third_decisions    : 2          <- across EIGHT MINUTES of the user's play
+
+With no drop rate it scores a flat default of 3.00. Nearly a fifth of the rating is a constant.
+`dink` (0.15) and `volley` (0.13) are thin but real — n=14 with pose-derived knee bend, and
+n=18 with a volley rate.
+
+Separately, `skill_coverage.not_captured_yet` lists eight skills that are not in the rating at
+all: return_of_serve, volleys_hands_battles, attack_conversion, reset_under_pressure,
+defense_scrambling, partner_stacking_poaching, footwork_split_step, shot_selection_iq.
+
+**What this means for sequencing.** Shot-count accuracy has been the focus and it is now
+close on two of three clips (court C 58 of 59 true, outdoor 102 real shots kept against ~110
+implied). The rating does not improve with it, because the rating's problem is that most of
+its dimensions have no real measurement behind them. A third-shot-drop metric is newly
+possible: telling a drop from a drive is an apex-height and landing-location question, and
+`tools/build_ball_3d.py` answers both as of today.
