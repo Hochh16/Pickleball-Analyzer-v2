@@ -1348,13 +1348,31 @@ signed offset of every matched serve against operator truth:
 
 Serves are systematically LATE by about a second, not early, on all three clips — 21 of 28
 matched serves land after the operator's time and not one lands within +/-0.15s. If the
-detector were firing at the toss the bias would run the other way. **This needs the operator
-before anything is changed**: `start_t_sec` in truth.json may mark the paddle strike (in
-which case we are a second late everywhere) or the start of the service motion (in which case
-a ~0.8s lag is roughly the toss-to-strike interval and the timing is right). The two readings
-call for opposite fixes, so the question is worth asking rather than guessing. The specific
-case the operator called out (rally 9, "#67") is real either way; what is not established is
-that it is the general rule.
+detector were firing at the toss the bias would run the other way.
+
+Asked, the operator could not say what `start_t_sec` marks; the times were typed while
+watching and the rule may have varied. So the frames were pulled instead. On the court B
+serve at truth 29.00s (the server is in frame for this one):
+
+| | |
+|---|---|
+| ball first visible at the server | 28.85s |
+| ball still at her body | 29.00 - 30.05s |
+| ball out over the court — struck | **~30.10s** |
+| operator truth | 29.00s |
+| detected | 28.44s |
+
+So **truth is not the strike either** — it lands ~1.1s before it, about where the service
+motion begins — and the detection is ~1.7s early. That inverts the aggregate: the offsets
+above are measured against a moving target, and "we are late" is an artefact of comparing to
+a truth that is itself early.
+
+This is n=1, and two further attempts landed on the wrong player (the crop heuristic centres
+on the ball, and the ball is not visible at the server before the toss). **What this needs is
+half a dozen operator-marked STRIKE frames** — a small, well-defined ask that would let serve
+timing be scored at all. Until then the timing numbers above should not be read as an error
+budget. The specific case the operator called out (rally 9, "#67") is real either way; what
+is not established is that it is the general rule.
 
 **5. Shot numbering off by one — unchanged**, and still a display consequence rather than its
 own defect.
