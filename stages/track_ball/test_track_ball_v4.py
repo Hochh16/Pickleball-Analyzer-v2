@@ -81,13 +81,34 @@ def test_parked_contaminant_never_steals_the_track():
 def test_weak_but_continuous_ball_is_recovered():
     """A real ball whose confidence dips BELOW the accept threshold is kept when
     it sits on the track beside accepted detections — temporal support is what a
-    single-frame threshold cannot see."""
+    single-frame threshold cannot see.
+
+    Only the frames within WEAK_SUPPORT_GAP of a self-accepted detection come back;
+    the middle of the dip is left to postprocess(), which interpolates gaps up to
+    MAX_GAP_FRAMES. Support used to chain, which recovered the whole dip — and also
+    let one confident detection drag an unbounded run of noise along with it."""
     cands = {f: [(500 + 6 * f, 900 + 2 * f, 0.22 if 10 <= f < 20 else 0.65)]
              for f in range(40)}
     sel = _sel(cands)
-    recovered = [f for f in sel if cands[f][0][2] < 0.30]
-    assert len(recovered) == 10
-    assert len(sel) == 40
+    recovered = sorted(f for f in sel if cands[f][0][2] < 0.30)
+    assert recovered == [10, 11, 18, 19]
+    # the un-recovered middle is a 6-frame gap, well inside what postprocess bridges
+    assert 20 - 12 <= MAX_GAP_FRAMES
+    rows = postprocess({f: cands[f][0] for f in sel}, list(range(40)))
+    assert all(r["visible"] or r["interpolated"] for r in rows)
+
+
+def test_weak_support_does_not_chain():
+    """The defect this replaced: support was transitive, so a single confident
+    detection promoted a weak pick two frames away, which promoted the next, and so
+    on without limit. Measured on the operator's ball labels, those chained picks
+    were 64% hallucination — 42% of every false ball in the track."""
+    cands = {0: [(500, 900, 0.80)]}
+    for f in range(1, 40):                       # a long weak tail, each step tiny
+        cands[f] = [(500 + 4 * f, 900 + f, 0.20)]
+    sel = _sel(cands)
+    weak = sorted(f for f in sel if cands[f][0][2] < 0.30)
+    assert weak == [1, 2], f"weak support chained out to {weak[-1] if weak else None}"
 
 
 def test_isolated_weak_noise_is_not_promoted():

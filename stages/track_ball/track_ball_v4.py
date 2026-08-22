@@ -62,7 +62,9 @@ TRACK_GAP_PENALTY = 0.05    # small penalty per skipped frame (prefer continuous
 # possible track and wins outright — the exact failure this rewrite targets.
 TRACK_MIN_STEP_PX = 2.0     # below this src px/frame a link looks stationary, not ball-like
 TRACK_STILL_W = 0.8         # penalty weight for a stationary link
-WEAK_SUPPORT_GAP = 2        # a sub-threshold pick adjacent (<= this) to an accepted one is kept
+# A sub-threshold pick is kept only within this many frames of a detection that cleared the
+# accept threshold BY ITSELF. Support does not chain -- see select_track() for the measurement.
+WEAK_SUPPORT_GAP = 2
 
 
 def fail(msg: str, exc=RuntimeError):
@@ -233,23 +235,35 @@ def select_track(cands: dict, max_step_px: float, link_gap: int,
         path[f] = (x, y, c)
         i = prev[i]
 
-    # Acceptance. A pick clearing `accept_conf` is trusted outright. A WEAKER pick
-    # is kept only when it sits on the track right next to an accepted one — that
-    # temporal support is exactly what a single-frame threshold cannot see, and it
-    # is what recovers the real-but-faint ball the old argmax+threshold discarded.
+    # Acceptance. A pick clearing `accept_conf` is trusted outright. A WEAKER pick is kept
+    # only when it sits on the track right next to a detection that cleared the threshold ON
+    # ITS OWN — that temporal support is exactly what a single-frame threshold cannot see,
+    # and it is what recovers the real-but-faint ball the old argmax+threshold discarded.
+    #
+    # Support is deliberately NOT transitive. It used to be: the loop re-scanned the accepted
+    # set as it grew, so a weak pick promoted at f could promote f+2, which promoted f+4, and
+    # a single confident detection dragged an unbounded run of 0.15-0.30 picks into the track
+    # two frames at a hop. Between points that is exactly what happens — the ball is on the
+    # ground, the model still emits faint peaks, and the DP has no "absent" state, so it must
+    # pick one of them every frame. Measured against the operator's ball labels on all three
+    # scored clips, picks below `accept_conf` were **64% hallucination** (n=252) against 7.1%
+    # for self-accepted ones, and made up 42% of every hallucination in the track. Bounding
+    # the reach at WEAK_SUPPORT_GAP lifts frame-level ball precision on every clip
+    # (outdoor 79.1 -> 82.4%, court B 89.4 -> 90.4%, court C 94.1 -> 95.2%) for 23 lost real
+    # frames of 2,998 — most of which postprocess() interpolates straight back, since a weak
+    # pick between two confident ones is a gap to bridge, not a detection to lose.
+    #
+    # The unbounded version also got worse with clip length, which matters: the product is
+    # aimed at 5-minute-plus video, and the longest clip scored is where it was worst (85%
+    # hallucination among the weak picks).
     pf_sorted = sorted(path)
-    accepted = {f for f in pf_sorted if path[f][2] >= accept_conf}
-    grew = True
-    while grew:
-        grew = False
-        for f in pf_sorted:
-            if f in accepted:
-                continue
-            for g in accepted:
-                if abs(g - f) <= WEAK_SUPPORT_GAP:
-                    accepted.add(f)
-                    grew = True
-                    break
+    self_accepted = [f for f in pf_sorted if path[f][2] >= accept_conf]
+    accepted = set(self_accepted)
+    for f in pf_sorted:
+        if f in accepted:
+            continue
+        if any(abs(g - f) <= WEAK_SUPPORT_GAP for g in self_accepted):
+            accepted.add(f)
     return {f: path[f] for f in pf_sorted if f in accepted}
 
 

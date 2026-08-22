@@ -2211,3 +2211,70 @@ produce. The remaining untried levers are the LOSS FUNCTION (the current focal l
 by positive count, so negatives are cheap to get wrong) and the TRACKER'S SELECTION (the
 continuity DP will happily follow a confident-looking wrong object, which is what the latch
 gate patches downstream).
+
+### 3. The tracker's weak-support closure was unbounded — FIXED
+
+`select_track` accepts a candidate whose confidence clears `--conf` outright, then grows that
+set: a picked frame within `WEAK_SUPPORT_GAP` of an accepted one is accepted too. The loop
+re-scanned the accepted set as it grew, so support was **transitive** — a weak pick promoted
+at frame f promoted f+2, which promoted f+4, without limit. One confident detection could drag
+an arbitrarily long run of 0.15-0.30 picks into the track, two frames at a hop.
+
+Between points that is precisely what happens. The ball is on the ground, the model still emits
+faint peaks, and the DP has no "absent" state, so it must pick something every frame.
+
+Measured against the operator's ball labels on all three scored clips:
+
+| acceptance route | frames | hallucination rate |
+|---|---|---|
+| cleared the threshold itself | 3,130 | **7.1%** |
+| admitted by weak support | 252 | **64.3%** |
+
+Weak-support picks are 7.5% of the track and **42% of every hallucination in it**. The rate
+rose with clip length — worst (85%) on the longest clip scored, which matters for a product
+aimed at 5-minute-plus video.
+
+Bounding the reach (support only from a detection that cleared the threshold on its own) lifts
+frame-level ball precision on every clip:
+
+| clip | before | after |
+|---|---|---|
+| outdoor 5 min | 79.1% | **82.4%** |
+| indoor court B | 89.4% | **90.4%** |
+| indoor court C (held out) | 94.1% | **95.2%** |
+
+for 23 lost real frames out of 2,998 — most of which `postprocess()` interpolates straight
+back, since a weak pick between two confident ones is a gap to bridge, not a detection to lose.
+
+**Downstream this is close to a wash**, and the numbers are recorded as such rather than
+claimed as a win: outdoor false positives 23 -> 22 with 94 -> 95 real shots kept and serve
+recall 86% -> 93% (precision 86% -> 81%); court C 56 -> 57 in-play shots and serve 70/88 ->
+80/80; court B 60 -> 59 in-play shots, junk unchanged at 11. It ships because the unbounded
+closure is a latent defect that grows with video length, not because it moved the counts.
+
+Two stricter variants were measured and **rejected**: requiring a weak run to be bracketed by
+strong picks at both ends (court B junk 11 -> 14, court C serve 70/88 -> 60/75), and dropping
+weak picks entirely (best frame precision at 92.9%, but shot counts rose on both indoor clips
+— removing a detection can open a gap wider than `MAX_GAP_FRAMES`, splitting one track into
+two and manufacturing an extra impact).
+
+### Where the surviving false positives actually come from
+
+The reason none of this moved the counts much: **the ball track is no longer what limits shot
+accuracy**. Of the 22 operator-labelled false positives still emitted on the acceptance clip,
+the operator's own causes say only three are detection failures:
+
+| cause | n | is the ball really there? |
+|---|---|---|
+| feed or throw between points | 7 | yes — a real ball, really thrown |
+| duplicate detection | 5 | yes — one strike counted twice |
+| ball rolling after net hit | 3 | yes |
+| point already over | 3 | yes |
+| adjacent court | 2 | **no — wrong ball** |
+| pick up / carry / no swing | 1 | yes |
+| background object | 1 | **no — no ball at all** |
+
+Nineteen of twenty-two sit on a real ball in genuine motion. They are `detect_shots` calling a
+real ball event a *shot* when it is a feed, a roll, a pick-up, a dead-ball touch, or the second
+impact of one strike. No amount of better ball detection removes them; they need a live-point /
+struck-shot distinction. That is where the next accuracy work belongs.
