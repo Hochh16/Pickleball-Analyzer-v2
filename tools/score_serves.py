@@ -69,6 +69,23 @@ def clock(s: float) -> str:
     return f"{int(s // 60)}:{int(s % 60):02d}"
 
 
+def strike_times(clip: Path) -> list[float] | None:
+    """Operator-marked PADDLE-STRIKE times, if any (tools/mark_serve_strikes.py).
+
+    Recall and precision above are matched against the serve times the operator typed while
+    watching, and those are not the strike -- measured, they sit a median 1.06s early on
+    court B and 0.32s early outdoors, and the bias differs per clip because the convention
+    varied. A +/-3s match window absorbs that, so recall/precision are unaffected. TIMING is
+    not: it can only be scored against a marked strike, which is what this reads.
+    """
+    p = clip / "serve_strikes.json"
+    if not p.exists():
+        return None
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    out = [float(s["t_sec"]) for s in doc.get("strikes", []) if not s.get("skipped")]
+    return sorted(out) or None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -80,7 +97,7 @@ def main(argv=None) -> int:
     print(f"Serve detection vs operator truth (match window +/-{a.tol:g}s)")
     print()
     print(f"{'clip':<28}{'truth':>6}{'found':>6}{'hit':>5}{'miss':>6}{'false':>6}"
-          f"{'recall':>8}{'prec':>7}")
+          f"{'recall':>8}{'prec':>7}{'|t-strike|':>12}{'n':>4}")
     rc = 0
     for c in a.clips:
         t = truth_serves(c)
@@ -92,12 +109,23 @@ def main(argv=None) -> int:
         h, mi, fa = len(m["hits"]), len(m["missed"]), len(m["false"])
         rec = h / len(t) if t else 0.0
         pre = h / len(g) if g else 0.0
-        print(f"{c.name:<28}{len(t):>6}{len(g):>6}{h:>5}{mi:>6}{fa:>6}{rec:>7.0%}{pre:>7.0%}")
+        st = strike_times(c)
+        errs = []
+        if st:
+            sm = match(st, g, a.tol)
+            errs = sorted(abs(got - tr) for tr, got, _ in sm["hits"])
+        med = f"{errs[len(errs) // 2]:.2f}s" if errs else "-"
+        print(f"{c.name:<28}{len(t):>6}{len(g):>6}{h:>5}{mi:>6}{fa:>6}{rec:>7.0%}{pre:>7.0%}"
+              f"{med:>12}{(len(errs) if errs else '-'):>4}")
         if a.verbose:
             if m["missed"]:
                 print(f"    missed serves : {', '.join(clock(x) for x in m['missed'])}")
             if m["false"]:
                 print(f"    false starts  : {', '.join(clock(x) for x in m['false'])}")
+            if errs:
+                print(f"    vs marked strikes: median {errs[len(errs) // 2]:.2f}s, "
+                      f"worst {errs[-1]:.2f}s, "
+                      f"{sum(1 for e in errs if e <= 0.5)}/{len(errs)} within 0.5s")
         if mi or fa:
             rc = 1
     return rc

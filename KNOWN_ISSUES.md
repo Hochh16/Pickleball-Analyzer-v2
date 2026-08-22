@@ -1391,12 +1391,37 @@ motion begins — and the detection is ~1.7s early. That inverts the aggregate: 
 above are measured against a moving target, and "we are late" is an artefact of comparing to
 a truth that is itself early.
 
-This is n=1, and two further attempts landed on the wrong player (the crop heuristic centres
-on the ball, and the ball is not visible at the server before the toss). **What this needs is
-half a dozen operator-marked STRIKE frames** — a small, well-defined ask that would let serve
-timing be scored at all. Until then the timing numbers above should not be read as an error
-budget. The specific case the operator called out (rally 9, "#67") is real either way; what
-is not established is that it is the general rule.
+### Settled: the operator marked 14 strikes, and serve timing is FINE
+
+`tools/mark_serve_strikes.py`, 10 serves on court B and 4 outdoors. Measured against the
+marked paddle contact:
+
+| | court B (n=10) | outdoor (n=4) |
+|---|---|---|
+| operator anchor vs strike | **−1.06s** | **−0.32s** |
+| detection vs strike | **−0.32s** (n=8) | **−0.02s** (n=3) |
+| \|detection − strike\| median | 0.34s | **0.02s** |
+| within 0.5s of the strike | 4 / 7 | 2 / 3 |
+
+**The "serves are systematically ~0.8s late" finding is withdrawn.** It was entirely an
+artefact of the anchors. `truth.json`'s `start_t_sec` is early by a per-clip amount — a full
+1.06s on court B, only 0.32s outdoors — and the operator said at the time that the convention
+may have varied while they typed. It did. Comparing detections to that produced a bias that
+belongs to the anchor, not the detector. Against the real strike, detection is slightly EARLY
+and outdoors it is essentially exact (two of three within 0.02s).
+
+**Observation 4 is partly borne out, as a minority case rather than the rule.** The court B
+serve at 29.43s is detected at 28.44s — 0.99s early, which is about a toss-to-strike interval
+and matches what the operator described. But most detections sit within ~0.34s of contact, so
+`serve_appearance` is not generally firing at the toss. The outliers that remain are two LATE
+by 1.2-1.4s (court B 87.20s and 127.94s, both cases where the real serve was missed and a
+later shot inherited the label) and one wildly early (court B's first serve, detected at
+0.02s against a strike at 3.73s).
+
+`tools.score_serves` now reads `serve_strikes.json` when it is present and reports
+\|detection − strike\| alongside recall and precision, so serve timing has a standing score
+instead of an anecdote. Recall and precision are unchanged — the +/-3s match window always
+absorbed the anchor bias; only timing was ever affected.
 
 **5. Shot numbering off by one — unchanged**, and still a display consequence rather than its
 own defect.
