@@ -2830,7 +2830,36 @@ Measured on the same frames: the window costs **19.2 ms instead of 44.4**, a qua
 bytes. Unverified end-to-end until the next Colab run, since there is no local GPU — the
 estimate is that Stage 4 drops well below its 1700 s.
 
+### VERIFIED on real data (2026-08-23)
+
+Re-ran Stage 4 on court A through Colab, ingested, and re-ran everything below it.
+
+| | before | after |
+|---|---|---|
+| Stage 4 (Colab) | 1700 s | **1029 s** |
+| `build_ball_3d` (local) | ~1700 s | **5 s** |
+| ball.parquet pixel_x / pixel_y / confidence | | **identical to 0.000000** |
+| visible / interpolated frames | 13194 / 1154 | **13194 / 1154** |
+| every downstream count | | **unchanged** |
+
+The 1029 s *includes* measuring the blob on 12,939 frames, work the 1700 s baseline never did
+— so the preprocessing win is larger than the 39% it looks like; it also absorbed the new
+work. And the detections are bit-identical, which is the correctness proof that matters:
+`x/255` on the GPU is the same arithmetic as on the CPU, and the numbers say so.
+
+Downstream on court A is unchanged to the last count — 109 shots, 19 serves, 18 rallies, 14
+dinks, 46 volleys, 55 bounces, all eight user counts, rating 3.78. The reconstruction is
+healthy on a venue Stage 4 had never measured: z at bounces 0.38 ft, play envelope 41% raw →
+87% reconstructed, camera solved at 6.54 ft against a ~6 ft tripod.
+
+**A 5-minute clip: ~78 minutes end to end → ~38 minutes.**
+
 ### Not done
+
+Stage 4 is still 57 ms/frame (1029 s / 18,189) against `track_players` at 23 ms/frame on the
+same decode, so it remains 2.5x a comparable stage. What is left is the 4K→720p resize and the
+decode itself, neither of which uint8 touches — GPU decode or a GPU-side resize is the next
+lever, and neither is worth starting before the current win is banked.
 
 `track_players` (421 s) and `pose` (639 s) are 36% of the vision pass and have never been
 split into decode versus model. Worth measuring after this lands, not guessing at now.
