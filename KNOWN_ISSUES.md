@@ -2857,9 +2857,34 @@ healthy on a venue Stage 4 had never measured: z at bounces 0.38 ft, play envelo
 ### Not done
 
 Stage 4 is still 57 ms/frame (1029 s / 18,189) against `track_players` at 23 ms/frame on the
-same decode, so it remains 2.5x a comparable stage. What is left is the 4K→720p resize and the
-decode itself, neither of which uint8 touches — GPU decode or a GPU-side resize is the next
-lever, and neither is worth starting before the current win is banked.
+same decode. Measuring what is left, streaming, on real 4K frames:
+
+| per frame (local, loaded box — read the ranking, not the absolutes) | ms |
+|---|---|
+| `cv2.resize` 4K → 720p, INTER_AREA | 5.80 |
+| cvtColor + transpose + ascontiguous | 2.45 |
+| `np.concatenate` → 9-channel uint8 window | 1.36 |
+| `topk_peaks` (3 peaks over 720×1280) | 1.52 |
+| `measure_diameter` × 3 candidates | 0.42 |
+| **all CPU work except decode and inference** | **11.4** |
+
+So of Stage 4's 57 ms, only ~11 ms is CPU work the last change did not already take — **the
+rest is decode or the forward pass**, and a machine with no GPU cannot tell those apart.
+`INTER_LINEAR` would cut the resize from 5.8 ms to 1.7 ms and is **not** worth it: the ball is
+3.8 px across at the far baseline once 4K is squeezed to 720p, and a cheaper filter aliases
+exactly the object being detected.
+
+A note on the heatmap: it comes back from the GPU at full resolution, 3.7 MB per frame, 67 GB
+over an 18,189-frame clip, when only three peaks are wanted from it. Finding them on the
+device would return ~48 bytes. That is real but small — of order 2 ms/frame — and not worth
+doing blind.
+
+**Stage 4 is now instrumented** (`Phases`): decode / preprocess / infer / peaks+measure, wall
+clock and ms per frame, logged at the end of the run. One Colab run splits the remaining 57 ms
+and says whether the next lever is GPU decode, a shared decode across the four vision stages,
+or the model itself. Guessing here has been wrong twice — the Drive round-trip that turned out
+to be 3%, and the shared-decode refactor proposed for Stages 5-11 that turned out to be one
+function in the wrong place.
 
 `track_players` (421 s) and `pose` (639 s) are 36% of the vision pass and have never been
 split into decode versus model. Worth measuring after this lands, not guessing at now.

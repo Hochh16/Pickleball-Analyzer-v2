@@ -32,6 +32,7 @@ import json
 import logging
 import math
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -72,6 +73,35 @@ TRACK_STILL_W = 0.8         # penalty weight for a stationary link
 # A sub-threshold pick is kept only within this many frames of a detection that cleared the
 # accept threshold BY ITSELF. Support does not chain -- see select_track() for the measurement.
 WEAK_SUPPORT_GAP = 2
+
+
+class Phases:
+    """Wall-clock per phase, so "Stage 4 is slow" can be answered instead of argued.
+
+    The stage costs 57 ms/frame against 23 ms/frame for player tracking on the same decode,
+    and the CPU work between them is only ~11 ms — so the remainder is decode or the forward
+    pass, and those cannot be told apart from a machine with no GPU. Timing them in place is
+    the same trick that showed the Drive round-trip was 3% of the vision pass rather than the
+    "obvious" bottleneck.
+
+    Deliberately coarse: one perf_counter pair per phase per frame, no CUDA syncing beyond
+    what the code already does. Inference time therefore includes the .cpu() that follows it,
+    which is honest — that transfer is part of what the forward pass costs us.
+    """
+
+    def __init__(self):
+        self.t = {}
+
+    def add(self, name, dt):
+        self.t[name] = self.t.get(name, 0.0) + dt
+
+    def report(self, n_frames: int) -> str:
+        total = sum(self.t.values())
+        if not total or n_frames <= 0:
+            return ""
+        parts = [f"{k} {v:.0f}s ({v / total:.0%}, {v / n_frames * 1000:.1f} ms/frame)"
+                 for k, v in sorted(self.t.items(), key=lambda kv: -kv[1])]
+        return "  timing: " + "; ".join(parts)
 
 
 def fail(msg: str, exc=RuntimeError):
@@ -168,7 +198,7 @@ def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
                  cands: dict, raw_conf: list, topk: int = CAND_TOPK,
                  cand_floor: Optional[float] = None,
                  src_frames: Optional[dict] = None,
-                 px_per_ft=None) -> None:
+                 px_per_ft=None, phases: Optional["Phases"] = None) -> None:
     """Run the model on a BATCH of (9,H,W) stacks and record CANDIDATE peaks for
     each window's center frame. Batching is the real GPU speedup (per-window
     inference leaves the GPU mostly idle).
@@ -181,9 +211,13 @@ def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
     if not stacks:
         return
     floor = conf_thresh if cand_floor is None else min(cand_floor, conf_thresh)
+    _t0 = time.perf_counter()
     t = to_device_float(np.stack(stacks), device)        # (N,9,H,W) uint8 -> float on GPU
     with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[:, 0].float().cpu().numpy()        # (N,H,W)
+    if phases is not None:
+        phases.add("infer", time.perf_counter() - _t0)
+    _t0 = time.perf_counter()
     for k, center in enumerate(centers):
         h = hm[k]
         peaks = topk_peaks(h, topk, floor, PEAK_SUPPRESS_RADIUS)
@@ -208,6 +242,8 @@ def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
                     meas[j] = measure_diameter(src, u, v, BALL_FT * s)
         cands[center] = [(ix * sx, iy * sy, c, meas[j])
                          for j, (ix, iy, c) in enumerate(peaks)]
+    if phases is not None:
+        phases.add("peaks+measure", time.perf_counter() - _t0)
 
 
 def select_track(cands: dict, max_step_px: float, link_gap: int,
@@ -435,41 +471,50 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # Full-resolution frames for the centres still waiting on inference. Bounded by the
     # batch size (a 4K frame is ~25 MB, so ~10 of them), and cleared after each flush.
     pending_src = {} if px_per_ft is not None else None
+    phases = Phases()
     fidx = start
     while fidx < end:
+        _t0 = time.perf_counter()
         ok, fr = cap.read()
+        phases.add("decode", time.perf_counter() - _t0)
         if not ok:
             break
         if src_cache is not None:
             src_cache[fidx] = fr
         if pending_src is not None:
             pending_src[fidx] = fr
+        _t0 = time.perf_counter()
         buf.append(to_proc(fr, ishape))
         if len(buf) > 3:
             buf.pop(0)
         if len(buf) == 3:
             b_stacks.append(np.concatenate(buf, axis=0))   # (9,H,W) uint8
             b_centers.append(fidx - 1)
-            if len(b_stacks) >= bsz:
-                detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
-                             raw_conf, args.topk, args.cand_floor, pending_src, px_per_ft)
-                b_stacks, b_centers = [], []
-                if pending_src is not None:
-                    keep = {fidx, fidx - 1}
-                    for g in [g for g in pending_src if g not in keep]:
-                        del pending_src[g]
+        phases.add("preprocess", time.perf_counter() - _t0)
+        if len(b_stacks) >= bsz:
+            detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
+                         raw_conf, args.topk, args.cand_floor, pending_src, px_per_ft,
+                         phases)
+            b_stacks, b_centers = [], []
+            if pending_src is not None:
+                keep = {fidx, fidx - 1}
+                for g in [g for g in pending_src if g not in keep]:
+                    del pending_src[g]
         fidx += 1
         if (fidx - start) % 200 == 0 and fidx > start:
             log.info(f"  {fidx-start}/{len(frames)} frames")
     detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
                              raw_conf, args.topk, args.cand_floor,
-                             pending_src, px_per_ft)  # flush
+                             pending_src, px_per_ft, phases)  # flush
     cap.release()
 
     n_cand_frames = len(cands)
     dets = select_track(cands, args.max_step_px, TRACK_LINK_GAP,
                         args.restart_cost, TRACK_MOTION_W, TRACK_GAP_PENALTY,
                         args.conf)
+    rep = phases.report(len(frames))
+    if rep:
+        log.info(rep)
     log.info(f"candidates on {n_cand_frames} frames -> continuity track kept "
              f"{len(dets)} detections (topk={args.topk}, floor={args.cand_floor})")
 
