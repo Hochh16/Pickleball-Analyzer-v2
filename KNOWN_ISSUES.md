@@ -2531,3 +2531,42 @@ to see the thing it claims to score.
 
 **What shot typing actually needs is labels.** Thirty-two, of which three are drops, cannot
 separate a real improvement from noise in either direction. `tools/label_shots.py` exists.
+
+### Third shot: reporting fixed now, the STAT deferred until the sample exists (2026-08-22)
+
+Operator decision, and it is the right sequencing.
+
+**Rated on the USER's own third shots, not the team's.** Already the case —
+`stages/rate/rate.py score_third_shot` reads the per-user block (`per_user: True`). Confirmed
+rather than changed.
+
+**The report now shows the denominator.** It printed a bare percentage, which hides that the
+rate is over one or two shots, and printed nothing at all below the 4-decision threshold — so
+a category showing a level of 3.0 looked measured when it rested on nothing. The row now reads:
+
+    Third shots you played as a soft drop: 0 of 2 (0%)
+      -- 9 third shots in the match, by all four players
+      -- too few to rate yet (needs 4); the level shown is a placeholder
+
+and on a clip where the user never took one:
+
+    Third shots you played as a soft drop: none yet
+      -- you did not take a third shot from deep in this session, so this category is a
+         placeholder, not a measurement
+
+Wording switches to "across these sessions" on a cumulative report, which also needed
+`n_vids` to recognise a folder built by running `stages/aggregate` directly (only
+`app/collections.py` writes `collection.json`; the stage writes `union.json`).
+
+**Why the stat itself waits.** The third shot belongs to the SERVING team, and only when the
+user takes it themselves does it say anything about the user. Court B truth: the user serves
+2 of 10 points, and took **0** third shots from deep. Outdoor: 2. Aggregated over both: still
+2, against a threshold of 4. Meanwhile shot typing is 31% correct overall and 2 of the 3
+labelled drops are called drives, so even a full denominator would be measuring a coin flip.
+
+Enhancing drop-vs-drive detection now would be tuning against a sample of two with a
+classifier we cannot score. The trigger to revisit: enough cumulative user third shots to
+clear MIN_THIRD_DECISIONS with room (roughly 20 for a rate worth coaching off), which is a
+matter of aggregating sessions, not of new code. At that point the same data supports the
+elements already listed as planned in the report — drop LANDING DEPTH and TRANSITION SUCCESS
+— because both are reconstruction quantities on a shot we have already identified.

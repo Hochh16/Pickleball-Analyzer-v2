@@ -69,7 +69,9 @@ METRIC_DISPLAY = {
     "both_at_kitchen_frac": ("You and your partner at the kitchen together", "pct_rally"),
     "user_transition_time_frac": ("Time caught in mid-court (transition)", "pct_rally"),
     "distance_ft_per_min": ("Court covered during play", "ftmin"),
-    "third_shot_drop_rate": ("Third shots played as a soft drop", "pct"),
+    # third_shot is rendered by third_shot_line() instead: a bare percentage hides how
+    # many of the user's own third shots it is over, and on a short clip that is one or
+    # two. The operator asked to see the denominator.
     "dink_count": ("Dinks detected", "int"),
     "volley_rate": ("Your shots that were volleys", "pct"),
     "n_volley": ("Net volleys detected", "int"),
@@ -183,6 +185,49 @@ def esc(s) -> str:
 def band_of(estimate: float) -> str:
     e = max(1.0, min(5.0, estimate))
     return f"{round(e * 2.0) / 2.0:.1f}"
+
+
+MIN_THIRD_DECISIONS = 4   # mirrors stages/rate/rate.py -- below this the level is a prior
+
+
+def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
+    """The third-shot row: soft drops OVER the user's own third shots, not a bare rate.
+
+    A percentage on its own is unreadable here. The third shot belongs to the SERVING team,
+    and only when the user takes it themselves does it say anything about the user -- which
+    on a 3-minute clip is one or two shots, or none at all. "1 of 3" says that; "33%" hides
+    it, and a hidden "0 of 0" behind a 3.0 level says the opposite of the truth.
+
+    The count is third shots that were a drop-or-drive decision made from DEEP; a serve
+    mis-segmented into position 3, or a third ball dinked from the kitchen, is not that
+    decision and is not counted either way (stages/rate/rate.py score_third_shot).
+    """
+    # A cumulative report spans several sessions, and the whole point of watching this
+    # number is to see it accumulate -- so the wording has to say which it is.
+    where = "in these sessions" if n_videos > 1 else "in this session"
+    whose = "across these sessions" if n_videos > 1 else "in the match"
+    n = drivers.get("n_third_decisions")
+    by = drivers.get("third_shot_by_type") or {}
+    if not isinstance(n, int):
+        return ""
+    n_drop = int(by.get("drop", 0) or 0)
+    if n <= 0:
+        return ('<div class="metric">Third shots you played as a soft drop: '
+                '<b>none yet</b> <span class="muted small">&mdash; you did not take a '
+                f'third shot from deep {where}, so this category is a placeholder, '
+                'not a measurement</span></div>')
+    ctx = ""
+    if isinstance(match_total, int) and match_total > 0:
+        ctx = (f' <span class="muted small">&mdash; {match_total} third shot'
+               f'{"s" if match_total != 1 else ""} {whose}, by all four players'
+               f'</span>')
+    pct = f' ({n_drop / n:.0%})' if n >= MIN_THIRD_DECISIONS else ""
+    warn = ("" if n >= MIN_THIRD_DECISIONS else
+            f' <span class="muted small">&mdash; too few to rate yet '
+            f'(needs {MIN_THIRD_DECISIONS}); the level shown is a placeholder. It sharpens '
+            f'as sessions accumulate.</span>')
+    return (f'<div class="metric">Third shots you played as a soft drop: '
+            f'<b>{n_drop} of {n}</b>{pct}{ctx}{warn}</div>')
 
 
 def fmt_metric(fmt: str, val) -> Optional[str]:
@@ -466,6 +511,9 @@ def build_html(folder: Path) -> str:
         "n_returns": ((metrics.get("match", {}) or {}).get("returns", {}) or {}).get("value"),
         "forehand_count": _bs.get("forehand"),
         "backhand_count": _bs.get("backhand"),
+        # all four players' third-shot decisions, as context for the user's own count
+        "n_third_decisions": (((metrics.get("match", {}) or {}).get("third_shot", {}) or {})
+                              .get("value", {}) or {}).get("n_third_decisions"),
     }
 
     rt = rating.get("rating", {}) or {}
@@ -499,6 +547,11 @@ def build_html(folder: Path) -> str:
         sess = load_json(folder, "session.json") or {}
         who = str(sess.get("player_name") or "")
     n_vids = len((collection or {}).get("members", []) or [])
+    if n_vids == 0:
+        # collection.json is written by app/collections.py; a folder produced by running
+        # stages/aggregate directly has only union.json. Both are cumulative, and the
+        # difference matters to the wording ("in the match" vs "across these sessions").
+        n_vids = len(((load_json(folder, "union.json") or {}).get("members") or []))
     A('<p class="eyebrow">USA Pickleball–aligned skill report</p>')
     A(f'<h1>{esc(who)} — Player Report</h1>' if who else '<h1>Your Player Report</h1>')
     if collection:
@@ -580,6 +633,11 @@ def build_html(folder: Path) -> str:
                    f'<div class="bar"><i style="width:{barpct}%"></i></div>')
         drivers = d.get("driver_metrics", {}) or {}
         nums = []
+        if c == "third_shot":
+            line = third_shot_line(drivers, match_counts.get("n_third_decisions"),
+                                   max(1, n_vids))
+            if line:
+                nums.append(line)
         for k, (label, fmt) in METRIC_DISPLAY.items():
             if k in drivers:
                 s = fmt_metric(fmt, drivers[k])
