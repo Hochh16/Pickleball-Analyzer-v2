@@ -1,0 +1,69 @@
+{
+ "note": "Written by tools/regression.py --save. A change here is a reviewable event: the diff says which number moved and by how much.",
+ "clips": {
+  "pb_5_minute_outdoor-7": {
+   "shots": 124,
+   "volleys": 45,
+   "dinks": 28,
+   "bounces": 72,
+   "identity_gap": 7,
+   "rallies": 15,
+   "rating": 3.99,
+   "rating_confidence": 0.4,
+   "fp_emitted": 22,
+   "fp_labelled": 34,
+   "missed_recovered": 4,
+   "missed_labelled": 10,
+   "wrong_player": 1,
+   "real_shots_kept": 102,
+   "serve_recall": 0.86,
+   "serve_precision": 0.8,
+   "serve_timing_median_s": 0.02,
+   "shot_type_correct": 10,
+   "shot_type_labelled": 32
+  },
+  "pb_3_min_indoor_1_court_b": {
+   "shots": 77,
+   "volleys": 25,
+   "dinks": 24,
+   "bounces": 44,
+   "identity_gap": 8,
+   "rallies": 9,
+   "rating": 4.17,
+   "rating_confidence": 0.38,
+   "in_rally_shots": 66,
+   "in_rally_truth": 82,
+   "between_point_shots": 11,
+   "confirmed_missed_recovered": 12,
+   "confirmed_missed_total": 21,
+   "serve_recall": 0.8,
+   "serve_precision": 0.89,
+   "serve_timing_median_s": 0.34
+  },
+  "pb_3_min_indoor_1_court_c": {
+   "shots": 70,
+   "volleys": 25,
+   "dinks": 11,
+   "bounces": 39,
+   "identity_gap": 6,
+   "rallies": 10,
+   "rating": 3.17,
+   "rating_confidence": 0.39,
+   "in_rally_shots": 58,
+   "in_rally_truth": 59,
+   "between_point_shots": 12,
+   "serve_recall": 0.8,
+   "serve_precision": 0.8
+  },
+  "pb_5_min_indoor_1_court_a": {
+   "shots": 109,
+   "volleys": 46,
+   "dinks": 14,
+   "bounces": 55,
+   "identity_gap": 8,
+   "rallies": 18,
+   "rating": 3.78,
+   "rating_confidence": 0.43
+  }
+ }
+}
