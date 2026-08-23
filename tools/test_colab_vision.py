@@ -7,6 +7,7 @@ table's integrity.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -111,3 +112,74 @@ def test_notebook_builds_as_git_bootstrapper():
     assert "run_all(REPO, clip=CLIP)" in src          # runs from the cloned repo
     assert "del sys.modules[name]" in src             # re-runs reload pulled code
     assert "%%writefile" not in src                   # no embedded bundle anymore
+
+
+# ---- rerun actually re-runs (regression) ----
+
+def _fake_bundle(drive, clip):
+    """A minimal Drive layout run_all can consume: the input zip, the weights, and a
+    backup holding every output (i.e. a fully-completed prior run)."""
+    import zipfile
+    z = drive / f"{clip}_vision_input.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("video.mp4", "v")
+        zf.writestr("court.json", "{}")
+    (drive / "ball_model_v4.pt").write_bytes(b"w")
+    backup = drive / f"{clip}_outputs"
+    backup.mkdir()
+    for name in cv.ALL_OUTPUTS:
+        (backup / name).write_text(f"old {name}")
+    return backup
+
+
+def test_rerun_forces_the_stage_to_actually_run(tmp_path, monkeypatch):
+    """rerun='ball' cleared ball.parquet, then restore_outputs put it straight back from
+    the Drive backup after the unzip -- so the stage saw its output present and skipped.
+    A forced rerun reported success in 39 seconds having done nothing."""
+    drive, content = tmp_path / "drive", tmp_path / "content"
+    drive.mkdir()
+    content.mkdir()
+    clip = "pb_test"
+    _fake_bundle(drive, clip)
+
+    ran = []
+    # Patch the SUBPROCESS layer, not run_stage: its skip-if-output-present rule is exactly
+    # what the bug defeated, so it has to be the real one.
+    stage_by_module = {s["module"]: s for s in cv.STAGES}
+
+    def fake_run(cmd, cwd, env=None):
+        stage = stage_by_module[cmd[cmd.index("-m") + 1]]
+        ran.append(stage["name"])
+        clip_dir = Path(cmd[cmd.index("-m") + 2])
+        for out in stage["outputs"]:
+            (clip_dir / out).write_text(f"new {out}")
+        return 0, ""
+
+    monkeypatch.setattr(cv, "_run", fake_run)
+    monkeypatch.setattr(cv, "_run_ball_with_fallback",
+                        lambda base, args, cwd: fake_run(base + args, cwd))
+    monkeypatch.setattr(cv, "free_gpu", lambda: None)
+    monkeypatch.setattr(cv, "wait_for_complete_zip", lambda p: None)
+    cv.run_all(tmp_path, drive_dir=drive, clip=clip, content=content, rerun="ball")
+
+    assert ran == ["ball"], f"expected only the ball stage to run, got {ran}"
+    assert (content / clip / "ball.parquet").read_text() == "new ball.parquet", \
+        "the restored backup shadowed the rerun -- the stage's output was never replaced"
+
+
+def test_no_rerun_still_skips_everything_when_complete(tmp_path, monkeypatch):
+    """The resume path must be untouched: with no rerun and a complete backup, nothing runs
+    and the bundle is not even copied."""
+    drive, content = tmp_path / "drive", tmp_path / "content"
+    drive.mkdir()
+    content.mkdir()
+    clip = "pb_test"
+    _fake_bundle(drive, clip)
+
+    ran = []
+    monkeypatch.setattr(cv, "_run",
+                        lambda *a, **k: pytest.fail("a stage ran on a complete resume"))
+    monkeypatch.setattr(cv, "copy_inputs",
+                        lambda *a, **k: pytest.fail("bundle copied on a complete resume"))
+    cv.run_all(tmp_path, drive_dir=drive, clip=clip, content=content)
+    assert ran == []

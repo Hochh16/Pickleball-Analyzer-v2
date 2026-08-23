@@ -282,19 +282,34 @@ def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/c
         if unknown:
             raise ValueError(f"unknown stage(s) to rerun: {sorted(unknown)}; "
                              f"valid: {[s['name'] for s in STAGES]}")
+
+    def clear_forced(quiet=False):
+        """Delete the outputs of every forced stage, so run_stage does not skip it.
+
+        Called TWICE, and the second call is the point. `restore_outputs` runs again after
+        the bundle is unzipped, and it restores from the Drive backup indiscriminately --
+        including the very outputs a rerun had just cleared. The stage then saw its output
+        present and skipped, so `rerun='ball'` silently did nothing and reported success in
+        39 seconds. Clearing after that restore is what makes a forced rerun actually run.
+        """
         for stage in STAGES:
             if stage["name"] in force:
                 for out in stage["outputs"]:
                     p = clip_dir / out
                     if p.exists():
                         p.unlink()
-                print(f"[rerun] {stage['name']}: cleared {stage['outputs']}", flush=True)
+                if not quiet:
+                    print(f"[rerun] {stage['name']}: cleared {stage['outputs']}", flush=True)
 
-    if have_all_required(clip_dir):
+    clear_forced()
+    # A forced rerun must proceed even when everything is already present -- that is the
+    # whole request.
+    if have_all_required(clip_dir) and not force:
         print("all outputs already computed — nothing to run.", flush=True)
     else:
         clip_dir, weights = copy_inputs(drive_dir, clip, content)
         restore_outputs(backup_dir, clip_dir)   # re-place after unzip (belt+braces)
+        clear_forced(quiet=True)                # ...but not what we are forcing
         for stage in STAGES:
             run_stage(stage, clip_dir, weights, backup_dir, repo_dir)
 
