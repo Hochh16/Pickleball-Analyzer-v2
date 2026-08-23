@@ -2792,3 +2792,48 @@ responses, and the old row said neither.
 was counting events without asking whether any of them had been measured, and the first
 unseen venue turned that into a wrong rating. Any metric with a minimum-n gate should be
 checked for the same shape.
+
+## Stage 4 now measures the ball blob; build_ball_3d no longer decodes (2026-08-23)
+
+Two changes to `track_ball_v4.py`, both aimed at the two biggest items in the 78-minute
+end-to-end cost of a 5-minute clip.
+
+### 1. The blob measurement moves to where the frame already is
+
+`build_ball_3d` re-decoded the whole video to measure the ball's apparent diameter — 98% of
+local post-processing, and 100% of that was decode, the measurement itself costing 0.5
+ms/frame. Stage 4 already holds the full-resolution frame at the moment it knows where the
+ball is, so it measures there and writes `meas_px` into ball.parquet (schema 2).
+
+Measured at **every candidate**, not just the strongest peak: `select_track` decides which
+candidate is the ball only after solving the whole track, so a measurement taken at the top
+peak would sometimes belong to an object that lost. The value follows the winner.
+
+`build_ball_3d` reads the column when present and never opens the video; the decode path
+stays for older bundles and for `--no-ball-size`. Verified by grafting the decode-derived
+measurements back onto ball.parquet and re-running: **`pred_px` identical to 0.000000 and
+`meas_px` to 4e-6** (the float32 round-trip). Derived columns drift by at most 0.0125 in `k`
+and 1e-6 in `z_ft`, traced to the calibration refitting against a bounces.json that has moved
+since the baseline (166 bounces now, 162 then) — not to this path.
+
+Expected: **~1023 s → seconds** of local post-processing per clip.
+
+### 2. uint8 preprocessing instead of float32
+
+Stage 4 ran at 94 ms/frame against 23 ms/frame for player tracking decoding the same file,
+and the difference was CPU array work, not the GPU. `to_proc` built a float32 frame (11 MB),
+`np.concatenate` rebuilt a 33 MB three-frame window per frame, and each batch of 8 shipped
+265 MB over PCIe. It now stays uint8 — 2.8 MB, 8.3 MB, 66 MB — and `.float().div_(255)` runs
+on the device after the copy, where it is free.
+
+Measured on the same frames: the window costs **19.2 ms instead of 44.4**, a quarter of the
+bytes. Unverified end-to-end until the next Colab run, since there is no local GPU — the
+estimate is that Stage 4 drops well below its 1700 s.
+
+### Not done
+
+`track_players` (421 s) and `pose` (639 s) are 36% of the vision pass and have never been
+split into decode versus model. Worth measuring after this lands, not guessing at now.
+
+Older clips keep the decode path until Stage 4 is re-run for them, which needs the GPU box.
+Nothing breaks meanwhile; `build_ball_3d` says which path it took.

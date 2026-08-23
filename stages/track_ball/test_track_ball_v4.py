@@ -73,7 +73,9 @@ def test_parked_contaminant_never_steals_the_track():
         contam = (2631, 1030, 0.90 if f % 3 else 0.40)  # parked, often stronger
         cands[f] = [contam, ours]
     sel = _sel(cands)
-    picked_contam = [f for f, (x, _, _) in sel.items() if abs(x - 2631) < 1]
+    # select_track returns (x, y, conf, meas_px) — the blob measurement rides along from
+    # the candidate that actually won, so it cannot be attributed to a peak that lost.
+    picked_contam = [f for f, v in sel.items() if abs(v[0] - 2631) < 1]
     assert not picked_contam, f"contaminant stole {len(picked_contam)} frames"
     assert len(sel) == 60
 
@@ -144,6 +146,7 @@ def rows_to_df(rows):
     df["visible"] = df["visible"].astype(bool)
     df["interpolated"] = df["interpolated"].astype(bool)
     df["confidence"] = df["confidence"].astype("float32")
+    df["meas_px"] = df["meas_px"].astype("float32")
     return df
 
 
@@ -152,7 +155,7 @@ def rows_to_df(rows):
 def check_schema_invariants(df: pd.DataFrame, frames: list) -> bool:
     ok = True
     expected_cols = {"schema_version", "frame_idx", "pixel_x", "pixel_y",
-                     "visible", "confidence", "interpolated"}
+                     "visible", "confidence", "interpolated", "meas_px"}
     cols = set(df.columns)
     if cols != expected_cols:
         ok = _fail(f"columns {sorted(cols)} != {sorted(expected_cols)}") and ok
@@ -296,3 +299,28 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_selected_candidate_carries_its_own_measurement():
+    """The blob measurement must follow the candidate the DP CHOOSES, not the strongest
+    peak. Stage 4 measures every candidate precisely because the winner is not known until
+    the whole track is solved; attributing the wrong one would feed build_ball_3d a diameter
+    measured somewhere the ball never was."""
+    cands = {}
+    for f in range(40):
+        ours = (1000 + 8 * f, 1500 - 3 * f, 0.55, 11.0)        # moving, blob 11 px
+        contam = (2631, 1030, 0.90 if f % 3 else 0.40, 33.0)   # parked, blob 33 px
+        cands[f] = [contam, ours]
+    sel = _sel(cands)
+    assert sel, "nothing selected"
+    meas = {round(v[3], 1) for v in sel.values()}
+    assert meas == {11.0}, f"measurement came from the losing candidate: {meas}"
+
+
+def test_measurement_is_optional():
+    """Three-tuples still work: a bundle produced before this change, or a run without
+    court.json, has no measurement and must track exactly as before."""
+    cands = {f: [(500 + 6 * f, 900 + 2 * f, 0.65)] for f in range(20)}
+    sel = _sel(cands)
+    assert len(sel) == 20
+    assert all(v[3] is None for v in sel.values())

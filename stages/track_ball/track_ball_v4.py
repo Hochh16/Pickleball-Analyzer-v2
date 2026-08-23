@@ -9,9 +9,15 @@ source pixels. Then court-agnostic trajectory post-processing: drop isolated
 velocity outliers, interpolate short gaps (marked interpolated), leave long
 gaps not-visible.
 
-Output ball.parquet schema (matches synth_ball): schema_version, frame_idx,
-pixel_x, pixel_y, visible, confidence, interpolated. Invariant: each frame is
-exactly one of visible / interpolated / not-visible; known rows have non-NaN xy.
+Output ball.parquet schema: schema_version, frame_idx, pixel_x, pixel_y, visible,
+confidence, interpolated, meas_px. Invariant: each frame is exactly one of
+visible / interpolated / not-visible; known rows have non-NaN xy.
+
+`meas_px` is the ball's blob diameter in SOURCE pixels, measured here because this stage
+already holds the full-resolution frame at the moment it knows where the ball is. It is what
+tools/build_ball_3d.py needs to reconstruct height, and re-decoding the video to get it was
+98% of local post-processing (1023 s of 1047 s on a 3-minute clip). NaN where the ball was
+not visible or the blob could not be measured.
 
 Usage:
     python -m stages.track_ball.track_ball_v4 data/pb_2min --force
@@ -36,8 +42,9 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from stages.track_ball._tracknet_model import TrackNet
+from tools.measure_ball_size import BALL_FT, measure_diameter, scale_map
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # +meas_px: the ball's blob diameter, measured here
 PROC_H, PROC_W = 720, 1280
 CONF_THRESH = 0.30          # heatmap peak >= this -> a detection (matches training eval)
 MAX_GAP_FRAMES = 8          # interpolate confirmed-detection gaps up to this many frames
@@ -94,27 +101,42 @@ def load_model(weights: Path, device) -> Tuple[TrackNet, tuple]:
 
 
 def to_proc(frame, proc_hw=(PROC_H, PROC_W)) -> np.ndarray:
-    """Downscale one frame to the model's OWN processing resolution.
+    """Downscale one frame to the model's OWN processing resolution, as UINT8.
 
     Driven by the checkpoint's `input_shape` rather than the module constant, so a model
     trained at a different resolution runs correctly without editing code here. The ball is
     only 3.8 px across at the far baseline once 4K is squeezed to 720p, which is what the
     escalation to 1080p is meant to relieve — and a 1080p model fed 720p input, or the
     reverse, would silently mis-detect rather than fail.
+
+    Returns uint8, not float32/255. The scale-and-convert now happens on the GPU, one batch
+    at a time, because doing it here was most of what this stage cost. Measured on a 5-minute
+    clip: Stage 4 ran at 94 ms/frame against 23 ms/frame for player tracking decoding the same
+    file. The float32 path allocated 11 MB per frame here, 33 MB again for each 3-frame
+    window, and shipped 265 MB per batch of 8 over PCIe. In uint8 that is 2.8 MB, 8.3 MB and
+    66 MB — a quarter of the memory traffic, on a runtime that has 2 vCPUs to do it with.
     """
     ph, pw = int(proc_hw[0]), int(proc_hw[1])
     rgb = cv2.cvtColor(cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_AREA),
-                       cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    return rgb.transpose(2, 0, 1)
+                       cv2.COLOR_BGR2RGB)
+    return np.ascontiguousarray(rgb.transpose(2, 0, 1))
+
+
+def to_device_float(stack_u8: np.ndarray, device) -> "torch.Tensor":
+    """uint8 (N,9,H,W) -> float32 [0,1] on the device. The divide happens AFTER the copy,
+    so a quarter of the bytes cross PCIe and the elementwise work lands on the GPU, where
+    it is free, instead of on the CPU, where it was not."""
+    t = torch.from_numpy(stack_u8).to(device, non_blocking=True)
+    return t.float().div_(255.0)
 
 
 @torch.no_grad()
 def detect(model, device, buf3: List[np.ndarray], sx: float, sy: float
            ) -> Tuple[float, float, float]:
-    """buf3 = [t-1, t, t+1] proc CHW arrays. Returns (src_x, src_y, conf) for
+    """buf3 = [t-1, t, t+1] proc CHW uint8 arrays. Returns (src_x, src_y, conf) for
     the CENTER frame."""
-    stack = np.concatenate(buf3, axis=0)[None]  # (1,9,H,W)
-    t = torch.from_numpy(stack).to(device)
+    stack = np.concatenate(buf3, axis=0)[None]  # (1,9,H,W) uint8
+    t = to_device_float(stack, device)
     with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[0, 0].float().cpu().numpy()
     iy, ix = np.unravel_index(int(hm.argmax()), hm.shape)
@@ -144,7 +166,9 @@ def topk_peaks(h: np.ndarray, k: int, min_conf: float, radius: int):
 def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
                  sx: float, sy: float, conf_thresh: float,
                  cands: dict, raw_conf: list, topk: int = CAND_TOPK,
-                 cand_floor: Optional[float] = None) -> None:
+                 cand_floor: Optional[float] = None,
+                 src_frames: Optional[dict] = None,
+                 px_per_ft=None) -> None:
     """Run the model on a BATCH of (9,H,W) stacks and record CANDIDATE peaks for
     each window's center frame. Batching is the real GPU speedup (per-window
     inference leaves the GPU mostly idle).
@@ -157,15 +181,33 @@ def detect_batch(model, device, stacks: List[np.ndarray], centers: List[int],
     if not stacks:
         return
     floor = conf_thresh if cand_floor is None else min(cand_floor, conf_thresh)
-    t = torch.from_numpy(np.stack(stacks)).to(device)   # (N,9,H,W)
+    t = to_device_float(np.stack(stacks), device)        # (N,9,H,W) uint8 -> float on GPU
     with torch.no_grad(), torch.amp.autocast("cuda", enabled=str(device).startswith("cuda")):
         hm = model(t)[:, 0].float().cpu().numpy()        # (N,H,W)
     for k, center in enumerate(centers):
         h = hm[k]
         peaks = topk_peaks(h, topk, floor, PEAK_SUPPRESS_RADIUS)
         raw_conf.append(peaks[0][2] if peaks else 0.0)
-        if peaks:
-            cands[center] = [(ix * sx, iy * sy, c) for ix, iy, c in peaks]
+        if not peaks:
+            continue
+        # Blob diameter at each CANDIDATE, measured on the full-resolution frame we are
+        # still holding. Every candidate, not just the strongest, because select_track
+        # decides which one is the ball later and the measurement has to follow that choice.
+        #
+        # This is the whole reason tools/build_ball_3d.py used to re-decode the video: it
+        # was 98% of local post-processing (1023 s of 1047 s on a 3-minute clip) and 100%
+        # of that was decode -- the measurement itself is 0.5 ms/frame. Here the frame is
+        # already in hand, so it costs nothing.
+        src = (src_frames or {}).get(center)
+        meas = [None] * len(peaks)
+        if src is not None and px_per_ft is not None:
+            for j, (ix, iy, _) in enumerate(peaks):
+                u, v = ix * sx, iy * sy
+                s = px_per_ft(u, v)
+                if s:
+                    meas[j] = measure_diameter(src, u, v, BALL_FT * s)
+        cands[center] = [(ix * sx, iy * sy, c, meas[j])
+                         for j, (ix, iy, c) in enumerate(peaks)]
 
 
 def select_track(cands: dict, max_step_px: float, link_gap: int,
@@ -183,13 +225,18 @@ def select_track(cands: dict, max_step_px: float, link_gap: int,
 
     Returns {frame: (x, y, conf)} for the frames on the winning path."""
     frames = sorted(cands)
-    nodes = []                      # (frame, x, y, conf)
+    nodes = []                      # (frame, x, y, conf, meas_px)
     by_frame = {}
     for f in frames:
         by_frame[f] = []
-        for (x, y, c) in cands[f]:
+        for cand in cands[f]:
+            # (x, y, conf) or (x, y, conf, meas_px) -- the blob measurement rides along so
+            # the value that survives selection is the one measured at the CHOSEN candidate,
+            # not at whichever peak happened to be strongest.
+            x, y, c = cand[0], cand[1], cand[2]
+            m = cand[3] if len(cand) > 3 else None
             by_frame[f].append(len(nodes))
-            nodes.append((f, x, y, c))
+            nodes.append((f, x, y, c, m))
     n = len(nodes)
     if n == 0:
         return {}
@@ -202,7 +249,7 @@ def select_track(cands: dict, max_step_px: float, link_gap: int,
         # snapshot the running best BEFORE this frame (restart source)
         rb, ra = run_best, run_arg
         for ni in cur:
-            _, x, y, c = nodes[ni]
+            _, x, y, c, _m = nodes[ni]
             best = rb - restart_cost + c        # re-acquire from the best prior state
             bp = ra
             for pf in range(f - 1, max(frames[0] - 1, f - link_gap - 1), -1):
@@ -211,7 +258,7 @@ def select_track(cands: dict, max_step_px: float, link_gap: int,
                 gap = f - pf
                 lim = max_step_px * gap
                 for pj in by_frame[pf]:
-                    _, px, py, _ = nodes[pj]
+                    _, px, py, _, _ = nodes[pj]
                     d = math.hypot(x - px, y - py)
                     if d > lim:
                         continue
@@ -231,8 +278,8 @@ def select_track(cands: dict, max_step_px: float, link_gap: int,
     path = {}
     i = max(range(n), key=lambda j: score[j])
     while i != -1:
-        f, x, y, c = nodes[i]
-        path[f] = (x, y, c)
+        f, x, y, c, m = nodes[i]
+        path[f] = (x, y, c, m)
         i = prev[i]
 
     # Acceptance. A pick clearing `accept_conf` is trusted outright. A WEAKER pick is kept
@@ -281,18 +328,22 @@ def _batch_size(device, args) -> int:
 # --- trajectory post-processing ---------------------------------------------
 
 def postprocess(dets: dict, frames: List[int]) -> List[dict]:
-    """dets: frame -> (x, y, conf) for frames whose peak >= CONF. frames: full
-    ordered frame list to emit rows for. Returns per-frame row dicts."""
+    """dets: frame -> (x, y, conf[, meas_px]) for frames whose peak >= CONF. frames: full
+    ordered frame list to emit rows for. Returns per-frame row dicts.
+
+    `meas_px` is the ball's measured blob diameter at that pixel, when Stage 4 had the
+    full-resolution frame to measure it on. It is carried here so tools/build_ball_3d.py
+    never has to re-decode the video for it."""
     conf_frames = sorted(dets.keys())
     # 1) drop isolated velocity outliers (far from BOTH neighbors)
     kept = set(conf_frames)
     for i, f in enumerate(conf_frames):
-        x, y, _ = dets[f]
+        x, y = dets[f][0], dets[f][1]
         bad = []
         for j in (i - 1, i + 1):
             if 0 <= j < len(conf_frames):
                 g = conf_frames[j]
-                px, py, _ = dets[g]
+                px, py = dets[g][0], dets[g][1]
                 if np.hypot(x - px, y - py) > OUTLIER_MAX_STEP_PX * max(1, abs(f - g)):
                     bad.append(True)
                 else:
@@ -307,8 +358,8 @@ def postprocess(dets: dict, frames: List[int]) -> List[dict]:
     for a, b in zip(conf, conf[1:]):
         gap = b - a
         if 1 < gap <= MAX_GAP_FRAMES:
-            xa, ya, _ = dets[a]
-            xb, yb, _ = dets[b]
+            xa, ya = dets[a][0], dets[a][1]
+            xb, yb = dets[b][0], dets[b][1]
             for k in range(1, gap):
                 t = k / gap
                 interp[a + k] = (xa + t * (xb - xa), ya + t * (yb - ya))
@@ -316,16 +367,20 @@ def postprocess(dets: dict, frames: List[int]) -> List[dict]:
     rows = []
     for f in frames:
         if f in confset:
-            x, y, c = dets[f]
-            rows.append({"frame_idx": f, "pixel_x": float(x), "pixel_y": float(y),
-                         "visible": True, "confidence": float(c), "interpolated": False})
+            d = dets[f]
+            m = d[3] if len(d) > 3 and d[3] is not None else np.nan
+            rows.append({"frame_idx": f, "pixel_x": float(d[0]), "pixel_y": float(d[1]),
+                         "visible": True, "confidence": float(d[2]), "interpolated": False,
+                         "meas_px": float(m) if m == m else np.nan})
         elif f in interp:
             x, y = interp[f]
             rows.append({"frame_idx": f, "pixel_x": float(x), "pixel_y": float(y),
-                         "visible": False, "confidence": np.nan, "interpolated": True})
+                         "visible": False, "confidence": np.nan, "interpolated": True,
+                         "meas_px": np.nan})
         else:
             rows.append({"frame_idx": f, "pixel_x": np.nan, "pixel_y": np.nan,
-                         "visible": False, "confidence": np.nan, "interpolated": False})
+                         "visible": False, "confidence": np.nan, "interpolated": False,
+                         "meas_px": np.nan})
     return rows
 
 
@@ -363,10 +418,23 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # are accumulated and run through the model in BATCHES (the GPU speedup).
     bsz = _batch_size(device, args)
     log.info(f"batch size {bsz}")
+    # The court calibration, only for the ball-size measurement. Optional: without it the
+    # stage behaves exactly as before and build_ball_3d falls back to decoding the video.
+    px_per_ft = None
+    court_path = folder / "court.json"
+    if not args.no_ball_size and court_path.exists():
+        try:
+            _, px_per_ft = scale_map(json.loads(court_path.read_text(encoding="utf-8")))
+            log.info("measuring ball blob size in-stage (build_ball_3d will not re-decode)")
+        except (KeyError, ValueError, json.JSONDecodeError) as e:
+            log.warning(f"court.json unusable for ball-size measurement ({e}); skipping")
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     buf, cands, raw_conf = [], {}, []
     b_stacks, b_centers = [], []
     src_cache = {} if args.overlay else None
+    # Full-resolution frames for the centres still waiting on inference. Bounded by the
+    # batch size (a 4K frame is ~25 MB, so ~10 of them), and cleared after each flush.
+    pending_src = {} if px_per_ft is not None else None
     fidx = start
     while fidx < end:
         ok, fr = cap.read()
@@ -374,21 +442,28 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             break
         if src_cache is not None:
             src_cache[fidx] = fr
+        if pending_src is not None:
+            pending_src[fidx] = fr
         buf.append(to_proc(fr, ishape))
         if len(buf) > 3:
             buf.pop(0)
         if len(buf) == 3:
-            b_stacks.append(np.concatenate(buf, axis=0))   # (9,H,W)
+            b_stacks.append(np.concatenate(buf, axis=0))   # (9,H,W) uint8
             b_centers.append(fidx - 1)
             if len(b_stacks) >= bsz:
                 detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
-                             raw_conf, args.topk, args.cand_floor)
+                             raw_conf, args.topk, args.cand_floor, pending_src, px_per_ft)
                 b_stacks, b_centers = [], []
+                if pending_src is not None:
+                    keep = {fidx, fidx - 1}
+                    for g in [g for g in pending_src if g not in keep]:
+                        del pending_src[g]
         fidx += 1
         if (fidx - start) % 200 == 0 and fidx > start:
             log.info(f"  {fidx-start}/{len(frames)} frames")
     detect_batch(model, device, b_stacks, b_centers, sx, sy, args.conf, cands,
-                             raw_conf, args.topk, args.cand_floor)  # flush
+                             raw_conf, args.topk, args.cand_floor,
+                             pending_src, px_per_ft)  # flush
     cap.release()
 
     n_cand_frames = len(cands)
@@ -404,10 +479,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     df["visible"] = df["visible"].astype(bool)
     df["interpolated"] = df["interpolated"].astype(bool)
     df["confidence"] = df["confidence"].astype("float32")
+    df["meas_px"] = df["meas_px"].astype("float32")
     df.to_parquet(out_parquet, index=False)
 
     n_vis = int(df["visible"].sum())
     n_interp = int(df["interpolated"].sum())
+    n_meas = int(df["meas_px"].notna().sum())
     n_frames = len(df)
     meta = {
         "schema_version": SCHEMA_VERSION,
@@ -422,12 +499,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                      "conf_thresh": args.conf, "max_gap_frames": MAX_GAP_FRAMES,
                      "topk": args.topk, "cand_floor": args.cand_floor,
                      "max_step_px": args.max_step_px,
+                     "ball_size_measured": bool(px_per_ft is not None),
                      "restart_cost": args.restart_cost,
                      "selection": "continuity_dp"},
         "range": [start, end],
         "stats": {"frames": n_frames, "frames_visible": n_vis,
                   "frames_interpolated": n_interp,
                   "frames_not_visible": n_frames - n_vis - n_interp,
+                  "frames_ball_size_measured": n_meas,
                   "visible_frac": round(n_vis / max(n_frames, 1), 4),
                   "detect_frac": round((n_vis + n_interp) / max(n_frames, 1), 4)},
         "completed_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -435,7 +514,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     out_meta.write_text(json.dumps(meta, indent=1) + "\n", encoding="utf-8")
     log.info(f"wrote {out_parquet} + meta: {n_vis} visible, {n_interp} interp, "
              f"{n_frames-n_vis-n_interp} not-visible "
-             f"(detect_frac {meta['stats']['detect_frac']})")
+             f"(detect_frac {meta['stats']['detect_frac']}); "
+             f"ball size measured on {n_meas} frames")
 
     if args.overlay:
         _render_overlay(Path(args.overlay), src_cache, df, fps, sw, sh, log)
@@ -477,6 +557,9 @@ def parse_args(argv=None):
                    dest="restart_cost",
                    help="cost to re-acquire the ball after losing it; higher = less "
                         "willing to jump to a neighbouring court's ball")
+    p.add_argument("--no-ball-size", action="store_true", dest="no_ball_size",
+                   help="skip the in-stage ball blob measurement; tools/build_ball_3d "
+                        "then re-decodes the video for it, as it used to")
     p.add_argument("--batch", type=int, default=None,
                    help="frames per GPU forward pass (default: auto from GPU memory; CPU=1)")
     p.add_argument("--overlay", default=None, help="write a debug overlay mp4 of the range")

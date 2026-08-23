@@ -40,17 +40,66 @@ from tools.measure_ball_size import BALL_FT, measure_diameter, scale_map
 OUT_NAME = "ball_3d.parquet"
 
 
+def _bounce_frames(clip: Path, fps: float) -> set:
+    bdoc = json.loads((clip / "bounces.json").read_text(encoding="utf-8"))
+    bkey = next(k for k in bdoc if isinstance(bdoc[k], list))
+    return {int(round(float(b.get("t_sec", 0)) * fps)) for b in bdoc[bkey]}
+
+
+def _rows_from_parquet(ball: pd.DataFrame, clip: Path, fps: float,
+                       to_court, px_per_ft) -> pd.DataFrame:
+    """The same rows, assembled from Stage 4's `meas_px` instead of from the video.
+
+    Everything except `meas_px` is arithmetic over the calibration, so this is seconds of
+    work. `pred_px` is recomputed here rather than stored: it depends only on the pixel
+    position and the court homography, and keeping one derivation of it means a
+    recalibration cannot leave a stale prediction behind next to a live measurement.
+    """
+    rows = []
+    bounce_frames = _bounce_frames(clip, fps)
+    for f, r in ball.iterrows():
+        m = r.get("meas_px")
+        if m is None or m != m:
+            continue
+        u, v = float(r["pixel_x"]), float(r["pixel_y"])
+        s = px_per_ft(u, v)
+        if not s:
+            continue
+        pred = BALL_FT * s
+        if pred <= 0:
+            continue
+        gx, gy = to_court(u, v)
+        rows.append({"frame": int(f), "t_sec": int(f) / fps, "pred_px": pred,
+                     "meas_px": float(m), "ground_x": gx, "ground_y": gy,
+                     "is_bounce": min((abs(int(f) - b) for b in bounce_frames),
+                                      default=999) <= 2})
+    print(f"  measured in Stage 4: {len(rows)} frames, no video decode needed", flush=True)
+    return pd.DataFrame(rows)
+
+
 def measure_clip(clip: Path, log_every: int = 3000) -> pd.DataFrame:
-    """Blob measurement at every visible ball frame — the expensive pass, done once."""
+    """Blob measurement at every visible ball frame.
+
+    Stage 4 now measures this while it already holds the full-resolution frame, and writes it
+    to ball.parquet as `meas_px`. When that column is present this function never opens the
+    video — which is the whole point: re-decoding for it was **98% of local post-processing**
+    (1023 s of 1047 s on a 3-minute clip), and 100% of that was decode, the measurement itself
+    costing 0.5 ms/frame.
+
+    The decode path below stays for ball.parquet files produced before that change, and for
+    `--no-ball-size` runs. Same measurement either way; only where it happens differs.
+    """
     court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
     to_court, px_per_ft = scale_map(court)
     fps = float(court["video"]["fps"])
 
     ball = pd.read_parquet(clip / "ball.parquet")
     ball = ball[ball.visible].set_index("frame_idx")
-    bdoc = json.loads((clip / "bounces.json").read_text(encoding="utf-8"))
-    bkey = next(k for k in bdoc if isinstance(bdoc[k], list))
-    bounce_frames = {int(round(float(b.get("t_sec", 0)) * fps)) for b in bdoc[bkey]}
+    if "meas_px" in ball.columns and ball["meas_px"].notna().any():
+        return _rows_from_parquet(ball, clip, fps, to_court, px_per_ft)
+    bounce_frames = _bounce_frames(clip, fps)
+    print("  ball.parquet has no meas_px -- decoding the video for it "
+          "(re-run Stage 4 to avoid this)", flush=True)
 
     cap = cv2.VideoCapture(str(clip / "video.mp4"))
     if not cap.isOpened():
