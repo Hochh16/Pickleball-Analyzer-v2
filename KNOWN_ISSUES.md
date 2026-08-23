@@ -2641,3 +2641,50 @@ labelling sessions painful, and labels are currently the binding constraint on s
 
 Note the corollary for the accuracy work: the 12 analysis stages are effectively free. Nothing
 in Stages 5-11 needs optimising, and a change there should never be rejected on cost.
+
+## Stages 1-4.5 (the vision pass): what is measured, and what is not (2026-08-23)
+
+Asked whether the GPU stages are slow for the same reason Stages 5-11 were. They are not, and
+the honest position is that **the vision pass has never been timed** — so this records what is
+measured, what is only reasoned, and what the next Colab run will answer.
+
+### Measured here
+
+**The Drive round-trip is 110-131x asymmetric.** The bundle that goes UP is the video; the
+outputs that come BACK are parquet:
+
+| clip | up (bundle) | down (all 7 outputs) |
+|---|---|---|
+| 3 min indoor | **2.21 GB** | 20.0 MB |
+| 5 min outdoor | **4.73 GB** | 36.0 MB |
+
+So "constant upload and download" is really one-way: the download is nothing. The whole
+hand-off cost is getting the video to the GPU.
+
+**Four stages each open the video** — `track_players` (via YOLO's own `model.track(source=…)`),
+`classify_tracks` (grab-based), `pose`, `track_ball`. Locally a 4K frame costs **103 ms** to
+decode, of which 66 ms is the decode proper and the rest the retrieve. If Colab's decode is in
+the same range, the vision pass is decoding the clip three or four times over.
+
+**Nothing downstream of the detector sees 4K.** TrackNet runs at 1280x720 (`PROC_H, PROC_W`);
+YOLO detect and pose resize internally. The *only* consumer of full resolution is the ball's
+apparent-size measurement that gives height — the ball is 24/11 px across at 4K indoors and
+15/7 px outdoors, so at 1080p it would be 6/3 and 4/2 px and the reconstruction would collapse.
+
+That is a real product trade worth stating plainly: **the multi-GB upload buys ball HEIGHT**,
+and height is what bought the net-crossing split, net-hit detection and the rally-end work. A
+1080p upload would be ~4x smaller and would cost all of it.
+
+### Not measured — and now instrumented
+
+`tools/colab_vision.py` already printed per-stage seconds; it now also times the bundle
+copy + unzip (with a MB/s rate) and prints a total for the pass. One Colab log from the next
+run splits transfer from GPU and says whether a shared-decode refactor is worth anything.
+
+### Training runs are a different problem
+
+Inference uploads the VIDEO and decodes it three or four times; its levers are decode sharing
+and bitrate. Training uploads extracted FRAMES plus manifests (the v4 bundle was 3.26 GB) once
+and then spends its time in epochs — decode is not in the loop at all, and the bundle is
+reused across runs. Optimising one does nothing for the other, and the last training run's
+cost was epochs (many hours to reach epoch 17), not transfer.

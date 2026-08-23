@@ -155,7 +155,13 @@ def copy_inputs(drive_dir, clip: str, content="/content") -> Tuple[Path, Path]:
     src = drive_dir / f"{clip}_vision_input.zip"
     zip_local = content / f"{clip}_vision_input.zip"
     wait_for_complete_zip(src)   # Drive may still be uploading the bundle
-    print("copying clip bundle to local disk (may be several GB)...", flush=True)
+    # Timed, and the rate reported: the hand-off's cost is almost entirely getting the
+    # video across (measured locally, the bundle is 2.2-4.7 GB while everything the GPU pass
+    # sends BACK is 20-36 MB -- a 110-131x asymmetry). Nothing was measuring it, so the
+    # question "is the round-trip or the GPU the bottleneck" had no answer.
+    _sz = src.stat().st_size if src.exists() else 0
+    print(f"copying clip bundle to local disk ({_sz / 1e9:.2f} GB)...", flush=True)
+    _t0 = time.time()
     for attempt in (1, 2):
         robust_copy(src, zip_local)
         try:
@@ -166,12 +172,17 @@ def copy_inputs(drive_dir, clip: str, content="/content") -> Tuple[Path, Path]:
             if attempt == 2:
                 raise
             print("  copied bundle was incomplete — retrying the copy once...", flush=True)
+    _el = time.time() - _t0
+    print(f"  -> bundle copy + unzip done in {_el:.0f}s"
+          + (f" ({_sz / 1e6 / max(_el, 1e-6):.0f} MB/s)" if _sz else ""), flush=True)
     if not (clip_dir / "video.mp4").exists():
         raise RuntimeError(f"clip bundle for {clip} has no video.mp4")
     weights = content / "ball_model_v4.pt"
     if not weights.exists():
         print("copying ball weights to local disk...", flush=True)
+        _t1 = time.time()
         robust_copy(drive_dir / "ball_model_v4.pt", weights)
+        print(f"  -> weights copied in {time.time() - _t1:.0f}s", flush=True)
     return clip_dir, weights
 
 
@@ -256,6 +267,7 @@ def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/c
     locally first (the Drive backup is overwritten when the stage finishes), so the
     other, expensive stages are still skipped."""
     clip = derive_clip(drive_dir, clip)
+    _run_t0 = time.time()
     print(f"CLIP = {clip}\n", flush=True)
 
     clip_dir = Path(content) / clip
@@ -287,7 +299,11 @@ def run_all(repo_dir, drive_dir="/content/drive/MyDrive", clip=None, content="/c
             run_stage(stage, clip_dir, weights, backup_dir, repo_dir)
 
     missing = [f for f in REQUIRED_OUTPUTS if not (clip_dir / f).exists()]
+    # One total, so the per-stage seconds above read as shares of something. The split
+    # between TRANSFER and GPU is the whole question for the vision pass, and nothing was
+    # reporting it: the bundle up is 2.2-4.7 GB while everything sent back is 20-36 MB.
     print("\n" + ("=" * 52), flush=True)
+    print(f"vision pass total: {time.time() - _run_t0:.0f}s", flush=True)
     if missing:
         print("INCOMPLETE — missing:", ", ".join(missing), flush=True)
     else:
