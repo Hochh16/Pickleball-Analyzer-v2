@@ -32,6 +32,26 @@ from pathlib import Path
 # 26/32. Tightening this manufactured a "41% of shots are missed" result that was not real.
 TOL_FRAMES = 60
 REAL_TYPES = {"drive", "drop", "dink", "lob", "serve", "return", "reset"}
+# The operator's full type-label set. It lives in one analysed folder but describes the
+# SOURCE VIDEO, so any clip of the same video can be scored against it -- and must be, or a
+# thin clip-local file silently takes its place. Keyed to that video's timeline, so it is
+# only ever used when the source videos match.
+SHARED_LABELS = Path("data/pb_5_minute_outdoor-2")
+
+
+def source_video(clip: Path) -> str | None:
+    """Basename of the video a clip was analysed from, for matching label sets."""
+    for name in ("ball.meta.json", "session.json"):
+        p = clip / name
+        if not p.exists():
+            continue
+        try:
+            v = json.loads(p.read_text(encoding="utf-8")).get("video_path")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if v and Path(str(v)).name not in ("video.mp4", ""):
+            return Path(str(v)).name
+    return None
 
 
 def parse_clock(s: str) -> float | None:
@@ -49,15 +69,22 @@ def parse_clock(s: str) -> float | None:
 def load_labels(label_dir: Path, fps: float) -> list[dict]:
     """Operator labels keyed to a FRAME.
 
-    Only one of the two label files carries a `frame` column; the other has `time` only.
-    Both are keyed on the clip's timeline rather than shot_id, which is renumbered every
-    time detection changes.
+    Reads EVERY labels*.csv in the folder. It used to name two files explicitly, which
+    quietly mattered: a clip carrying its own thin `_labeling/labels.csv` shadowed the fuller
+    set next door, and the default label dir is the clip itself. On the acceptance clip that
+    meant scoring 12 labels — 4 drives, 6 serves, 1 return and **no drops at all** — instead
+    of the 32 available, which include 3 drops, 3 dinks and 2 lobs. A drop could only ever be
+    counted as an error, never as a success, and a change to drop detection was rejected on
+    that basis. Same shape as the ground-ball filter recorded as "solved" against a
+    measurement that had stopped applying: the scorer has to see the thing it claims to score.
+
+    Only one of the label files carries a `frame` column; the others have `time` only. All
+    are keyed on the clip's timeline rather than shot_id, which is renumbered every time
+    detection changes. Duplicates (the same frame and type in two files) are dropped.
     """
     out = []
-    for name in ("labels.csv", "labels_block1.csv"):
-        p = label_dir / "_labeling" / name
-        if not p.exists():
-            continue
+    seen: set[tuple[int, str]] = set()
+    for p in sorted((label_dir / "_labeling").glob("labels*.csv")):
         for r in csv.DictReader(p.open(encoding="utf-8-sig")):
             t = (r.get("true_type") or "").strip().lower()
             if not t:
@@ -70,7 +97,11 @@ def load_labels(label_dir: Path, fps: float) -> list[dict]:
                 if sec is None:
                     continue
                 frame = int(round(sec * fps))
-            out.append({"frame": frame, "true_type": t, "src": name,
+            key = (frame, t)
+            if key in seen:
+                continue          # the same shot labelled in two files
+            seen.add(key)
+            out.append({"frame": frame, "true_type": t, "src": p.name,
                         "role": (r.get("hitter_role") or "").strip()})
     return out
 
@@ -114,12 +145,23 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("clip", type=Path)
     ap.add_argument("--labels", type=Path, default=None,
-                    help="folder holding _labeling/ (defaults to the clip)")
+                    help="folder holding _labeling/ (defaults to the clip, then to the "
+                         "shared label set the operator actually built)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
     fps = float(json.loads((a.clip / "classified.json").read_text(encoding="utf-8"))
                 .get("fps") or 60.0)
     labels = load_labels(a.labels or a.clip, fps)
+    # Fall back to the shared set, and prefer it when the clip's own is a thin subset --
+    # a partial label file is worse than none, because it looks like a score.
+    if a.labels is None and source_video(a.clip) == source_video(SHARED_LABELS):
+        shared = load_labels(SHARED_LABELS, fps)
+        if len(shared) > len(labels):
+            if labels:
+                print(f"  note: {a.clip.name}/_labeling has only {len(labels)} labels; "
+                      f"using the {len(shared)} in {SHARED_LABELS.name} instead "
+                      f"(pass --labels {a.clip} to force the clip's own)")
+            labels = shared
     if not labels:
         print("no labels found")
         return 1

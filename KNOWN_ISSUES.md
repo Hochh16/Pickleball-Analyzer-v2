@@ -2493,3 +2493,41 @@ implied). The rating does not improve with it, because the rating's problem is t
 its dimensions have no real measurement behind them. A third-shot-drop metric is newly
 possible: telling a drop from a drive is an apex-height and landing-location question, and
 `tools/build_ball_3d.py` answers both as of today.
+
+### Recovering a missing LANDING from the 3-D reconstruction — NO EFFECT (2026-08-22)
+
+Stage 6 types a shot from where the ball LANDED — hit from the baseline, lands in the kitchen
+= drop, else drive. That signal is sound (a bounce is at z=0, so the ground homography is
+exact there) and the code measures it at **73% accurate** against operator labels, while the
+speed/arc fallback it falls through to scores **33%**. The bounce list covers only 44-47% of
+shots, so most drive/drop calls are made on the 33% path. Filling the gap looked like the
+obvious use of the new reconstruction: a missed landing should still show as the flight's
+z-minimum.
+
+Implemented, with the low point required to be a real bounce SHAPE (descent in, rebound out)
+rather than merely the lowest sample — absolute z inherits the `bias` error, a relative
+descent/rebound does not. It recovers **6-8 landings** on the acceptance clip, lifting
+coverage 44% → 50%, and **shot-type accuracy does not move: 10/32 either way.** Sweeping the
+descent/rebound thresholds from 0/0 to 2.5/1.5 gives 10/32 at every setting.
+
+Reverted. Not a regression — simply no effect for an extra input dependency and code path.
+
+### The measurement mistake that nearly hid it
+
+The first pass at this was rejected for the wrong reason. `tools/score_shot_types` defaults to
+the CLIP's own `_labeling/` folder, and the acceptance clip carries a thin local
+`labels.csv` — 4 drives, 6 serves, 1 return, and **no drops at all** — which silently shadowed
+the 32-label set next door containing 3 drops, 3 dinks and 2 lobs. Scored against the thin
+file the change read 7/12 → 5/12 and was called a regression. It was not: a drop could only
+ever be counted as an error there, never as a success.
+
+Two things came out of that. The real baseline for shot typing is **10/32 = 31%**, not the 58%
+that had been quoted all session — and **2 of the 3 labelled drops are called drives**, so
+drop detection is at best 1 in 3. And `score_shot_types` now reads every `labels*.csv` in the
+folder and prefers the fuller shared set when a clip's own is a thin subset, guarded so labels
+are never borrowed across different source videos. Same shape as the ground-ball filter
+recorded as "solved" against a measurement that had stopped applying: a scorer has to be able
+to see the thing it claims to score.
+
+**What shot typing actually needs is labels.** Thirty-two, of which three are drops, cannot
+separate a real improvement from noise in either direction. `tools/label_shots.py` exists.
