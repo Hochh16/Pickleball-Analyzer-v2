@@ -2675,7 +2675,60 @@ That is a real product trade worth stating plainly: **the multi-GB upload buys b
 and height is what bought the net-crossing split, net-hit detection and the rally-end work. A
 1080p upload would be ~4x smaller and would cost all of it.
 
-### Not measured — and now instrumented
+### Measured 2026-08-23 — a 5-minute indoor clip on Colab
+
+| step | seconds | share |
+|---|---|---|
+| bundle copy + unzip (2.66 GB) | 76 | 2.6% |
+| ball weights copy | 9 | 0.3% |
+| 2   track_players | 421 | 14.4% |
+| 2.5 classify_tracks | 85 | 2.9% |
+| 3   pose | 639 | 21.8% |
+| **4   track_ball** | **1700** | **58.0%** |
+| **total** | **2931** | 9.8x realtime |
+
+**The Drive round-trip is 2.9% of the run.** It copies at 35 MB/s and costs 85 seconds. The
+110-131x size asymmetry is real and completely irrelevant to wall-clock — shrinking the upload
+was the wrong target, and this is the second time on this project that an unmeasured
+"obviously the bottleneck" turned out not to be.
+
+**Stage 4 is 58% of the vision pass**, at 94 ms/frame against 23 ms/frame for `track_players`
+on the same decode of the same file. Four times the cost, for a model that runs at 720p when
+YOLO is running at 4K-derived input on the same frames.
+
+### Where Stage 4's 94 ms goes: CPU array copying, not the GPU
+
+Timed on real 4K frames (locally, so treat the absolutes as indicative and the ratios as the
+point — a standard Colab runtime has 2 vCPUs, so if anything this understates it):
+
+| per frame | ms | bytes |
+|---|---|---|
+| `to_proc` — resize 4K→720p, BGR2RGB, float32/255, transpose | 20.1 | 11.1 MB out |
+| `np.concatenate` → the 9-channel window | **44.4** | **33.2 MB allocated** |
+| `np.stack` → batch of 8 (share per frame) | 12.3 | 33.2 MB |
+| **CPU preprocessing total** | **76.9** | |
+
+The sliding 3-frame window is rebuilt from scratch every frame: three 11 MB float32 arrays
+concatenated into a fresh 33 MB one, then eight of those stacked into a 265 MB batch that is
+copied to the GPU. That is ~57 ms/frame of pure memory shuffling to assemble a tensor the GPU
+could assemble itself, and 265 MB of PCIe traffic per batch where 66 MB would do.
+
+**The fix is to stay in uint8 on the CPU and convert on the GPU.** Measured on the same
+frames, the uint8 window costs 19.2 ms instead of 44.4 and is 8.3 MB instead of 33.2 —
+**4x less to allocate and 4x less to copy** — with `.float().div_(255)` on the device costing
+effectively nothing. Preallocating the batch buffer removes the `np.stack` copy as well.
+
+This lands in the same file as the `build_ball_3d` fix, which needs Stage 4 to measure the
+ball's blob while it already holds the full-resolution frame. Both changes belong in one pass
+over `track_ball_v4.py`.
+
+### Still not measured
+
+Nothing splits `track_players` (421 s) and `pose` (639 s) into decode versus model. Together
+they are 36% of the pass, so they are worth a look after Stage 4 — but not before, and not on
+a guess.
+
+### Previously not measured — now instrumented
 
 `tools/colab_vision.py` already printed per-stage seconds; it now also times the bundle
 copy + unzip (with a MB/s rate) and prints a total for the pass. One Colab log from the next
