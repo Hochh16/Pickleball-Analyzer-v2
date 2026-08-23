@@ -2609,8 +2609,35 @@ ball.parquet and `build_ball_3d` becomes arithmetic over a parquet: seconds, no 
 removes the awkward ordering (build_ball_3d needs bounces, which need shots, which need the
 ball) from the wall-clock path, though the bias fit still needs bounces.
 
-Confirm which half dominates — decode or the measurement — before building. If it is decode,
-optimising the measurement in place cannot help and the work belongs in Stage 4.
+### It is DECODE, entirely
+
+Timed over 3,000 frames of the same clip:
+
+| | per frame | extrapolated to the clip |
+|---|---|---|
+| `grab()` — decode, no retrieve | 66.4 ms | 729 s |
+| `read()` — decode + retrieve | 103.0 ms | 1131 s |
+| `read()` + `measure_diameter` | 103.5 ms | 1137 s |
+
+**The measurement is 0.5 ms/frame — 0.4% of the cost. Decode is all of it**, at 103 ms per 4K
+frame (6.2x realtime), of which a third is the retrieve/copy on top of the decode itself.
+
+So optimising the measurement cannot help, and neither can skipping frames: 75% of them carry
+a visible ball and are needed. The work has to move to where the video is ALREADY being
+decoded, which is Stage 4 on the GPU box. Adding the blob measurement there costs about five
+seconds for a whole clip; `build_ball_3d` then reads `meas_px` out of ball.parquet and touches
+no video at all. Local post-processing goes from ~1047 s to ~30 s.
+
+Two notes for whoever builds it. `ball.parquet` gains a column, so bump its schema version and
+keep `build_ball_3d`'s current decode path as the fallback for bundles produced before the
+change. And the bias fit still needs bounces, so the second Stage 5/5.5 pass stays — it is
+cheap (4 s) and is not what was costing anything.
+
+A separate consequence worth recording: **103 ms/frame is also why every LABELLING tool is
+slow** — `label_ball`, `mark_serve_strikes` and the review renders each walk the video
+themselves. That is a different fix (hardware-accelerated decode, or a downscaled proxy file
+generated once per clip) and a smaller prize, but it is the thing that makes operator
+labelling sessions painful, and labels are currently the binding constraint on shot typing.
 
 Note the corollary for the accuracy work: the 12 analysis stages are effectively free. Nothing
 in Stages 5-11 needs optimising, and a change there should never be rejected on cost.
