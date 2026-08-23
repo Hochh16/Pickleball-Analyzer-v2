@@ -2570,3 +2570,47 @@ clear MIN_THIRD_DECISIONS with room (roughly 20 for a rate worth coaching off), 
 matter of aggregating sessions, not of new code. At that point the same data supports the
 elements already listed as planned in the report — drop LANDING DEPTH and TRANSITION SUCCESS
 — because both are reconstruction quantities on a shot we have already identified.
+
+## Throughput: build_ball_3d is 98% of local post-processing (2026-08-23)
+
+Measured before proposing any performance work, because "the pipeline is slow" is a claim
+about where the time goes. Every local post stage timed end to end on a 184-second 4K clip:
+
+| stage | seconds |
+|---|---|
+| **tools/build_ball_3d** | **1022.9** |
+| 8 compute_metrics | 6.8 |
+| 6 classify_shots | 2.7 |
+| 5 detect_shots (2nd pass) | 2.3 |
+| 7 segment_rallies | 2.3 |
+| 11 heatmaps | 2.1 |
+| 5.7 ball_trajectory | 2.0 |
+| 5.5 detect_bounces (2nd pass) | 1.8 |
+| 5 detect_shots | 1.4 |
+| 5.5 detect_bounces | 1.3 |
+| build_report | 0.8 |
+| 9 rate | 0.2 |
+| 10 plan_improvement | 0.2 |
+| **TOTAL** | **1046.7** |
+
+**5.7x realtime, and one tool is 98% of it.** The other twelve stages together cost 24
+seconds. A 5-minute clip is roughly 25-30 minutes of local post-processing, essentially all
+of it `build_ball_3d`, which went on the critical path on 2026-08-22 when the net-crossing
+split started needing the reconstruction.
+
+This matters for how a performance push is scoped. It is **not** an architecture problem and
+does not call for a broad shared-decode refactor: it is one function that decodes every frame
+of the source video to measure the ball's blob diameter.
+
+The promising fix is structural but small — **measure the blob inside Stage 4**
+(`track_ball_v4`), which already decodes every frame on the GPU box and holds the
+full-resolution frame at the moment it knows where the ball is. Emit `meas_px` per frame into
+ball.parquet and `build_ball_3d` becomes arithmetic over a parquet: seconds, no video. It also
+removes the awkward ordering (build_ball_3d needs bounces, which need shots, which need the
+ball) from the wall-clock path, though the bias fit still needs bounces.
+
+Confirm which half dominates — decode or the measurement — before building. If it is decode,
+optimising the measurement in place cannot help and the work belongs in Stage 4.
+
+Note the corollary for the accuracy work: the 12 analysis stages are effectively free. Nothing
+in Stages 5-11 needs optimising, and a change there should never be rejected on cost.
