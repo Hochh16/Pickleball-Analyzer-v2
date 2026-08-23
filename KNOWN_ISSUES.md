@@ -2741,3 +2741,54 @@ and bitrate. Training uploads extracted FRAMES plus manifests (the v4 bundle was
 and then spends its time in epochs — decode is not in the loop at all, and the bundle is
 reused across runs. Optimising one does nothing for the other, and the last training run's
 cost was epochs (many hours to reach epoch 17), not transfer.
+
+## Held-out court A caught the third-shot gate on its first run (2026-08-23)
+
+`pb_5_min_indoor_1_court_a` is a fourth venue that played no part in tuning any threshold.
+It went through the pipeline once and immediately exposed a real defect.
+
+Four of the user's third shots cleared the drop-or-drive filter, all four came out "drive", so
+the drop rate read 0 of 4 — which crossed `MIN_THIRD_DECISIONS` (4) and scored the dimension
+at its floor, **2.80 on 18% of the rating weight**. Checking how those four were typed:
+
+| t_sec | type | confidence | from a landing? |
+|---|---|---|---|
+| 68.85 | drive | 0.40 | no |
+| 105.71 | drive | 0.40 | no |
+| 253.20 | drive | 0.40 | no |
+| 285.68 | drive | 0.78 | **yes** |
+
+Three of the four were typed by the speed/arc fallback — **measured at 33% accurate** against
+the landing path's 73%, and confidence 0.40 is exactly `FB_DRIVE`. The likeliest reading of
+"no drops" there is that the classifier missed them, not that the player never drops. The
+rating was being pulled down by three coin flips.
+
+**Fix: a third shot counts as a DECISION only when its type came from the landing path.**
+`_clean_thirds` now requires `features.type_from_landing`, and reports the ones it had to
+discard as `n_third_unmeasurable`, carried through `rate.py` into the report. The denominator
+becomes small and honest, and it grows as bounce coverage does — which is the right trigger
+for the deferred stat, rather than a raw count of third shots.
+
+| clip | typed | unmeasurable | third-shot level | overall |
+|---|---|---|---|---|
+| court A (held out) | 1 | 3 | 2.80 → **3.00** | 3.72 → **3.78** |
+| outdoor | 0 | 2 | 3.00 | 3.99 |
+| court B | 0 | 0 | 3.00 | 4.17 |
+| court C | 1 | 1 | 3.00 | 3.17 |
+
+No clip is currently rated on third shots, which is the truth.
+
+The report now distinguishes three states that used to look identical:
+
+    0 of 1 -- 3 more you played from deep could not be typed reliably (no bounce
+             detected after them)
+    not measurable yet -- you played 2 from deep, but none could be typed reliably
+    none yet -- you did not take a third shot from deep in this session
+
+"We cannot read the ones you play" and "you hardly play any" call for completely different
+responses, and the old row said neither.
+
+**The general lesson.** A sample-size threshold is not a quality gate. `MIN_THIRD_DECISIONS`
+was counting events without asking whether any of them had been measured, and the first
+unseen venue turned that into a wrong rating. Any metric with a minimum-n gate should be
+checked for the same shape.

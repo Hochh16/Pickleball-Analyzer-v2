@@ -872,8 +872,23 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # 3rd shots that are a drop or a drive hit from deep -- excluding a mis-segmented
     # serve at position 3, and a kitchen dink (not a third-shot-drop situation),
     # both of which polluted the old count. drop_rate = drops / (drops + drives).
-    def _clean_thirds(only_user: bool) -> List[dict]:
-        out = []
+    def _clean_thirds(only_user: bool) -> Tuple[List[dict], int]:
+        """(decisions we can actually type, how many we had to discard as untypeable).
+
+        The type must have come from the LANDING path. Stage 6 measures that path at 73%
+        accurate and its speed/arc fallback at 33% — a coin flip across five types — and the
+        fallback fires whenever Stage 5.5 missed the bounce, which is most of the time.
+
+        Held-out court A made the cost of ignoring that concrete: four third shots cleared the
+        old filter, three of them typed by the fallback at confidence 0.40, all four came out
+        "drive", and the resulting 0-of-4 drop rate scored the dimension at its floor (2.80)
+        on 18% of the rating weight. The likeliest reading of "no drops" there is that the
+        classifier missed them, not that the player never drops.
+
+        So a third shot counts as a DECISION only when we measured what it did. The
+        denominator becomes small and honest, and it grows as bounce coverage does.
+        """
+        out, unmeasurable = [], 0
         for r in rallies:
             if int(r["n_shots"]) >= 3 and len(r["shot_ids"]) >= 3:
                 s = shot_by_id.get(int(r["shot_ids"][2]))
@@ -882,21 +897,45 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                         and (s.get("features") or {}).get("contact_zone")
                         in ("baseline", "transition")
                         and (not only_user or s.get("is_user"))):
-                    out.append(s)
-        return out
+                    if (s.get("features") or {}).get("type_from_landing"):
+                        out.append(s)
+                    else:
+                        unmeasurable += 1
+        return out, unmeasurable
 
-    def _third_block(thirds: List[dict], per_user: bool) -> dict:
+    def _third_block(thirds: List[dict], unmeasurable: int, per_user: bool) -> dict:
         by = count_by(thirds, lambda s: s.get("shot_type", "unknown"))
         n_dd = by.get("drop", 0) + by.get("drive", 0)
         rate = round(by.get("drop", 0) / n_dd, 3) if n_dd else None
         return mv_sourced({
-            "n_third_decisions": len(thirds),  # deep drop-or-drive 3rd shots
+            "n_third_decisions": len(thirds),   # deep drop-or-drive 3rd shots we could TYPE
+            # deep third shots we saw but could not type (no bounce -> speed/arc fallback).
+            # Reported so the report can say why the denominator is small rather than just
+            # showing a small number.
+            "n_third_unmeasurable": unmeasurable,
             "by_shot_type": by,
             "drop_rate": rate,
             "per_user": per_user,
         }, _confs(thirds, "shot_type_confidence"), len(thirds))
 
-    third_shots = _clean_thirds(only_user=False)
+    third_shots, third_unmeasurable = _clean_thirds(only_user=False)
+
+    def _role_third_unmeasurable(tids) -> int:
+        """Deep third shots hit by THIS role that we could not type. Counted the same way
+        as `_clean_thirds` discards them, so the per-role report can say how many of the
+        player's own third shots are waiting on better bounce coverage."""
+        n = 0
+        for r in rallies:
+            if int(r["n_shots"]) >= 3 and len(r["shot_ids"]) >= 3:
+                s = shot_by_id.get(int(r["shot_ids"][2]))
+                if (s is not None and not s.get("is_serve")
+                        and s.get("shot_type") in ("drop", "drive")
+                        and (s.get("features") or {}).get("contact_zone")
+                        in ("baseline", "transition")
+                        and int(s["track_id"]) in tids
+                        and not (s.get("features") or {}).get("type_from_landing")):
+                    n += 1
+        return n
     third_by_type = count_by(third_shots, lambda s: s.get("shot_type", "unknown"))
     third_drop_rate = (round(third_by_type.get("drop", 0) /
                              (third_by_type.get("drop", 0) + third_by_type.get("drive", 0)), 3)
@@ -936,7 +975,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
         }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
-        "third_shot": _third_block(third_shots, per_user=False),
+        "third_shot": _third_block(third_shots, third_unmeasurable, per_user=False),
         "returns": mv_structural(n_returns, n_returns),
         "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
@@ -1096,8 +1135,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # this role's OWN third-shot decisions (deep drop-or-drive on the 3rd
             # ball) and return-of-serve count, for a per-user (not match) read.
             "third_shot": _third_block(
-                [s for s in _clean_thirds(only_user=False)
-                 if int(s["track_id"]) in tids], per_user=True),
+                [s for s in third_shots if int(s["track_id"]) in tids],
+                _role_third_unmeasurable(tids), per_user=True),
             "n_returns": mv_structural(
                 sum(1 for s in returns if int(s["track_id"]) in tids),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),

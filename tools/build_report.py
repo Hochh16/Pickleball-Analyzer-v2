@@ -211,7 +211,20 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
     if not isinstance(n, int):
         return ""
     n_drop = int(by.get("drop", 0) or 0)
+    # Third shots we SAW you play from deep but could not type, because no bounce was
+    # detected after them and the fallback signal is a coin flip. Shown so a small
+    # denominator reads as "not measured yet" rather than "you hardly played any".
+    unmeas = drivers.get("n_third_unmeasurable") or 0
+    waiting = (f' <span class="muted small">&mdash; {unmeas} more you played from deep could '
+               f'not be typed reliably (no bounce detected after them)</span>'
+               if unmeas else "")
     if n <= 0:
+        if unmeas:
+            return ('<div class="metric">Third shots you played as a soft drop: '
+                    f'<b>not measurable yet</b> <span class="muted small">&mdash; you played '
+                    f'{unmeas} from deep {where}, but none could be typed reliably '
+                    f'(no bounce detected after them), so this category is a placeholder'
+                    f'</span></div>')
         return ('<div class="metric">Third shots you played as a soft drop: '
                 '<b>none yet</b> <span class="muted small">&mdash; you did not take a '
                 f'third shot from deep {where}, so this category is a placeholder, '
@@ -227,7 +240,7 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
             f'(needs {MIN_THIRD_DECISIONS}); the level shown is a placeholder. It sharpens '
             f'as sessions accumulate.</span>')
     return (f'<div class="metric">Third shots you played as a soft drop: '
-            f'<b>{n_drop} of {n}</b>{pct}{ctx}{warn}</div>')
+            f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}</div>')
 
 
 def fmt_metric(fmt: str, val) -> Optional[str]:

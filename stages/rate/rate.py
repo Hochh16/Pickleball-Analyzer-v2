@@ -239,7 +239,13 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
     drivers = {  # hide the rate when too few decisions -> it won't render a "100%"
         "third_shot_drop_rate": drop if enough else None,
         "third_shot_by_type": ts.get("by_shot_type") or None,
-        "n_third_decisions": n, "per_user": True}
+        "n_third_decisions": n,
+        # Third shots the player DID hit from deep that Stage 6 could not type, because no
+        # bounce was detected and the speed/arc fallback is a coin flip. Carried through so
+        # the report can distinguish "you hardly play third shots" from "we cannot read the
+        # ones you play yet" -- they call for completely different responses.
+        "n_third_unmeasurable": ts.get("n_third_unmeasurable", 0) or 0,
+        "per_user": True}
     if not enough:
         return NEUTRAL_PRIOR_LEVEL, drivers
     return clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)), drivers
