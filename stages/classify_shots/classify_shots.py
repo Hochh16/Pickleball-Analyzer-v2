@@ -69,6 +69,15 @@ DRIVE_MIN_SPEED_HORIZ_FTPS = 26.0
 DINK_MAX_SPEED_HORIZ_FTPS = 23.0
 TRAJ_SPEED_CONF_MIN = 0.6
 
+# Height-based volley test. The ball is 1-6 ft up in flight and reads 0.17-0.38 ft at a
+# detected bounce across all four clips, so the two cases are far apart -- but `bias` scales
+# absolute z (KNOWN_ISSUES), so the rule leans on the SHAPE (came down, went back up) and uses
+# the absolute only to separate "near the ground" from "clearly not".
+VOLLEY_GROUND_FT = 1.0      # zmin at or under this, with a rebound, is a ground contact
+VOLLEY_AIRBORNE_FT = 1.5    # zmin above this never touched down -> a volley
+VOLLEY_MIN_REBOUND_FT = 0.8  # the ball must visibly come back up out of the low point
+VOLLEY_MIN_FRAMES = 4       # reconstructed frames needed between the two shots to decide
+
 # --- Fallback-path confidences: CALIBRATED against operator ground truth ------
 # Measured on 21 operator-labelled shots (20 s drill + match rally 10), 2026-07-21:
 #   landing-based path   : 73% accurate, reported 75%  -> honest, left alone
@@ -92,8 +101,16 @@ FB_UNKNOWN = 0.20    # was 0.30
 # independent height-free signals tested and defeated -- see docs/ACCURACY_LEDGER.md),
 # so this must be reported as a SOFT signal. A shot that IS a serve genuinely cannot
 # be a volley, so that structural case keeps its high confidence.
-VOL_CONF_SCAN = 0.55     # was 0.85 -- local trajectory scan concluded
-VOL_CONF_FALLBACK = 0.40  # was 0.50 -- fell back to the bounce list (occluded)
+# Height decides it outright when the reconstruction covers the interval: "did the ball
+# bounce" IS "did z reach the ground", and that is the question the pixel scan was guessing at.
+# 0.75 is provisional -- it should be re-measured against operator volley truth once there is
+# more of it than the one clip, exactly as the two below were.
+VOL_CONF_HEIGHT = 0.75
+VOL_CONF_SCAN = 0.55     # was 0.85 -- local trajectory scan concluded (no longer reached)
+VOL_CONF_FALLBACK = 0.40  # was 0.50 -- fell back to the bounce list (no longer reached)
+# No height for this interval: assume NOT a volley, at the base rate's own confidence.
+# 17 of 98 shots are volleys, so this is right ~83% of the time.
+VOL_CONF_PRIOR = 0.60
 VOL_CONF_STRUCTURAL = 0.9  # serve / first shot of a rally: cannot be a volley
 POST_TRAJ_FRAMES = 15
 MAX_ARC_FRAMES = 45          # cap the arc-measurement window (bounds dead-time gaps)
@@ -484,6 +501,42 @@ def build_landing_index(bounces_doc: dict) -> Dict[int, float]:
     return out
 
 
+def bounced_between_3d(z_by_frame, f0: int, f1: int):
+    """Did the ball touch the GROUND between two shots, from the 3-D reconstruction?
+
+    True = it bounced (so the second shot is not a volley), False = it stayed up (a volley),
+    None = the reconstruction does not cover the interval well enough to say, in which case
+    the caller falls back to the pixel scan.
+
+    This replaces a guess. The pixel test looks for a descend-then-rebound in image space,
+    and bounce-vs-volley is recorded in docs/ACCURACY_LEDGER.md as the monocular precision
+    floor with three height-free signals tried and defeated. Measured against operator volley
+    truth the pixel scan scored 5/10, and the volley RATE it produces is 32-42% of shots on
+    four venues against a truth of 17%. Height answers the question directly.
+
+    The absolute threshold is used only to separate "near the ground" from "clearly not";
+    the rebound is what carries the decision, because `bias` scales absolute z and a relative
+    move does not inherit that error.
+    """
+    if not z_by_frame or f1 - f0 < 2:
+        return None
+    seq = [z_by_frame[g] for g in range(f0 + 1, f1) if g in z_by_frame]
+    if len(seq) < VOLLEY_MIN_FRAMES:
+        return None
+    k = min(range(len(seq)), key=lambda j: seq[j])
+    zmin = seq[k]
+    rose = max(seq[k + 1:], default=None)
+    if zmin <= VOLLEY_GROUND_FT:
+        if rose is None:
+            return None                      # low at the very end -- cannot see a rebound
+        if (rose - zmin) >= VOLLEY_MIN_REBOUND_FT:
+            return True                      # down to the ground and back up: a bounce
+        return None                          # low but never recovered -- ambiguous
+    if zmin >= VOLLEY_AIRBORNE_FT:
+        return False                         # never came near the ground: a volley
+    return None
+
+
 def bounced_between(by, bknown, f0: int, f1: int,
                     rebound_min_px: float, descent_min_px: float):
     """Recall-focused local test for the VOLLEY flag: did the ball bounce off the
@@ -682,6 +735,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # shot_id -> Stage 5.7 ground-anchored horizontal speed (physical; replaces the
     # depth-corrupted ppf speed for dink/drive when confident). Optional input:
     # older bundles / pipelines without Stage 5.7 fall back to the ppf speed.
+    # Ball height per frame, when tools/build_ball_3d.py has run. Optional input: without it
+    # the volley test falls back to the pixel scan exactly as before.
+    z_by_frame: Dict[int, float] = {}
+    b3p = folder / "ball_3d.parquet"
+    if b3p.exists():
+        b3 = pd.read_parquet(b3p, columns=["frame", "z_ft"])
+        z_by_frame = {int(f): float(z) for f, z in zip(b3["frame"], b3["z_ft"])
+                      if z == z}
+        log.info(f"ball height available for {len(z_by_frame)} frames; "
+                 f"volley decided by whether the ball reached the ground")
+
     traj_index: Dict[int, dict] = {}
     traj_path = folder / "trajectory.json"
     if traj_path.exists():
@@ -763,16 +827,22 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         if is_serve or prev_shot_id is None or prev_frame is None:
             is_volley, vol_conf = False, VOL_CONF_STRUCTURAL
         else:
-            local = bounced_between(by, bknown, prev_frame, f,
-                                    volley_rebound_px, volley_descent_px)
-            if local is None:
-                # inconclusive (occluded) -> fall back to the precision bounce list
-                n_b = bounces_between.get((prev_shot_id, shot_id), 0)
-                is_volley = (n_b == 0)
-                vol_conf = VOL_CONF_FALLBACK
+            # Height first when the reconstruction covers the gap -- it answers the actual
+            # question rather than inferring it from image-space motion. Then the pixel
+            # scan, then the precision bounce list.
+            height = bounced_between_3d(z_by_frame, prev_frame, f)
+            if height is not None:
+                is_volley = not height
+                vol_conf = VOL_CONF_HEIGHT
             else:
-                is_volley = not local  # bounce found -> not a volley
-                vol_conf = VOL_CONF_SCAN
+                # Height could not see the interval. Fall back to the PRIOR, not to the
+                # pixel scan: the operator's counts put volleys at 17 of 98 shots, so
+                # "not a volley" is right 83% of the time, while the pixel scan measured
+                # 5/10 against the same truth. Guessing with a coin when a loaded die is
+                # available is strictly worse, and the scan's errors are not random -- it
+                # over-calls volleys, which is exactly the 32-42% vs 17% discrepancy.
+                is_volley = False
+                vol_conf = VOL_CONF_PRIOR
 
         # Prefer the Stage 5.7 ground-anchored horizontal speed when confident: it's
         # physical (the ppf speed explodes on airborne balls). Different scale ->
@@ -870,6 +940,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "by_stroke_side": dict(by_side),
         "n_volley": sum(1 for s in out_shots if s["is_volley"]),
         "n_volley_fallback": sum(1 for s in out_shots if s["is_volley_confidence"] == 0.5),
+        "n_volley_from_height": sum(1 for s in out_shots
+                                    if s["is_volley_confidence"] == VOL_CONF_HEIGHT),
         "n_unknown_type": by_type.get("unknown", 0),
         "n_unknown_side": by_side.get("unknown", 0),
     }

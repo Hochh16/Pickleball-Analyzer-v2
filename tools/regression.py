@@ -51,6 +51,24 @@ CLIPS = [
 POST_STAGES = ["detect_shots", "detect_bounces", "ball_trajectory", "classify_shots",
                "segment_rallies", "compute_metrics", "rate", "plan_improvement"]
 
+# Operator counts for the source video "PB 5 minute outdoor" (docs/ACCURACY_LEDGER.md,
+# corrected 2026-08-01). Keyed by source video, not by clip folder, because several analysed
+# folders share one video and the truth belongs to the video.
+VIDEO_TRUTH = {
+    "PB 5 minute outdoor.mp4": {"shots_truth": 98, "volleys_truth": 17, "bounces_truth": 81,
+                                "serves_truth": 14, "dinks_truth": 18},
+}
+
+
+def source_video(clip: Path) -> Optional[str]:
+    for name in ("ball.meta.json", "session.json"):
+        d = _load(clip, name)
+        if d and d.get("video_path"):
+            n = Path(str(d["video_path"])).name
+            if n not in ("video.mp4", ""):
+                return n
+    return None
+
 
 def _load(clip: Path, name: str) -> Optional[dict]:
     p = clip / name
@@ -96,6 +114,14 @@ def measure(clip: Path) -> Dict[str, object]:
     if rat:
         m["rating"] = round(float(rat["rating"]["estimate"]), 2)
         m["rating_confidence"] = round(float(rat["rating"]["confidence"]), 2)
+
+    # --- operator counts for the whole video ---------------------------------
+    # The identity shots = volleys + bounces is the best self-check here, but it only says
+    # the terms are CONSISTENT. These say whether they are RIGHT: volleys read 32-42% of
+    # shots across four venues against an operator truth of 17%.
+    vt = VIDEO_TRUTH.get(source_video(clip) or "")
+    if vt:
+        m.update(vt)
 
     # --- per-shot review (false positives / missed / wrong player) -------------
     if (clip / "shot_review.json").exists():
@@ -157,7 +183,8 @@ def measure(clip: Path) -> Dict[str, object]:
 
 def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
     """One table per clip, with the baseline delta beside anything that moved."""
-    keys_order = ["shots", "volleys", "bounces", "identity_gap", "rallies",
+    keys_order = ["shots", "shots_truth", "volleys", "volleys_truth",
+                  "bounces", "bounces_truth", "identity_gap", "rallies",
                   "fp_emitted", "fp_labelled", "real_shots_kept",
                   "missed_recovered", "missed_labelled", "wrong_player",
                   "confirmed_missed_recovered", "confirmed_missed_total",

@@ -2991,3 +2991,57 @@ until Stage 5, which needs the poses. The same two-pass shape that fixed `build_
 apply — associate on bounding boxes first, pose only around the contacts found, re-run — but
 the per-frame pose metrics (ready position, knee bend) would need checking first, and this is
 a design, not a tweak.
+
+## Volley from ball HEIGHT: rate 32-42% -> 13-21%, against a truth of 17% (2026-08-23)
+
+`is_volley` was the weakest signal in the pipeline and said so in its own code: the confidence
+constants were calibrated down to 0.55 because the pixel-space rebound scan measured **5 of 10
+correct** against operator volley truth. The volley RATE it produced was 32-42% of shots on
+four independent venues, against the operator's 17 of 98 = **17%**. Roughly double, everywhere.
+
+It mattered more than its own number, because `is_volley` gates a whole branch of the shot
+classifier: a volley short-circuits to drive/dink and never reaches the landing-aware path that
+scores 73%. A coin-flip flag was routing shots into the wrong branch.
+
+**Height answers the question directly.** "Did the ball bounce between these two shots" is
+"did z reach the ground", and the reconstruction reads z at bounces as 0.17-0.38 ft on every
+clip. The rule leans on SHAPE (came down, went back up) rather than absolute z, because `bias`
+scales the absolute and a relative move does not inherit that error.
+
+**And when height cannot see the interval, fall back to the BASE RATE, not to the pixel scan.**
+Volleys are 17 of 98 shots, so "not a volley" is right ~83% of the time while the scan measured
+50% — and the scan's errors are not random, it over-calls volleys, which is precisely the
+discrepancy. Guessing with a coin when a loaded die is available is strictly worse. Height
+decided 95 of 124 shots on the acceptance clip; the rest now take the prior.
+
+| clip | volleys before | after | rate now |
+|---|---|---|---|
+| outdoor (truth 17) | 45 | **21** | 17% |
+| court B | 25 | **13** | 17% |
+| court C | 25 | **9** | 13% |
+| court A | 46 | **23** | 21% |
+
+Shot typing 10/32 → **11/32**. Rating confidence rose on every clip (+0.01 to +0.02) and the
+estimate fell slightly (−0.04 to −0.12) — the volley dimension had been scoring on an inflated
+rate. False positives, serves, in-rally counts and wrong-player attribution all unchanged.
+
+### The identity gap got WORSE, and that is the finding
+
+`shots = volleys + bounces` went from +7 to +31 on the acceptance clip. It decomposes exactly:
+
+    excess shots      124 - 98 = +26      (22 are operator-labelled false positives)
+    missing bounces    81 - 72 =  -9
+    excess volleys     21 - 17 =  +4
+    gap              +26 + 9 - 4 = +31
+
+**The old gap of +7 was passing for the wrong reason.** An inflated volley count was absorbing
+both a shot over-count and a bounce under-count, so the best structural check in the system
+looked healthy while two real errors sat underneath it. It now reports their sum honestly.
+
+That reframes the identity: it is only a clean check once shot false positives are down. Until
+then it reads as "FP excess + missing bounces", which is still useful — it just is not the
+volley check it was being read as.
+
+Next from this: **bounces are under-detected by ~9 on the acceptance clip** (72 against 81),
+and Stage 5.5 is precision-tuned by design. Height can answer that one too, and it is now the
+larger of the two terms we can actually fix.

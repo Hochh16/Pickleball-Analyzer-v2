@@ -251,3 +251,31 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+# ---- volley from ball height (the pixel scan measured 5/10; height answers directly) ----
+
+def test_height_says_bounced_when_the_ball_reaches_the_ground_and_returns():
+    from stages.classify_shots.classify_shots import bounced_between_3d
+    # down to the floor and back up: a bounce, so the next shot is NOT a volley
+    z = {10: 4.0, 11: 2.5, 12: 0.9, 13: 0.3, 14: 1.4, 15: 2.6}
+    assert bounced_between_3d(z, 9, 16) is True
+
+
+def test_height_says_volley_when_the_ball_never_comes_down():
+    from stages.classify_shots.classify_shots import bounced_between_3d
+    z = {10: 3.2, 11: 2.9, 12: 2.4, 13: 2.6, 14: 3.1}
+    assert bounced_between_3d(z, 9, 15) is False
+
+
+def test_height_declines_to_guess_rather_than_guessing_wrong():
+    """The reconstruction only covers frames where the ball was visible AND measurable, so
+    it often cannot see the interval. Returning None sends the caller to the base rate --
+    which is right 83% of the time -- instead of to a signal measured at 5/10."""
+    from stages.classify_shots.classify_shots import bounced_between_3d
+    assert bounced_between_3d({}, 0, 50) is None            # no reconstruction at all
+    assert bounced_between_3d({10: 3.0, 11: 2.8}, 9, 20) is None   # too few frames
+    # low but no rebound visible before the next contact: ambiguous, not a bounce
+    assert bounced_between_3d({10: 3.0, 11: 1.8, 12: 0.8, 13: 0.5}, 9, 14) is None
+    # between the ground band and the airborne band: no call either way
+    assert bounced_between_3d({10: 1.3, 11: 1.2, 12: 1.25, 13: 1.3}, 9, 14) is None
