@@ -8,7 +8,8 @@
    "hitter": "partner",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 67.6,
@@ -16,7 +17,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 70.4,
@@ -24,7 +26,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 71.2,
@@ -32,7 +35,8 @@
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 73.9,
@@ -40,7 +44,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 74.3,
@@ -48,7 +53,8 @@
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 74.8,
@@ -56,7 +62,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 75.6,
@@ -65,7 +72,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "however, it says opponent #30",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 76.3,
@@ -73,7 +81,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 78.3,
@@ -81,7 +90,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "2 circles at same time show #32 opponent, #33 partner.  #31 by user was a winning shot missed by opponent. So there is no #32 and #33 shots.  Ball is not visible but a few yellow circles appear (not around ball)",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 105.2,
@@ -89,7 +99,8 @@
    "hitter": "partner",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 106.5,
@@ -97,7 +108,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 107.8,
@@ -106,7 +118,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "however, it says partner SERVE",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 115.6,
@@ -115,7 +128,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "shot was hit out by opponent",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 169.3,
@@ -124,7 +138,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "before that, it labels #67, opponent as 1st shot, however, it does it while she is about to throw the ball up for the serve and not when she actually hits the ball. So not sure it is catching the actual serve.",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 171.3,
@@ -132,7 +147,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 171.9,
@@ -140,7 +156,8 @@
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 172.7,
@@ -149,7 +166,8 @@
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "but says #68 user when opponent hits it and red circle is around user panel",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 173.5,
@@ -157,7 +175,8 @@
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 175.2,
@@ -165,7 +184,8 @@
    "hitter": "partner",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 176.3,
@@ -173,7 +193,8 @@
    "hitter": "opponent",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2
+   "authority": 2,
+   "seq": 0
   }
  ],
  "false_positives": [],
@@ -268,7 +289,7 @@
  },
  "provenance": [
   {
-   "at": "2026-08-24T22:38:09.211972+00:00",
+   "at": "2026-08-24T23:47:14.744106+00:00",
    "source": "import from pb_3_min_indoor_1_court_b",
    "new": 21,
    "missed": 21,
@@ -276,5 +297,5 @@
    "dead_interval": 9
   }
  ],
- "updated_at_utc": "2026-08-24T22:38:09.234512+00:00"
+ "updated_at_utc": "2026-08-24T23:47:14.767281+00:00"
 }

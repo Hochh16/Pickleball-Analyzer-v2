@@ -3306,3 +3306,54 @@ easy to miss in a dropdown of shot types. So the "false shots before serves" ana
 on August's false-positive list, not on what they saw this time. That pattern is untested
 against current detections, and the review sheet needs a dedicated NOT-A-SHOT column rather
 than burying it among the types.
+
+## Reading the operator's NOTES, and a control character that ate 30 of them (2026-08-24)
+
+The operator: *"in the xls I noted in the comments when either the rally ended and/or it was a
+winning shot... perhaps you can take a 1st pass at that."* Their notes carry far more than the
+columns asked for. From 70 notes on one review:
+
+| | |
+|---|---|
+| explicit "not a shot" | **16 new false positives** |
+| "rally ended" / "end of rally" / "winning shot" / "hit it out" | **16 rally ENDS** |
+| "3rd shot drop" | **6 labelled third shots** |
+
+One of their notes says why this matters: *"Corrected this and end of rally multiple times.
+Doesn't seem to capture this info in one place."*
+
+### The bug worth recording
+
+The first version of the not-a-shot pattern matched nothing at all, and `grep` showed a
+correct-looking regex. Writing `` through a shell heredoc had produced a literal **backspace
+character (0x08)** in the source, which prints as nothing and matches nothing:
+
+    pattern in use: '(not a shot|...)'
+
+Two things follow. Word boundaries are not worth the escaping risk on a distinctive phrase, and
+**a parser that silently matches nothing looks exactly like a parser with nothing to match** —
+the import reported a confident-looking summary either way. The same shape as the time parser
+that discarded 26 missed shots while reporting "0 shots we MISSED".
+
+### What the corrected truth does to the numbers
+
+Retracting shots the operator called junk (they were being counted as real AND as false
+positives simultaneously):
+
+| | before | corrected |
+|---|---|---|
+| real typed shots | 131 | **94** |
+| false positives known | 29 | **45** |
+| shot type correct | 86/152 = 57% | **54/118 = 46%** |
+| volleys correct | 72/94 = 77% | **44/62 = 71%** |
+
+Every accuracy figure quoted from this review before now was inflated, because 37 junk
+detections were sitting in the "real shot" denominator carrying whatever type we had assigned
+them — which we then scored ourselves against and mostly agreed with. **46% is the honest
+shot-type number.**
+
+### Precedence
+
+Per the operator, "use the last one I built as the truth if there is a conflict between any
+reviews": between sources of equal authority the later one now wins, ordered by the review
+file's mtime. A superseded value is still kept and shown.

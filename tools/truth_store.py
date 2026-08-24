@@ -51,6 +51,10 @@ REAL_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "reset"}
 # import won, which meant a 2026-08-17 spreadsheet overruled a review done today -- exactly
 # backwards, and it produced 117 "conflicts" that were nothing of the kind.
 AUTHORITY = {"review": 3, "operator_json": 2, "labels_csv": 1, "unknown": 0}
+# Between two sources of EQUAL authority the LATER one wins, per the operator: "use the last
+# one I built as the truth if there is a conflict between any reviews." Passed as `seq`, which
+# the caller increments per import.
+
 
 # The operator writes "opponent"; track_roles calls the same person opp_a or opp_b. Comparing
 # those raw manufactures a disagreement out of a naming difference.
@@ -65,6 +69,29 @@ def norm_hitter(h) -> Optional[str]:
     if h.startswith("partner"):
         return "partner"
     return h
+
+
+# --- reading the operator's free-text notes ---------------------------------------------
+# They record more than the columns ask for: "in the xls I noted in the comments when either
+# the rally ended and/or it was a winning shot". Their note at 32.57s says the rest --
+# "Corrected this and end of rally multiple times. Doesn't seem to capture this info in one
+# place" -- which is the whole reason this store exists. A first pass at the phrasing they
+# actually used; anything not matched is kept verbatim so nothing is lost to a regex.
+import re as _re
+
+NOT_A_SHOT_RE = _re.compile(r"(not a sh(o|i)rt|not a shot|no shot)", _re.I)
+RALLY_END_RE = _re.compile(
+    r"(rally (ended|ends|is over|over)|end of rally|winning shot|hit (it )?out"
+    r"|never made it back|missed by (user|opponent|partner))", _re.I)
+THIRD_DROP_RE = _re.compile(r"3rd shot drop", _re.I)
+
+
+def read_note(note: str) -> dict:
+    """What a free-text note asserts. Flags only -- the note itself is always kept."""
+    n = note or ""
+    return {"not_a_shot": bool(NOT_A_SHOT_RE.search(n)),
+            "rally_end": bool(RALLY_END_RE.search(n)),
+            "third_shot_drop": bool(THIRD_DROP_RE.search(n))}
 
 
 def store_path(video: str) -> Path:
@@ -133,7 +160,8 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
              hitter: Optional[str] = None, side: Optional[str] = None,
              volley: Optional[bool] = None, detected: Optional[bool] = None,
              source: str = "", notes: str = "", kind: str = "unknown",
-             claimed: Optional[set] = None, volley_explicit: bool = False) -> str:
+             claimed: Optional[set] = None, volley_explicit: bool = False,
+             seq: int = 0) -> str:
     """Merge one shot fact. Returns 'new' | 'enriched' | 'agreed' | 'CONFLICT'.
 
     Enrichment only ever ADDS fields that were unknown. A field already recorded is never
@@ -149,7 +177,7 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
                {"t_sec": round(float(t), 2), "type": type_, "hitter": hitter,
                 "side": side, "volley": volley, "detected": detected,
                 "volley_explicit": volley_explicit or None,
-                "source": source, "notes": notes, "authority": auth}.items()
+                "source": source, "notes": notes, "authority": auth, "seq": seq}.items()
                if v is not None and v != ""}
         doc["shots"].append(row)
         if claimed is not None:
@@ -158,6 +186,9 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
     if claimed is not None:
         claimed.add(id(ex))
     prev_auth = int(ex.get("authority", 0))
+    prev_seq = int(ex.get("seq", 0))
+    newer = (auth, seq) > (prev_auth, prev_seq)
+    older = (auth, seq) < (prev_auth, prev_seq)
     verdict = "agreed"
     for key, val in (("type", type_), ("hitter", hitter), ("side", side),
                      ("volley", volley), ("detected", detected)):
@@ -170,15 +201,15 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
                 verdict = "enriched"
         elif cur == val:
             continue
-        elif auth > prev_auth:
+        elif newer:
             # A better source disagrees: it wins, and what it replaced is kept so the change
             # is inspectable rather than invisible.
             ex.setdefault("superseded", []).append(
                 {"field": key, "was": cur, "now": val, "by": source})
             ex[key] = val
             verdict = "updated"
-        elif auth < prev_auth:
-            continue                     # a weaker source disagreeing is not news
+        elif older:
+            continue                     # an older or weaker source disagreeing is not news
         else:
             ex.setdefault("conflicts", []).append(
                 {"field": key, "kept": cur, "rejected": val, "from": source})
@@ -188,8 +219,9 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
         # by "blank means agree" matters: scoring against inherited values would be scoring
         # against ourselves, and would read as agreement no matter how wrong we are.
         ex["volley_explicit"] = True
-    if auth > prev_auth:
+    if newer:
         ex["authority"] = auth
+        ex["seq"] = seq
         ex["source"] = source
     if notes and notes not in (ex.get("notes") or ""):
         ex["notes"] = ((ex.get("notes") or "") + " | " + notes).strip(" |")
@@ -211,6 +243,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
     if not p.exists():
         return {}
     ws = load_workbook(p, data_only=True).active
+    seq = int(p.stat().st_mtime)          # "use the last one I built" -- newer file wins
     hdr = next((r for r in range(1, 20)
                 if str(ws.cell(row=r, column=1).value or "").strip() == "#"), None)
     if hdr is None:
@@ -229,6 +262,8 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         t = parse_clock(ws.cell(row=r, column=2).value)
         ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
         corr = str(ws.cell(row=r, column=col["CORRECT_TYPE"]).value or "").strip().lower()
+        known_prev = (str(ws.cell(row=r, column=col["ALREADY KNOWN"]).value or "").strip().lower()
+                      if "ALREADY KNOWN" in col else "")
         # column layout differs between sheet generations (an ALREADY KNOWN column was
         # inserted at G), so find the columns by HEADER rather than by position -- a review
         # silently read from the wrong column is how 26 missed shots were lost once already.
@@ -239,7 +274,14 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 doc.setdefault("free_notes", []).append({"source": src, "note": notes})
                 c["free_notes"] += 1
             continue
-        ty = corr or ours
+        flags = read_note(notes)
+        ty = corr or (known_prev.split("  ")[0] if known_prev else "") or ours
+        if flags["not_a_shot"]:
+            # The operator recorded these in the notes because the sheet had nowhere else to
+            # put them: "not a shot. Between rallies. Opponent feeding ball to their partner".
+            # Reading them is the difference between 0 and ~30 false positives from this
+            # review.
+            ty = "not a shot"
         if not ty:
             continue
         vol = {"yes": True, "no": False}.get(volley_txt)
@@ -254,19 +296,40 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         if vol is None and not corr and str(ws.cell(row=r, column=6).value or "").strip():
             vol = str(ws.cell(row=r, column=6).value).strip().lower() == "yes"
         detected = n not in (None, "")
+        if flags["rally_end"]:
+            if not any(abs(x["t_sec"] - t) < 0.5 for x in doc.setdefault("rally_ends", [])):
+                doc["rally_ends"].append({"t_sec": round(t, 2), "source": src,
+                                          "notes": notes})
+                c["rally_end"] += 1
+        if flags["third_shot_drop"]:
+            doc.setdefault("third_shot_drops", [])
+            if not any(abs(x - t) < 0.5 for x in doc["third_shot_drops"]):
+                doc["third_shot_drops"].append(round(t, 2))
+                c["third_shot_drop"] += 1
         if ty == "not a shot":
             ex = _find(doc["false_positives"], t)
             if ex is None:
                 doc["false_positives"].append({"t_sec": round(t, 2), "source": src,
                                                "notes": notes})
                 c["false_positive"] += 1
+            # ...and retract it from the shots list. An earlier, weaker source may already
+            # have recorded this moment as a typed shot; leaving that behind means the same
+            # detection counts as BOTH a real shot and a false positive, which inflates the
+            # real-shot total and quietly flatters every accuracy figure computed from it.
+            prior = _find(doc["shots"], t, claimed=claimed)
+            if prior is not None and int(prior.get("authority", 0)) <= AUTHORITY["review"]:
+                prior["not_a_shot"] = True
+                prior["type"] = None
+                prior["source"] = src
+                prior["notes"] = ((prior.get("notes") or "") + " | " + notes).strip(" |")
+                c["retracted"] += 1
             continue
         c["confirmed"] += 1 if not corr else 0
         c[add_shot(doc, t, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
                    side=str(ws.cell(row=r, column=4).value or "") or None, volley=vol,
                    detected=detected, source=src, notes=notes,
                    kind="review", claimed=claimed,
-                   volley_explicit=vol_explicit)] += 1
+                   volley_explicit=vol_explicit, seq=seq)] += 1
         if not detected:
             c["missed"] += 1
     return dict(c)
@@ -395,6 +458,8 @@ def report(video: str) -> int:
     print(f"  {len(doc['false_positives']):>4} detections that are not shots")
     print(f"  {len(doc['serve_strikes']):>4} marked serve strikes")
     print(f"  {len(doc['dead_intervals']):>4} known between-point intervals")
+    print(f"  {len(doc.get('rally_ends') or []):>4} rally ENDS read from the notes")
+    print(f"  {len(doc.get('third_shot_drops') or []):>4} third shots the operator called a DROP")
     if doc.get("free_notes"):
         print(f"  {len(doc['free_notes']):>4} free-text notes")
     sup = [s for s in shots if s.get("superseded")]

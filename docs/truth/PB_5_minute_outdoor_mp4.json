@@ -7,7 +7,8 @@
    "type": "serve",
    "hitter": "partner",
    "source": "legacy / pb_5_minute_outdoor-7:labels.csv",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 3.33,
@@ -15,6 +16,7 @@
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "side": "near",
    "volley": false,
    "detected": true,
@@ -29,7 +31,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 6.2,
@@ -38,6 +41,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "next shot was volley by opponent at :03 | 3rd shot drop. Next shot was taken out of the air (volley) at the kitchen by opponent",
    "authority": 3,
+   "seq": 1787608042,
    "conflicts": [
     {
      "field": "type",
@@ -64,6 +68,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "a volley shot hit near opponents baseline is a volley drop. (otherwise called volley dink). This is a fuzzy area so am defining it this way.",
    "authority": 3,
+   "seq": 1787608042,
    "conflicts": [
     {
      "field": "type",
@@ -96,6 +101,7 @@
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "conflicts": [
     {
      "field": "type",
@@ -120,7 +126,8 @@
    "type": "lob",
    "hitter": "partner",
    "source": "legacy / pb_5_minute_outdoor-7:labels.csv",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 11.4,
@@ -128,6 +135,7 @@
    "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -148,6 +156,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "next shot was volley by me (near) | hard shot at the net that landed close to kitchen on opponents side",
    "authority": 3,
+   "seq": 1787608042,
    "conflicts": [
     {
      "field": "type",
@@ -187,6 +196,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "shot 8 includes partner drive followed by oppponent drive followed by user dink | shot near baseline and would have landed near kitchen but user took it out of air (volley)",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -208,7 +218,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 15.6,
@@ -218,6 +229,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "in same time frame opponent hit dink to me, and I hit dink back. Partner was not involved. | shot was by opponent on far side",
    "authority": 3,
+   "seq": 1787608042,
    "side": "near",
    "detected": true,
    "volley_explicit": true
@@ -231,7 +243,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 18.1,
@@ -241,6 +254,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "at end of clip, after opponent hit dink to me, I hit backhand dink into the net | shot was missed",
    "authority": 3,
+   "seq": 1787608042,
    "side": "far",
    "detected": false,
    "volley_explicit": true
@@ -255,19 +269,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "dink was into net. Rally ended",
-   "authority": 3
-  },
-  {
-   "t_sec": 27.88,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "between points - not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 32.57,
@@ -279,7 +282,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "Corrected this and end of rally multiple times. Doesn't seem to capture this info in one place",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 33.9,
@@ -287,6 +291,7 @@
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "side": "near",
    "detected": true,
    "volley_explicit": true
@@ -300,7 +305,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 37.27,
@@ -311,7 +317,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 38.3,
@@ -322,7 +329,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "view blocked so can't tell if volley. Hit into net. Rally ends",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 42.2,
@@ -330,31 +338,8 @@
    "hitter": "user",
    "source": "legacy / pb_5_minute_outdoor-2:labels_block1.csv",
    "notes": "return of server by opponent (far) that was hit into the net",
-   "authority": 1
-  },
-  {
-   "t_sec": 43.25,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Between rallies. Opponent feeding ball to their partner",
-   "authority": 3
-  },
-  {
-   "t_sec": 44.12,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": true,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Looks like it picked up something from court behind this one.",
-   "authority": 3
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 46.57,
@@ -365,57 +350,22 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 48.6,
-   "type": "drive",
-   "hitter": "partner",
+   "type": "return",
+   "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "which looks like it went out  | not a shot. Looks like opponent shot pass near partner on way to user.",
+   "notes": "which looks like it went out  | not a shot. Looks like opponent shot pass near partner on way to user. | shot bounced on far side and was missed by opponent. Rally ended.",
    "authority": 3,
-   "superseded": [
-    {
-     "field": "type",
-     "was": "return",
-     "now": "drive",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    },
-    {
-     "field": "hitter",
-     "was": "user",
-     "now": "partner",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    }
-   ],
+   "seq": 1787608042,
+   "not_a_shot": true,
    "side": "near",
    "volley": false,
    "detected": true,
    "volley_explicit": true
-  },
-  {
-   "t_sec": 48.62,
-   "type": "return",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "shot bounced on far side and was missed by opponent. Rally ended.",
-   "authority": 3
-  },
-  {
-   "t_sec": 55.08,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Feed between shots",
-   "authority": 3
   },
   {
    "t_sec": 64.6,
@@ -426,7 +376,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 66.8,
@@ -434,6 +385,7 @@
    "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -454,6 +406,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "possibly a return of serve but video has gap so not sure. Then opponent hit backhand into the net.",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -473,6 +426,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "no label on shot. Ball was hit by opponent at the kitchen into the net | hit into net. Rally ends",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "hitter": "opponent",
    "side": "far",
@@ -480,23 +434,12 @@
    "volley_explicit": true
   },
   {
-   "t_sec": 74.5,
-   "type": "drop",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. User doesn't have ball",
-   "authority": 3
-  },
-  {
    "t_sec": 76.3,
    "type": "serve",
    "hitter": "partner",
    "source": "legacy / pb_5_minute_outdoor-2:labels_block1.csv",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 78.7,
@@ -507,7 +450,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 80.15,
@@ -517,122 +461,68 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 81.5,
    "type": "drive",
-   "hitter": "opponent",
+   "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
-   "superseded": [
-    {
-     "field": "hitter",
-     "was": "user",
-     "now": "opponent",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    }
-   ],
-   "side": "far",
-   "volley": true,
+   "seq": 1787608042,
+   "not_a_shot": true,
+   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side | shot was by partner, not user",
+   "side": "near",
    "detected": true,
-   "volley_explicit": true,
-   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side"
+   "volley_explicit": true
   },
   {
    "t_sec": 82.5,
    "type": "drive",
-   "hitter": "user",
+   "hitter": "opponent",
    "volley": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "contact by opponent hitting drive.  | shot was by partner, not user",
+   "notes": "contact by opponent hitting drive. ",
    "authority": 3,
-   "superseded": [
-    {
-     "field": "hitter",
-     "was": "opponent",
-     "now": "user",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    }
-   ],
-   "side": "near",
+   "seq": 1787608042,
+   "side": "far",
    "detected": true,
    "volley_explicit": true
   },
   {
    "t_sec": 83.0,
-   "type": "drive",
-   "hitter": "opponent",
+   "type": "lob",
+   "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "reset. Hit too hard and pops up to opponent at kitchen",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
      "was": "reset",
-     "now": "drive",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    },
-    {
-     "field": "hitter",
-     "was": "user",
-     "now": "opponent",
+     "now": "lob",
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
    ],
-   "side": "far",
-   "volley": true,
+   "side": "near",
+   "volley": false,
    "detected": true,
    "volley_explicit": true
   },
   {
    "t_sec": 83.9,
-   "type": "lob",
-   "hitter": "user",
+   "type": "drive",
+   "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "bounces in. I miss it. ",
    "authority": 3,
-   "superseded": [
-    {
-     "field": "type",
-     "was": "drive",
-     "now": "lob",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    },
-    {
-     "field": "hitter",
-     "was": "opponent",
-     "now": "user",
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    }
-   ],
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true
-  },
-  {
-   "t_sec": 83.92,
-   "type": "drive",
-   "hitter": "opponent",
+   "seq": 1787608042,
    "side": "far",
    "volley": true,
    "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
-  },
-  {
-   "t_sec": 84.33,
-   "type": "reset",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot.",
-   "authority": 3
+   "volley_explicit": true
   },
   {
    "t_sec": 94.22,
@@ -643,7 +533,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 95.5,
@@ -651,6 +542,7 @@
    "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -671,6 +563,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "backhand drive by me. After that, Video also shows volley at kitchen by opponent. | no label on shot. Was a drive at the kitchen by opponent",
    "authority": 3,
+   "seq": 1787608042,
    "detected": true,
    "side": "near",
    "volley": false,
@@ -693,7 +586,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 99.2,
@@ -701,6 +595,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "no label on shot. Was a lob near baseline by partner",
    "authority": 3,
+   "seq": 1787608042,
    "type": "lob",
    "hitter": "partner",
    "side": "near",
@@ -714,6 +609,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "drive by opponent.",
    "authority": 3,
+   "seq": 1787608042,
    "side": "far",
    "volley": false,
    "detected": true,
@@ -725,6 +621,7 @@
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -741,20 +638,22 @@
   {
    "t_sec": 104.0,
    "type": "drive",
-   "hitter": "opponent",
+   "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "end of video segment shows partner hitting volley drive back to opponent | not a shot. Looks like red circle around wrong opponent.",
    "authority": 3,
+   "seq": 1787608042,
+   "not_a_shot": true,
    "superseded": [
     {
-     "field": "type",
-     "was": "lob",
-     "now": "drive",
+     "field": "hitter",
+     "was": "opponent",
+     "now": "partner",
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
    ],
-   "side": "far",
-   "volley": false,
+   "side": "near",
+   "volley": true,
    "detected": true,
    "volley_explicit": true
   },
@@ -767,18 +666,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
-  },
-  {
-   "t_sec": 104.6,
-   "type": "drive",
-   "hitter": "partner",
-   "side": "near",
-   "volley": true,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 105.68,
@@ -789,7 +678,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent was near baseline when they hit the shot.",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 106.9,
@@ -797,6 +687,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "was a shot by partner. Label says user | fuzzy between dink and drive. Hit softly but landed in transition zone",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "side": "near",
    "volley": true,
@@ -811,7 +702,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 108.63,
@@ -822,7 +714,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 110.2,
@@ -831,6 +724,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "backhand drive into the net | hit into net. End of rally",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -845,23 +739,12 @@
    "volley_explicit": true
   },
   {
-   "t_sec": 120.5,
-   "type": "drop",
-   "hitter": "partner",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Partner feeding to user.",
-   "authority": 3
-  },
-  {
    "t_sec": 128.8,
    "type": "serve",
    "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "side": "near",
    "volley": false,
    "detected": true,
@@ -876,7 +759,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 131.43,
@@ -887,7 +771,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 132.53,
@@ -898,7 +783,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 133.23,
@@ -909,7 +795,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 134.53,
@@ -920,7 +807,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 134.9,
@@ -932,7 +820,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "dink by user.  Ball going towards user and passes by partner.",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 135.67,
@@ -943,7 +832,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 137.35,
@@ -953,7 +843,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 139.2,
@@ -961,6 +852,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "Missed shot. Was a dink by opponent that went into the net | hit dink into net. End of rally.",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "hitter": "opponent",
    "side": "far",
@@ -976,23 +868,12 @@
    "volley_explicit": true
   },
   {
-   "t_sec": 143.45,
-   "type": "serve",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Looks like ball was picked up on adjacent court. Other than one opponent, noone else is in position for a serve.",
-   "authority": 3
-  },
-  {
    "t_sec": 149.3,
    "type": "serve",
    "hitter": "user",
    "source": "legacy / pb_5_minute_outdoor-2:labels.csv",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 151.9,
@@ -1000,6 +881,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "Missed shot. Was a serve by user",
    "authority": 3,
+   "seq": 1787608042,
    "type": "serve",
    "hitter": "user",
    "side": "near",
@@ -1014,7 +896,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 155.0,
@@ -1026,38 +909,16 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. Rally is over",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 156.2,
    "detected": false,
    "source": "legacy / pb_5_minute_outdoor-7",
    "notes": "Missed shot. It was a drive from baseline by user into the net.",
-   "authority": 2
-  },
-  {
-   "t_sec": 159.05,
-   "type": "return",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Ball being fed to opponent side",
-   "authority": 3
-  },
-  {
-   "t_sec": 162.22,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Opponent picking up ball",
-   "authority": 3
+   "authority": 2,
+   "seq": 0
   },
   {
    "t_sec": 165.3,
@@ -1065,6 +926,7 @@
    "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "side": "far",
    "volley": false,
    "detected": false,
@@ -1078,7 +940,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 169.0,
@@ -1088,7 +951,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 170.3,
@@ -1096,6 +960,7 @@
    "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -1110,18 +975,6 @@
    "notes": "3rd shot drop"
   },
   {
-   "t_sec": 170.53,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": true,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "NOT a shot. Ball was not hit by anyone yet and heading to opp_b",
-   "authority": 3
-  },
-  {
    "t_sec": 171.7,
    "type": "dink",
    "hitter": "opponent",
@@ -1130,7 +983,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 173.1,
@@ -1138,6 +992,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "no label on shot. Was a backhand dink by partner",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "hitter": "partner",
    "side": "near",
@@ -1161,7 +1016,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 175.1,
@@ -1172,7 +1028,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 176.42,
@@ -1184,7 +1041,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "this was winning shot. Looked like she hit it and user/partner went for ball and one of them hit it out at 2:57.5",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 177.5,
@@ -1196,31 +1054,18 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "partner hit it out. Never made it back over the net",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 180.0,
-   "type": "drive",
+   "type": null,
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball. | not a shot. Between serves",
-   "authority": 3,
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true
-  },
-  {
-   "t_sec": 186.43,
-   "type": "serve",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Between serves",
-   "authority": 3
+   "authority": 1,
+   "seq": 0,
+   "not_a_shot": true
   },
   {
    "t_sec": 193.0,
@@ -1230,7 +1075,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 194.6,
@@ -1238,6 +1084,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "no label on shot. Was a return by partner",
    "authority": 3,
+   "seq": 1787608042,
    "type": "return",
    "hitter": "partner",
    "side": "near",
@@ -1253,7 +1100,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 197.22,
@@ -1264,7 +1112,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 198.27,
@@ -1272,6 +1121,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "#73 at 3:18.3 was hit by partner, not the user. And shot looked closer to 3:17.5. It was a backhand at the kitchen line by partner",
    "authority": 3,
+   "seq": 1787608042,
    "type": "drop",
    "superseded": [
     {
@@ -1292,6 +1142,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "#75 was by partner, not the user",
    "authority": 3,
+   "seq": 1787608042,
    "type": "drop",
    "side": "near",
    "volley": true,
@@ -1306,7 +1157,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 202.05,
@@ -1316,7 +1168,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 203.87,
@@ -1326,7 +1179,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 204.32,
@@ -1337,7 +1191,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 204.75,
@@ -1349,67 +1204,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. End of rally",
-   "authority": 3
-  },
-  {
-   "t_sec": 205.02,
-   "type": "dink",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot.",
-   "authority": 3
-  },
-  {
-   "t_sec": 209.4,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot.",
-   "authority": 3
-  },
-  {
-   "t_sec": 211.1,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot.",
-   "authority": 3
-  },
-  {
-   "t_sec": 215.42,
-   "type": "dink",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot.",
-   "authority": 3
-  },
-  {
-   "t_sec": 216.57,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot.",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 218.72,
@@ -1420,7 +1216,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 219.8,
@@ -1429,6 +1226,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent serving the ball. And also includes user returning the serve and ends with oppponent driving ball back",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -1449,7 +1247,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 223.4,
@@ -1461,7 +1260,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "was hit in transition zone",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 225.08,
@@ -1469,6 +1269,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "#88 is mislabeled. It was a shot by partner, not the user",
    "authority": 3,
+   "seq": 1787608042,
    "type": "drive",
    "superseded": [
     {
@@ -1492,7 +1293,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 227.48,
@@ -1503,7 +1305,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 227.8,
@@ -1511,6 +1314,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "shot is missed. Was backhand drive at net by user into the net",
    "authority": 3,
+   "seq": 1787608042,
    "type": "drive",
    "hitter": "opponent",
    "side": "far",
@@ -1533,7 +1337,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 228.9,
@@ -1545,19 +1350,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. End of rally",
-   "authority": 3
-  },
-  {
-   "t_sec": 235.55,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 239.2,
@@ -1565,7 +1359,8 @@
    "hitter": "user",
    "source": "legacy / pb_5_minute_outdoor-2:labels.csv",
    "notes": "looks like serve by opponent however, there is no circle around anything during this segment",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 243.82,
@@ -1576,19 +1371,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
-  },
-  {
-   "t_sec": 244.63,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 245.48,
@@ -1598,7 +1382,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 247.37,
@@ -1609,7 +1394,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 248.03,
@@ -1620,7 +1406,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 249.4,
@@ -1631,38 +1418,22 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 250.8,
-   "detected": true,
+   "detected": false,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "shot is missed. It was a backhand dink by partner | not a shot. Ball on opposite side of net from user",
    "authority": 3,
-   "type": "drive",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "superseded": [
-    {
-     "field": "detected",
-     "was": false,
-     "now": true,
-     "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
-    }
-   ],
-   "volley_explicit": true
-  },
-  {
-   "t_sec": 250.8,
+   "seq": 1787608042,
+   "not_a_shot": true,
    "type": "dink",
    "hitter": "partner",
    "side": "near",
    "volley": false,
-   "detected": false,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "volley_explicit": true
   },
   {
    "t_sec": 252.1,
@@ -1671,6 +1442,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "circle jumps around a bit, but shot is a drive by opponent and it is missed by user/partner | winning shot. Bounced in the court and missed by user and partner.",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "hitter",
@@ -1694,79 +1466,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent hit ball out. Rally is over.",
-   "authority": 3
-  },
-  {
-   "t_sec": 260.53,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Was player from adjacent court picking up his ball on our court",
-   "authority": 3
-  },
-  {
-   "t_sec": 262.07,
-   "type": "drop",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Adjacent court ball",
-   "authority": 3
-  },
-  {
-   "t_sec": 266.68,
-   "type": "serve",
-   "hitter": "partner",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shirt. Partner feeding ball",
-   "authority": 3
-  },
-  {
-   "t_sec": 274.7,
-   "type": "return",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Feeding ball",
-   "authority": 3
-  },
-  {
-   "t_sec": 280.93,
-   "type": "serve",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Server getting ready",
-   "authority": 3
-  },
-  {
-   "t_sec": 281.6,
-   "type": "return",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 282.3,
@@ -1776,7 +1477,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 283.7,
@@ -1785,6 +1487,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "looks like opponent may have served it but not enough video to tell. It's hit to my partner who drives it with a backhand and ends with opponent about to drive it back. | #108 was a shot by partner, not user",
    "authority": 3,
+   "seq": 1787608042,
    "superseded": [
     {
      "field": "type",
@@ -1806,7 +1509,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 286.63,
@@ -1814,6 +1518,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "#110 was a shot by partner, not user",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "side": "near",
    "volley": true,
@@ -1821,35 +1526,12 @@
    "volley_explicit": true
   },
   {
-   "t_sec": 286.95,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Confusing opp_a with ball moving towards opp_b before shot is taken",
-   "authority": 3
-  },
-  {
-   "t_sec": 295.85,
-   "type": "drive",
-   "hitter": "user",
-   "side": "near",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
-  },
-  {
    "t_sec": 298.1,
    "type": "serve",
    "hitter": "user",
    "source": "legacy / pb_5_minute_outdoor-2:labels.csv",
-   "authority": 1
+   "authority": 1,
+   "seq": 0
   },
   {
    "t_sec": 301.9,
@@ -1860,7 +1542,8 @@
    "detected": false,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 302.93,
@@ -1870,7 +1553,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 304.35,
@@ -1881,7 +1565,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 305.38,
@@ -1892,7 +1577,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 307.08,
@@ -1900,6 +1586,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "#117 is partner not user | dink by partner",
    "authority": 3,
+   "seq": 1787608042,
    "type": "dink",
    "superseded": [
     {
@@ -1922,7 +1609,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 308.67,
@@ -1933,7 +1621,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 309.45,
@@ -1944,7 +1633,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 310.47,
@@ -1954,19 +1644,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
-  },
-  {
-   "t_sec": 310.9,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 311.23,
@@ -1977,19 +1656,8 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "authority": 3
-  },
-  {
-   "t_sec": 311.77,
-   "type": "drive",
-   "hitter": "opponent",
-   "side": "far",
-   "volley": false,
-   "detected": true,
-   "volley_explicit": true,
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   },
   {
    "t_sec": 312.25,
@@ -2001,7 +1669,8 @@
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "winning shot",
-   "authority": 3
+   "authority": 3,
+   "seq": 1787608042
   }
  ],
  "false_positives": [
@@ -2012,10 +1681,20 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 27.88,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "between points - not a shot"
+  },
+  {
    "t_sec": 41.67,
    "cause": "background object",
    "notes": "#15 is mislabeled. Says opponent took shot. It was opponent picking up the ball. Was also a red circle around lawnmower on the side.",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 43.25,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Between rallies. Opponent feeding ball to their partner"
   },
   {
    "t_sec": 48.62,
@@ -2042,6 +1721,26 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 74.5,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. User doesn't have ball"
+  },
+  {
+   "t_sec": 80.88,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side"
+  },
+  {
+   "t_sec": 84.33,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot."
+  },
+  {
+   "t_sec": 103.02,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Looks like red circle around wrong opponent."
+  },
+  {
    "t_sec": 114.27,
    "cause": "feed or throw between points",
    "notes": "#44 is mislabeled.  Not a shot. Was a feed being thrown over net by opponent to near side.",
@@ -2054,6 +1753,11 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 143.45,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Looks like ball was picked up on adjacent court. Other than one opponent, noone else is in position for a serve."
+  },
+  {
    "t_sec": 146.5,
    "cause": "feed or throw between points",
    "notes": "#56 is mislabeled. Not a shot. It was being fed back to near side by opponent hitting it over the net.",
@@ -2064,6 +1768,21 @@
    "cause": "feed or throw between points",
    "notes": "#58 is mislabeled. Not a shot. Was being fed by partner to far side",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 162.22,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Opponent picking up ball"
+  },
+  {
+   "t_sec": 170.53,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "NOT a shot. Ball was not hit by anyone yet and heading to opp_b"
+  },
+  {
+   "t_sec": 180.13,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Between serves"
   },
   {
    "t_sec": 181.92,
@@ -2090,6 +1809,11 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 209.4,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot."
+  },
+  {
    "t_sec": 211.1,
    "cause": "feed or throw between points",
    "notes": "#82 is mislabeled. Was not a shot. Ball was being passed from one opponent to the other for a serve",
@@ -2106,6 +1830,11 @@
    "cause": "pick up / carry / no swing",
    "notes": "#84 is mislabeled. Not a shot. User was walking back to get in position. Did not hit a ball",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 216.57,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot."
   },
   {
    "t_sec": 233.05,
@@ -2126,16 +1855,31 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 251.17,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Ball on opposite side of net from user"
+  },
+  {
    "t_sec": 258.22,
    "cause": "adjacent court",
    "notes": "#102 is mislabeld. Not a shot. Looks like it picked up a ball and person that came from adjacent court onto this one to pick up a ball.  Confusing, but should not be registered as a shot",
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 260.53,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Was player from adjacent court picking up his ball on our court"
+  },
+  {
    "t_sec": 262.07,
    "cause": "adjacent court",
    "notes": "#103 is mislabeled. Not a shot. It was ball landing on adjacent court",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 266.68,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shirt. Partner feeding ball"
   },
   {
    "t_sec": 274.7,
@@ -2154,6 +1898,11 @@
    "cause": "duplicate detection",
    "notes": "#105, #106, #107 are all one shot. It is a serve by the opponent.",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 286.95,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Confusing opp_a with ball moving towards opp_b before shot is taken"
   },
   {
    "t_sec": 290.53,
@@ -2219,23 +1968,116 @@
  "totals": {},
  "provenance": [
   {
-   "at": "2026-08-24T22:38:09.215818+00:00",
+   "at": "2026-08-24T23:47:14.746845+00:00",
    "source": "import from pb_5_minute_outdoor-2",
    "new": 32
   },
   {
-   "at": "2026-08-24T22:38:09.230954+00:00",
+   "at": "2026-08-24T23:47:14.763359+00:00",
    "source": "import from pb_5_minute_outdoor-7",
-   "false_positive": 29,
-   "new": 121,
+   "false_positive": 45,
+   "new": 88,
    "missed": 31,
-   "enriched": 18,
+   "enriched": 22,
    "agreed": 5,
    "CONFLICT": 4,
    "serve_strike": 4,
-   "confirmed": 103,
-   "updated": 27,
+   "confirmed": 69,
+   "third_shot_drop": 6,
+   "updated": 22,
+   "retracted": 5,
+   "rally_end": 16,
    "free_notes": 5
+  }
+ ],
+ "third_shot_drops": [
+  6.1,
+  35.52,
+  170.27,
+  247.37,
+  285.45,
+  304.35
+ ],
+ "rally_ends": [
+  {
+   "t_sec": 48.62,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "shot bounced on far side and was missed by opponent. Rally ended."
+  },
+  {
+   "t_sec": 84.33,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot."
+  },
+  {
+   "t_sec": 110.18,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit into net. End of rally"
+  },
+  {
+   "t_sec": 138.22,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit dink into net. End of rally."
+  },
+  {
+   "t_sec": 176.42,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "this was winning shot. Looked like she hit it and user/partner went for ball and one of them hit it out at 2:57.5"
+  },
+  {
+   "t_sec": 204.75,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit into net. End of rally"
+  },
+  {
+   "t_sec": 228.9,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit into net. End of rally"
+  },
+  {
+   "t_sec": 312.25,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "winning shot"
+  },
+  {
+   "t_sec": 19.5,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "dink was into net. Rally ended"
+  },
+  {
+   "t_sec": 32.57,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "Corrected this and end of rally multiple times. Doesn't seem to capture this info in one place"
+  },
+  {
+   "t_sec": 38.3,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "view blocked so can't tell if volley. Hit into net. Rally ends"
+  },
+  {
+   "t_sec": 68.0,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit into net. Rally ends"
+  },
+  {
+   "t_sec": 155.0,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "hit into net. Rally is over"
+  },
+  {
+   "t_sec": 177.5,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "partner hit it out. Never made it back over the net"
+  },
+  {
+   "t_sec": 252.4,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "winning shot. Bounced in the court and missed by user and partner."
+  },
+  {
+   "t_sec": 258.13,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "opponent hit ball out. Rally is over."
   }
  ],
  "free_notes": [
@@ -2260,5 +2102,5 @@
    "note": "between points from 1:08.95 to 1:18.7"
   }
  ],
- "updated_at_utc": "2026-08-24T22:38:09.233376+00:00"
+ "updated_at_utc": "2026-08-24T23:47:14.765961+00:00"
 }
