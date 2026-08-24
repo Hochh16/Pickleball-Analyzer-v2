@@ -2947,5 +2947,47 @@ the layout tensor cores want; for a conv stack it is often the difference betwee
 and not). Both may select different kernels, so results can differ in the last bits — the
 harness decides whether that matters, and if the detections move the change does not ship.
 
-Unmeasured until the next Colab run: there is no local GPU, and both settings are no-ops on
-CPU.
+Measured: **infer 678 s → 632 s** (37.3 → 34.7 ms/frame), the ball stage 1021 s → **963 s**.
+7% off the forward pass, free. Detections came out identical to `0.00000000` on every column
+and the harness reports no downstream change — the last-bit risk did not materialise.
+
+### Where Stage 4 stands, and why to stop here
+
+    infer          632 s   66%   34.7 ms/frame
+    preprocess     178 s   19%    9.8 ms/frame
+    decode         120 s   13%    6.6 ms/frame
+    peaks+measure   26 s    3%    1.4 ms/frame
+
+The forward pass is two thirds of the stage and everything cheap has been taken. What is left
+is a smaller model, a lower input resolution (rejected: the ball is 3.8 px across at the far
+baseline already), or an ONNX/TensorRT export. Each is a real commitment with its own
+accuracy risk, and none should be started without deciding that Stage 4 specifically is worth
+that. It is no longer the largest item in the run.
+
+## Where the whole pipeline stands (2026-08-23)
+
+A 5-minute 4K clip, end to end:
+
+| | start of day | now |
+|---|---|---|
+| track_players | 421 s | 421 s |
+| classify_tracks | 85 s | 85 s |
+| **pose** | **639 s** | **639 s** |
+| **track_ball** | **1700 s** | **963 s** |
+| bundle transfer | ~35 s | ~35 s |
+| **build_ball_3d** (local) | **~1700 s** | **5 s** |
+| other local stages 5-11 | 24 s | 24 s |
+| **total** | **~78 min** | **~36 min** |
+
+**2.2x, and the two biggest remaining items have never been profiled.** `pose` (639 s) and
+`track_players` (421 s) are together 50% of the vision pass. The same phase instrumentation
+would split each into decode versus model in one run.
+
+One thing already visible about pose without instrumenting it: `poses.parquet` holds 71,535
+rows over 18,189 frames — it poses all four participants on every frame. Most of that is
+consumed by `detect_shots` for wrist-to-ball association at CONTACT frames only, which is a
+few thousand frames, not 18,189. The obstacle is the familiar one: contacts are not known
+until Stage 5, which needs the poses. The same two-pass shape that fixed `build_ball_3d` would
+apply — associate on bounding boxes first, pose only around the contacts found, re-run — but
+the per-frame pose metrics (ready position, knee bend) would need checking first, and this is
+a design, not a tweak.
