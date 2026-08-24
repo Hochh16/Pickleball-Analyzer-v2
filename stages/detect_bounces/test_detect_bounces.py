@@ -362,3 +362,39 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+# ---- height ranks the per-interval cap (a bounce is the ball reaching the ground) ----
+
+def test_height_loader_absent_is_empty_not_an_error(tmp_path):
+    """Optional input: build_ball_3d needs bounces.json, so the FIRST pass over a clip has
+    no reconstruction and must behave exactly as before."""
+    from stages.detect_bounces.detect_bounces import load_ball_height
+    assert load_ball_height(tmp_path) == {}
+
+
+def test_cap_prefers_the_candidate_on_the_ground_over_the_confident_one():
+    """The per-interval cap keeps ONE landing and was choosing on pixel confidence alone.
+    Height says which candidate actually touched down; a confident mid-air wobble should
+    lose to a less confident real bounce."""
+    from stages.detect_bounces.detect_bounces import BOUNCE_GROUND_FT
+
+    def rank(b):
+        z = b.get("z_ft")
+        grounded = 2 if (z is not None and z <= BOUNCE_GROUND_FT) else (1 if z is None else 0)
+        return (-grounded, -float(b.get("confidence") or 0.0))
+
+    wobble = {"frame": 100, "confidence": 0.90, "z_ft": 3.4}   # high and confident
+    real = {"frame": 140, "confidence": 0.40, "z_ft": 0.2}     # on the floor, unconvincing
+    assert sorted([wobble, real], key=rank)[0] is real
+
+    # no reconstruction for either -> falls back to confidence, i.e. the old behaviour
+    a = {"frame": 100, "confidence": 0.90, "z_ft": None}
+    b = {"frame": 140, "confidence": 0.40, "z_ft": None}
+    assert sorted([a, b], key=rank)[0] is a
+
+    # an unknown-height candidate outranks one the reconstruction puts in the AIR,
+    # but loses to one it puts on the ground
+    unknown = {"frame": 120, "confidence": 0.10, "z_ft": None}
+    assert sorted([wobble, unknown], key=rank)[0] is unknown
+    assert sorted([real, unknown], key=rank)[0] is real

@@ -4,11 +4,11 @@
   "pb_5_minute_outdoor-7": {
    "shots": 124,
    "volleys": 21,
-   "dinks": 26,
+   "dinks": 27,
    "bounces": 72,
    "identity_gap": 31,
    "rallies": 15,
-   "rating": 3.87,
+   "rating": 3.89,
    "rating_confidence": 0.42,
    "shots_truth": 98,
    "volleys_truth": 17,
@@ -24,17 +24,17 @@
    "serve_recall": 0.86,
    "serve_precision": 0.8,
    "serve_timing_median_s": 0.02,
-   "shot_type_correct": 11,
+   "shot_type_correct": 12,
    "shot_type_labelled": 32
   },
   "pb_3_min_indoor_1_court_b": {
    "shots": 77,
    "volleys": 13,
-   "dinks": 22,
+   "dinks": 23,
    "bounces": 44,
    "identity_gap": 20,
    "rallies": 9,
-   "rating": 4.13,
+   "rating": 4.14,
    "rating_confidence": 0.39,
    "in_rally_shots": 66,
    "in_rally_truth": 82,
@@ -52,7 +52,7 @@
    "bounces": 39,
    "identity_gap": 22,
    "rallies": 10,
-   "rating": 3.11,
+   "rating": 3.12,
    "rating_confidence": 0.4,
    "in_rally_shots": 58,
    "in_rally_truth": 59,
@@ -67,7 +67,7 @@
    "bounces": 55,
    "identity_gap": 31,
    "rallies": 18,
-   "rating": 3.69,
+   "rating": 3.68,
    "rating_confidence": 0.44
   }
  }

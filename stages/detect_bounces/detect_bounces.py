@@ -68,6 +68,13 @@ Y_FLIP_MIN_SPEED_PX_PER_FRAME = 2.0
 # pixel_y ignores apexes. Require this much descent INTO and rebound OUT OF the
 # peak (px @1920, scaled by frame_width/1920) to reject flat mid-air wobble.
 BOUNCE_PROMINENCE_PX = 9.0
+# Ball HEIGHT, when tools/build_ball_3d.py has run. A ground bounce is the ball reaching
+# the floor, and the reconstruction reads z at detected bounces as 0.17-0.38 ft across every
+# clip -- so a candidate whose z never gets near the ground is not a landing, whatever its
+# pixel-space impulse looked like. Used to RANK, not to reject: the per-interval cap has to
+# choose one candidate and was choosing on pixel confidence alone.
+BOUNCE_GROUND_FT = 1.0
+BOUNCE_Z_WINDOW = 2          # frames either side to take the minimum over
 AT_FEET_CONFIDENCE_FACTOR = 0.7
 
 # In-court classification (court is 20 ft wide x 44 ft long).
@@ -269,9 +276,26 @@ def classify_in_court(cx: float, cy: float, tol: float
 
 # --- Core detection ----------------------------------------------------------
 
+def load_ball_height(folder: Path) -> Dict[int, float]:
+    """frame -> reconstructed ball height, or {} when the reconstruction is absent.
+
+    Optional input, like everywhere else it is used: built by tools/build_ball_3d.py, which
+    needs bounces.json, so the FIRST pass over a clip runs without it and the second picks
+    it up. app/pipeline.py runs shots -> bounces -> ball-3D -> shots -> bounces for exactly
+    this reason.
+    """
+    p = folder / "ball_3d.parquet"
+    if not p.exists():
+        return {}
+    d = pd.read_parquet(p, columns=["frame", "z_ft"])
+    return {int(f): float(z) for f, z in zip(d["frame"], d["z_ft"]) if z == z}
+
+
 def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
-           court_M: np.ndarray, log: logging.Logger, params: dict
+           court_M: np.ndarray, log: logging.Logger, params: dict,
+           z_by_frame: Optional[Dict[int, float]] = None
            ) -> Tuple[List[dict], dict, List[str]]:
+    z_by_frame = z_by_frame or {}
     n = len(df_ball)
     fx = df_ball["pixel_x"].to_numpy()
     fy = df_ball["pixel_y"].to_numpy()
@@ -564,9 +588,17 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         if is_at_feet:
             conf *= at_feet_factor
 
+        # Reconstructed height at the candidate, minimum over a small window (the
+        # ground-contact frame and the impulse frame need not coincide exactly).
+        zs = [z_by_frame[g] for g in range(int(f) - BOUNCE_Z_WINDOW,
+                                           int(f) + BOUNCE_Z_WINDOW + 1)
+              if g in z_by_frame]
+        z_at = min(zs) if zs else None
         bounces.append({
             "bounce_id": 0,  # assigned after sort
             "frame": int(f),
+            # None when the reconstruction does not cover this frame -- absent, not zero.
+            "z_ft": round(z_at, 2) if z_at is not None else None,
             "t_sec": round(f / params["fps"], 3),
             "pixel_xy": [round(bx, 2), round(by, 2)],
             "court_xy_ft": court_xy,
@@ -619,7 +651,17 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         if len(group) <= MAX_BOUNCES_PER_INTERVAL:
             keep_ids.update(id(b) for b in group)
             continue
-        ranked = sorted(group, key=lambda b: -float(b.get("confidence") or 0.0))
+        # Rank a candidate the reconstruction puts ON THE GROUND above one it does not.
+        # The cap must pick a single landing per interval and was picking on pixel-space
+        # confidence alone; height says which candidate actually touched down. Candidates
+        # with no reconstruction fall in the middle -- unknown, not disqualified.
+        def _rank(b):
+            z = b.get("z_ft")
+            grounded = 2 if (z is not None and z <= BOUNCE_GROUND_FT) else (1 if z is None
+                                                                            else 0)
+            return (-grounded, -float(b.get("confidence") or 0.0))
+
+        ranked = sorted(group, key=_rank)
         keep = ranked[:MAX_BOUNCES_PER_INTERVAL]
         n_over_cap += len(group) - len(keep)
         keep_ids.update(id(b) for b in keep)
@@ -735,8 +777,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
              f"players={n_player_rows} non-transient rows; "
              f"shots={len(shots)} from shots.json")
 
+    z_by_frame = load_ball_height(folder)
+    if z_by_frame:
+        log.info(f"ball height available for {len(z_by_frame)} frames; "
+                 f"the per-interval cap prefers a candidate the reconstruction "
+                 f"puts on the ground")
     bounces, stats, warnings = detect(df_ball, shots, players_by_frame,
-                                      court["image_to_court"], log, params)
+                                      court["image_to_court"], log, params, z_by_frame)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': bounces are derived "

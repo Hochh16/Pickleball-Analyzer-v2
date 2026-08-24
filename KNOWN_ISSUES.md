@@ -3042,6 +3042,34 @@ That reframes the identity: it is only a clean check once shot false positives a
 then it reads as "FP excess + missing bounces", which is still useful — it just is not the
 volley check it was being read as.
 
-Next from this: **bounces are under-detected by ~9 on the acceptance clip** (72 against 81),
-and Stage 5.5 is precision-tuned by design. Height can answer that one too, and it is now the
-larger of the two terms we can actually fix.
+### Height also ranks the bounce cap — QUALITY, not count
+
+Stage 5.5 caps an interval at one landing (the rules make that physical: a shot lands once
+before the next strike) and was choosing which candidate to keep on pixel-space confidence
+alone. Height says which candidate actually touched down, so the cap now prefers a candidate
+the reconstruction puts on the ground; one with no reconstruction ranks in the middle —
+unknown, not disqualified. Each bounce also carries `z_ft` now.
+
+**Shot typing 11/32 → 12/32** — 31% → 37.5% across the session. Dinks +1 on two clips, rating
+within ±0.02, nothing else moved.
+
+The bounce COUNT is unchanged at 72 against a truth of 81, and that is expected: the cap keeps
+one per interval either way, so this changes *which* one, not *how many*. Better landings feed
+the landing-aware branch of the classifier, which is where the shot-typing gain comes from.
+
+### Where the identity gap actually sits now
+
+    excess shots      124 - 98 = +26      <- dominant term, 22 are labelled false positives
+    missing bounces    81 - 72 =  -9
+    excess volleys     21 - 17 =  +4
+
+Recovering the 9 missing bounces would close a third of the gap at best. **The +26 excess
+shots are the real term**, and they are the dead-ball class already characterised: 19 of the
+22 surviving false positives sit on a REAL ball in genuine motion — feeds and throws between
+points, balls rolling after a net hit, pick-ups, play after the point ended, one strike counted
+twice. No amount of bounce work touches them; they need a live-point / struck-shot distinction.
+
+Height is relevant there too, and this time with a signal already proven: a dead ball reads
+**sustained z ≈ 0**, which is how net hits were confirmed against the operator's timestamps.
+That was attempted before ball_3d was in the pipeline and before the regression harness
+existed, and was recorded as net negative. Both of those have changed.
