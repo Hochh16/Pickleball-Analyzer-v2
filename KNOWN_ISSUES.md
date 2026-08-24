@@ -3260,3 +3260,49 @@ two ends. That is a sequencing bug, not a trajectory one, and it is the cheapest
 fix.
 
 Drop at 50% is the known problem: it needs a landing, and a volleyed drop has none.
+
+## "Ignore everything outside serve -> rally end" — right idea, not yet affordable (2026-08-24)
+
+The operator: *"while serves are excellent markers, if we can accurately know when a rally
+ends, every shot outside the serve to rally can be ignored."* Correct in principle, and the
+conditional is the whole question. Measured against their truth:
+
+**Gating on our own rally windows today removes 12 junk detections and loses 20 REAL shots.**
+Our windows cover 202 s of a 312 s clip. Not affordable.
+
+Their four dead intervals are also the first ground-truth RALLY ENDS this clip has had:
+
+| operator rally end | nearest ours | error |
+|---|---|---|
+| 19.78 s | 18.95 | −0.83 |
+| 38.30 s | 50.18 | **+11.88** |
+| 50.87 s | 50.18 | −0.69 |
+| 68.95 s | 69.30 | +0.35 |
+
+Three of four are within 0.83 s. The fourth is out by twelve seconds because a whole rally is
+missing — our starts show the same hole (46.57 → nearest start 33.87). So rally-end detection
+is not uniformly poor; it is good where it fires and absent where a rally was never segmented.
+**The gate becomes affordable when rally SEGMENTATION stops dropping rallies, not when
+end-detection gets more precise.**
+
+### What the truth store actually contains — and one gap
+
+Asked whether the store is only the latest review. It is not, and the split matters:
+
+| | shots |
+|---|---|
+| the latest shot_review.xlsx | **145** |
+| old labels*.csv (17 Aug) | 7 |
+| old shot_review.json | 1 |
+
+Scored on the latest review ALONE, shot typing is **81/122 = 66%**, not the 57% quoted from
+the mixed set — the seven older CSV labels come from a workflow the operator rejected and drag
+the figure down. 66% is the honest current number.
+
+**The gap: all 29 false positives in the store come from the OLD review. The latest sheet
+contains zero "not a shot" entries.** The operator reported false shots before serves in prose
+but had no reason to mark them, since the sheet asks for a corrected TYPE and "not a shot" is
+easy to miss in a dropdown of shot types. So the "false shots before serves" analysis above ran
+on August's false-positive list, not on what they saw this time. That pattern is untested
+against current detections, and the review sheet needs a dedicated NOT-A-SHOT column rather
+than burying it among the types.
