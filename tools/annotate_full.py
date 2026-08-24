@@ -8,7 +8,9 @@ painful, so this cuts nothing. Every frame of the source appears once, in order.
 
 Burned into each frame:
   * a running clock, so any observation can be quoted as a timestamp
-  * every detected shot, flashed at its contact frame and held briefly afterwards
+  * every detected shot, flashed at its contact frame and held briefly afterwards, labelled
+    with its number, who hit it, and THE TYPE WE ASSIGNED -- the number matches the "#"
+    column of the review sheet, so a correction is a row edit against a specific claim
   * a live per-rally tally — "rally 3 · 4 detected / 14 expected" — when the clip has
     operator truth. That is the whole point: the operator can SEE the counter falling
     behind while the rally is in progress, instead of reconciling numbers afterwards.
@@ -120,8 +122,15 @@ def main(argv=None) -> int:
             fresh = (f - g) < int(0.12 * fps)
             cv2.circle(img, (x, y), 34 if fresh else 24, RED, 4 if fresh else 2)
             who = role_of.get(s["track_id"], "?")
-            cv2.putText(img, f"#{s['n']} {who}{' SERVE' if s.get('is_serve') else ''}",
-                        (x + 38, y - 6), FONT, 0.72, RED, 2)
+            # The TYPE we assigned, so the operator is correcting a specific claim rather
+            # than recalling what we might have said. The number matches the review sheet's
+            # "#" column -- that pairing is the whole review workflow.
+            ty = (s.get("shot_type") or "?").upper()
+            if s.get("is_volley"):
+                ty += " (volley)"
+            label = f"#{s['n']} {who} - {ty}"
+            cv2.putText(img, label, (x + 38, y - 6), FONT, 0.72, (0, 0, 0), 5)
+            cv2.putText(img, label, (x + 38, y - 6), FONT, 0.72, RED, 2)
 
         # header: clock, rally window, live tally
         cv2.rectangle(img, (0, 0), (out_w, 78), (0, 0, 0), -1)

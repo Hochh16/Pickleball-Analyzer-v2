@@ -3120,3 +3120,67 @@ not intend, through a path not understood, is how this project accumulated the f
 had to retract. If those gains are wanted, the thing to find is *why* rejecting candidates
 earlier helps the run collapse — that is a statement about `reject_same_side_runs`, and it
 should be made there, deliberately, where it can be reasoned about.
+
+## Predicting where a volleyed ball WOULD have landed — REJECTED (2026-08-24)
+
+The operator's observation, and it identifies a real hole: a drop is decided by where the ball
+BOUNCED, so a drop the opponent takes out of the air has no landing and falls to the
+33%-accurate speed/arc fallback. Landing coverage is only 44-47% of shots. Their question was
+whether the flight can be extrapolated to the landing that would have happened.
+
+Worth testing, and testable honestly: on shots that DID bounce, fit only the part of the
+flight we would have had, predict the landing, and compare against where the ball actually
+came down.
+
+**Two forms, both fail.**
+
+| | median \|landing y error\| | landing zone correct |
+|---|---|---|
+| extrapolate the reconstructed court position | 15.0 ft (p90 158 ft) | 46% |
+| extrapolate the ball's PIXEL path, project at z=0 | 27.0 ft (p90 60 ft) | 50% |
+| ...cut at the net crossing, the realistic case for a volley | 40.6 ft | **49%** |
+
+Guessing the commonest zone scores 46%. There is no signal.
+
+The pixel form should have been the better one — the ground homography is exact at z=0, which
+is precisely where the ball is when it lands — and the reason it is not shows in the isolated
+errors: predicted time is good (median 0.5 s), predicted PIXEL is 907 px out. **At the net
+crossing we have seen a median of 32% of the flight**, so the fit is being extrapolated three
+times beyond its data. Even granting a perfect landing time the court error is 31 ft.
+
+### The same idea, asked of a MEASURED quantity — also no
+
+If the landing cannot be extrapolated, the crossing itself is measured: a drop crosses the net
+low and slow, a drive hard, a lob high. Against known landings on 200 shots:
+
+| landing zone | n | net height | crossing speed |
+|---|---|---|---|
+| kitchen | 34 | 4.41 ft | 111.0 ft/s |
+| transition | 58 | 4.47 ft | 104.3 ft/s |
+| baseline | 108 | 4.63 ft | 83.7 ft/s |
+
+Net height separates kitchen from baseline at **AUC 0.59**, speed at **0.49**. Neither is
+usable. And the speeds are their own tell: 111 ft/s is 76 mph, for balls landing in the
+KITCHEN. That is not a pickleball dink.
+
+### What this says about the reconstruction, which is the durable finding
+
+`ball_3d` has now been used for five things, and the pattern in what works is sharp:
+
+| question | form | result |
+|---|---|---|
+| did the ball stay past the net for 10 frames | sustained, relative | **shipped** |
+| did the ball come down and back up between two shots | shape, relative | **shipped** |
+| which bounce candidate is on the ground | threshold, coarse | **shipped** |
+| where exactly will it land | per-frame position, extrapolated | rejected |
+| how fast is it crossing the net | per-frame velocity | rejected (76 mph dinks) |
+
+**The reconstruction is trustworthy for sustained or relative questions and not for per-frame
+position or velocity in flight.** That is consistent with its own weakest link, already
+recorded here: `bias` is fit from a few hundred bounces and ranges 1.59-2.03, and it scales
+range directly. z at a BOUNCE is validated (0.17-0.38 ft) because the ball is on the ground
+there; z and the horizontal position mid-flight inherit the full error.
+
+So drops stay where they were: decided by a real bounce when there is one, and by the
+fallback when the opponent volleys. Closing that needs a better range measurement — not a
+cleverer use of this one.
