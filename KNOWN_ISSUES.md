@@ -2891,3 +2891,61 @@ split into decode versus model. Worth measuring after this lands, not guessing a
 
 Older clips keep the decode path until Stage 4 is re-run for them, which needs the GPU box.
 Nothing breaks meanwhile; `build_ball_3d` says which path it took.
+
+## Stage 4's remaining cost is the FORWARD PASS, not decode (2026-08-23)
+
+The phase instrumentation, on a 5-minute clip:
+
+| phase | seconds | share | ms/frame |
+|---|---|---|---|
+| **infer** | **678** | **67%** | 37.3 |
+| preprocess | 180 | 18% | 9.9 |
+| decode | 129 | 13% | 7.1 |
+| peaks+measure | 26 | 3% | 1.4 |
+
+**This kills the shared-decode idea.** Four vision stages each open the video, and sharing one
+decode between them was the big structural item on the list. Decode is 7.1 ms/frame: removing
+it from Stage 4 entirely would save 129 s of 1021 s. It also revises `track_players` — at 23.1
+ms/frame total with decode at ~7, its own model is ~16 ms/frame.
+
+Third time an "obviously the bottleneck" has been wrong here: the Drive round-trip (3%), the
+shared-decode refactor proposed for Stages 5-11 (one function in the wrong place), and now
+shared decode for the vision pass.
+
+### Stride-2 inference — REJECTED, and it cost nothing to find out
+
+Inference is 67%, and the tracker already interpolates gaps up to `MAX_GAP_FRAMES`, so running
+the model on every second frame would halve the forward passes: 678 s → ~339 s, a third off
+the stage.
+
+That is answerable without a GPU. Stride-2 produces exactly the detections we already have at
+even frames and nothing at odd ones, so decimating the existing track, re-running the real
+`postprocess()`, and pushing it through Stages 5-11 IS the experiment. Scored on all four
+clips with `tools/regression`:
+
+| | baseline | stride-2 |
+|---|---|---|
+| outdoor real shots kept | 102 | **82** |
+| outdoor serve recall | 0.86 | 0.79 |
+| court B in-rally shots | 66 | 60 |
+| court B serve recall / precision | 0.80 / 0.89 | **0.60 / 0.60** |
+| court B serve timing median | 0.34 s | **1.21 s** |
+| court C in-rally shots | 58 | 51 |
+
+42 numbers moved, none for the better, and the mechanism is the one predicted before running
+it: `detect_shots` reads contacts from single-frame velocity changes, and linear interpolation
+is precisely what erases a direction change. Nothing was built.
+
+This is what the harness is for. The same question a week ago would have been a day of work
+and an argument about whether the result was real.
+
+### Shipped instead: two inference settings that change no arithmetic
+
+`cudnn.benchmark` (our input shape is fixed at batch × 9 × 720 × 1280, so cuDNN can autotune
+the convolution algorithm once rather than defaulting every call) and `channels_last` (NHWC is
+the layout tensor cores want; for a conv stack it is often the difference between using them
+and not). Both may select different kernels, so results can differ in the last bits — the
+harness decides whether that matters, and if the detections move the change does not ship.
+
+Unmeasured until the next Colab run: there is no local GPU, and both settings are no-ops on
+CPU.

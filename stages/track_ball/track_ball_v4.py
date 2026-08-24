@@ -127,6 +127,23 @@ def load_model(weights: Path, device) -> Tuple[TrackNet, tuple]:
                      input_shape=ishape).to(device)
     model.load_state_dict(ck["state_dict"])
     model.eval()
+    if str(device).startswith("cuda"):
+        # The forward pass is 67% of this stage (678 s of 1021 s on a 5-minute clip, 37.3
+        # ms/frame) -- measured, after decode turned out to be only 13%. Two standard
+        # convnet-inference settings, neither of which changes the arithmetic being done:
+        #
+        # cudnn.benchmark: our input shape is fixed (batch x 9 x 720 x 1280), so let cuDNN
+        # autotune the convolution algorithm once instead of picking a safe default every
+        # call. It re-tunes for the final partial batch, which happens once.
+        #
+        # channels_last: NHWC is the layout the tensor cores want. For a conv stack this is
+        # usually the difference between using them and not.
+        #
+        # Both can pick different kernels, so results may differ in the last bits. That is
+        # what the regression harness is for -- the detections should be identical or
+        # near-identical, and if they are not the change does not ship.
+        torch.backends.cudnn.benchmark = True
+        model = model.to(memory_format=torch.channels_last)
     return model, ishape
 
 
@@ -155,9 +172,14 @@ def to_proc(frame, proc_hw=(PROC_H, PROC_W)) -> np.ndarray:
 def to_device_float(stack_u8: np.ndarray, device) -> "torch.Tensor":
     """uint8 (N,9,H,W) -> float32 [0,1] on the device. The divide happens AFTER the copy,
     so a quarter of the bytes cross PCIe and the elementwise work lands on the GPU, where
-    it is free, instead of on the CPU, where it was not."""
+    it is free, instead of on the CPU, where it was not.
+
+    Handed to the model in channels_last to match the weights (see load_model)."""
     t = torch.from_numpy(stack_u8).to(device, non_blocking=True)
-    return t.float().div_(255.0)
+    t = t.float().div_(255.0)
+    if str(device).startswith("cuda"):
+        t = t.contiguous(memory_format=torch.channels_last)
+    return t
 
 
 @torch.no_grad()
