@@ -38,6 +38,28 @@ def test_rows_are_numbered_as_the_video_numbers_them(tmp_path):
     assert rows[1]["our_volley"] == "yes"
 
 
+def test_build_refuses_to_clobber_a_filled_in_review(tmp_path, monkeypatch):
+    """The operator's time is the scarce input. A rebuild on top of a completed review would
+    destroy hours of it silently -- which nearly happened, caught only because Excel had the
+    file locked."""
+    import sys
+    from openpyxl import load_workbook
+    c = _clip(tmp_path)
+    out = c / "_labeling" / srs.OUT_NAME
+    srs.build(c, out)
+    wb = load_workbook(out)
+    ws = wb.active
+    hdr = next(r for r in range(1, 20) if ws.cell(row=r, column=1).value == "#")
+    ws.cell(row=hdr + 2, column=8, value="drop")
+    wb.save(out)
+    monkeypatch.setattr(sys, "argv", ["x", str(c)])
+    with pytest.raises(SystemExit) as e:
+        srs.main([str(c)])
+    assert "Refusing to overwrite" in str(e.value)
+    # --force gets through
+    srs.main([str(c), "--force"])
+
+
 def test_blank_correction_means_agree(tmp_path):
     """Silence is agreement. A reviewed shot we got right is still a label, and dropping it
     would quietly bias the truth set towards our own mistakes."""
@@ -58,11 +80,13 @@ def test_a_correction_overrides_and_a_missed_shot_is_added(tmp_path):
     wb = load_workbook(out)
     ws = wb.active
     hdr = next(r for r in range(1, 20) if ws.cell(row=r, column=1).value == "#")
-    ws.cell(row=hdr + 2, column=7, value="drop")          # correct the first real row
+    # CORRECT_TYPE is column H: an ALREADY KNOWN column sits at G so a shot reviewed once is
+    # not put in front of the operator again.
+    ws.cell(row=hdr + 2, column=8, value="drop")          # correct the first real row
     blank = next(r for r in range(hdr, ws.max_row + 1)
                  if str(ws.cell(row=r, column=1).value or "").startswith("SHOTS WE MISSED"))
     ws.cell(row=blank + 1, column=2, value="0:09.50")     # a shot we never detected
-    ws.cell(row=blank + 1, column=7, value="lob")
+    ws.cell(row=blank + 1, column=8, value="lob")
     wb.save(out)
     srs.score(c, out)
     with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:

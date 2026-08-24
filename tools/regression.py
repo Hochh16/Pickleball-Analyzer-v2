@@ -166,13 +166,35 @@ def measure(clip: Path) -> Dict[str, object]:
             if errs:
                 m["serve_timing_median_s"] = round(errs[len(errs) // 2], 2)
 
+    # --- what the operator has told us about this video, cumulatively ---------
+    try:
+        from tools import truth_store as _ts
+        st = _ts.known(clip)
+        kn_missed = [s for s in st["shots"] if s.get("detected") is False]
+        if st["shots"]:
+            m["truth_shots_known"] = len(st["shots"])
+            m["truth_missed_known"] = len(kn_missed)
+            m["truth_fp_known"] = len(st["false_positives"])
+            found, _ = score_shots.claim([s["t_sec"] for s in kn_missed], shots,
+                                         score_shots.TOL_S)
+            m["truth_missed_recovered"] = len(found)
+    except Exception:                                    # noqa: BLE001
+        pass
+
     # --- shot types ---------------------------------------------------------
-    labels = score_shot_types.load_labels(clip, 60.0)
-    if (score_shot_types.source_video(clip)
-            == score_shot_types.source_video(score_shot_types.SHARED_LABELS)):
-        shared = score_shot_types.load_labels(score_shot_types.SHARED_LABELS, 60.0)
-        if len(shared) > len(labels):
-            labels = shared
+    # The accumulating truth store is the one home for the operator's input; the scattered
+    # labels*.csv files are what it was built from, so reading both would double-count.
+    fps_ = float((cls.get("fps") or 60.0))
+    labels = score_shot_types.load_from_truth_store(clip)
+    for l in labels:
+        l["frame"] = int(round(l["t_sec"] * fps_))
+    if not labels:
+        labels = score_shot_types.load_labels(clip, fps_)
+        if (score_shot_types.source_video(clip)
+                == score_shot_types.source_video(score_shot_types.SHARED_LABELS)):
+            shared = score_shot_types.load_labels(score_shot_types.SHARED_LABELS, fps_)
+            if len(shared) > len(labels):
+                labels = shared
     if labels:
         st = score_shot_types.score(clip, labels)
         m["shot_type_correct"] = st["hit"]
@@ -191,6 +213,8 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "in_rally_shots", "in_rally_truth", "between_point_shots",
                   "serve_recall", "serve_precision", "serve_timing_median_s",
                   "shot_type_correct", "shot_type_labelled",
+                  "truth_shots_known", "truth_missed_known", "truth_missed_recovered",
+                  "truth_fp_known",
                   "dinks", "rating", "rating_confidence"]
     n_moved = 0
     for name, m in results.items():

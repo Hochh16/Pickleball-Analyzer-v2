@@ -1,0 +1,57 @@
+{
+ "schema_version": 1,
+ "video": "PB 3 min indoor 1 court C.mp4",
+ "shots": [],
+ "false_positives": [],
+ "dead_intervals": [
+  [
+   13.86,
+   24.83
+  ],
+  [
+   30.04,
+   39.7
+  ],
+  [
+   41.62,
+   57.8
+  ],
+  [
+   77.0,
+   86.0
+  ],
+  [
+   92.2,
+   104.0
+  ],
+  [
+   107.0,
+   113.0
+  ],
+  [
+   118.0,
+   133.9
+  ],
+  [
+   142.9,
+   150.3
+  ],
+  [
+   154.3,
+   165.2
+  ]
+ ],
+ "serve_strikes": [],
+ "totals": {
+  "points": 10,
+  "shots": 59
+ },
+ "provenance": [
+  {
+   "at": "2026-08-24T22:00:22.311646+00:00",
+   "source": "import from pb_3_min_indoor_1_court_c",
+   "dead_interval": 9
+  }
+ ],
+ "updated_at_utc": "2026-08-24T22:00:22.342225+00:00"
+}

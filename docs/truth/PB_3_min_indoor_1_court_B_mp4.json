@@ -1,0 +1,280 @@
+{
+ "schema_version": 1,
+ "video": "PB 3 min indoor 1 court B.mp4",
+ "shots": [
+  {
+   "t_sec": 65.6,
+   "type": "return",
+   "hitter": "partner",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 67.6,
+   "type": "drive",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 70.4,
+   "type": "drive",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 71.2,
+   "type": "drive - backhand",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 73.9,
+   "type": "drive",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 74.3,
+   "type": "drive/volley",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 74.8,
+   "type": "drive/volley",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 75.6,
+   "type": "drive/volley",
+   "hitter": "partner",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "however, it says opponent #30",
+   "authority": 2
+  },
+  {
+   "t_sec": 76.3,
+   "type": "drive/volley",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 78.3,
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "2 circles at same time show #32 opponent, #33 partner.  #31 by user was a winning shot missed by opponent. So there is no #32 and #33 shots.  Ball is not visible but a few yellow circles appear (not around ball)",
+   "authority": 2
+  },
+  {
+   "t_sec": 105.2,
+   "type": "serve",
+   "hitter": "partner",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 106.5,
+   "type": "return",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 107.8,
+   "type": "drive",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "however, it says partner SERVE",
+   "authority": 2
+  },
+  {
+   "t_sec": 115.6,
+   "type": "drive",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "shot was hit out by opponent",
+   "authority": 2
+  },
+  {
+   "t_sec": 169.3,
+   "type": "return",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "before that, it labels #67, opponent as 1st shot, however, it does it while she is about to throw the ball up for the serve and not when she actually hits the ball. So not sure it is catching the actual serve.",
+   "authority": 2
+  },
+  {
+   "t_sec": 171.3,
+   "type": "3rd shot drive",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 171.9,
+   "type": "backhand drive",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 172.7,
+   "type": "drop",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "notes": "but says #68 user when opponent hits it and red circle is around user panel",
+   "authority": 2
+  },
+  {
+   "t_sec": 173.5,
+   "type": "drive/volley",
+   "hitter": "user",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 175.2,
+   "type": "dink",
+   "hitter": "partner",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  },
+  {
+   "t_sec": 176.3,
+   "type": "dink",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "authority": 2
+  }
+ ],
+ "false_positives": [],
+ "dead_intervals": [
+  [
+   20.0,
+   29.0
+  ],
+  [
+   35.0,
+   45.0
+  ],
+  [
+   53.0,
+   63.0
+  ],
+  [
+   77.0,
+   86.0
+  ],
+  [
+   98.0,
+   104.0
+  ],
+  [
+   116.0,
+   127.0
+  ],
+  [
+   134.0,
+   140.0
+  ],
+  [
+   144.0,
+   152.0
+  ],
+  [
+   159.0,
+   166.0
+  ]
+ ],
+ "serve_strikes": [
+  {
+   "t_sec": 3.73,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 29.43,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 46.31,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 64.16,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 87.2,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 104.96,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 127.94,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 140.93,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 153.7,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 167.61,
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  }
+ ],
+ "totals": {
+  "points": 10,
+  "shots": 82,
+  "serves_by": {
+   "user": 2,
+   "partner": 3,
+   "opponents": 5
+  }
+ },
+ "provenance": [
+  {
+   "at": "2026-08-24T22:00:22.310737+00:00",
+   "source": "import from pb_3_min_indoor_1_court_b",
+   "new": 21,
+   "missed": 21,
+   "serve_strike": 10,
+   "dead_interval": 9
+  }
+ ],
+ "updated_at_utc": "2026-08-24T22:00:22.341048+00:00"
+}

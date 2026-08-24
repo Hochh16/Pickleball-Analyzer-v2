@@ -24,8 +24,12 @@
    "serve_recall": 0.86,
    "serve_precision": 0.8,
    "serve_timing_median_s": 0.02,
-   "shot_type_correct": 12,
-   "shot_type_labelled": 32
+   "truth_shots_known": 153,
+   "truth_missed_known": 22,
+   "truth_fp_known": 29,
+   "truth_missed_recovered": 4,
+   "shot_type_correct": 86,
+   "shot_type_labelled": 152
   },
   "pb_3_min_indoor_1_court_b": {
    "shots": 77,
@@ -43,7 +47,13 @@
    "confirmed_missed_total": 21,
    "serve_recall": 0.8,
    "serve_precision": 0.89,
-   "serve_timing_median_s": 0.34
+   "serve_timing_median_s": 0.34,
+   "truth_shots_known": 21,
+   "truth_missed_known": 21,
+   "truth_fp_known": 0,
+   "truth_missed_recovered": 12,
+   "shot_type_correct": 4,
+   "shot_type_labelled": 12
   },
   "pb_3_min_indoor_1_court_c": {
    "shots": 70,

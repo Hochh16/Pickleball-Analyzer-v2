@@ -147,9 +147,16 @@ def main(argv=None) -> int:
                         (210, 32), FONT, 0.78, GREEN, 2)
             cv2.putText(img, f"detected {got} / {exp} expected",
                         (210, 64), FONT, 0.85, RED if behind else YELLOW, 2)
-        else:
+        elif points:
             cv2.putText(img, "BETWEEN POINTS  (operator truth: no rally live here)",
                         (210, 50), FONT, 0.8, DIM, 2)
+        else:
+            # No truth.json for this clip. Saying "BETWEEN POINTS" on every frame is a claim
+            # we cannot make -- the operator reported exactly that: "for all shots the video
+            # says between points - no rally live - whether there is a rally or not". Absence
+            # of truth must read as absence, not as a verdict.
+            cv2.putText(img, "(no operator rally truth for this clip)",
+                        (210, 50), FONT, 0.7, DIM, 2)
 
         writer.write(img)
         f += 1

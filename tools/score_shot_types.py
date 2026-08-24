@@ -66,6 +66,26 @@ def parse_clock(s: str) -> float | None:
         return None
 
 
+def load_from_truth_store(clip: Path) -> list[dict]:
+    """Type labels from the accumulating per-video truth store, when it has any.
+
+    One home for the operator's input. The scattered `_labeling/labels*.csv` files are what
+    the store was built FROM -- reading both would double-count, and a clip-local file
+    shadowing a fuller set is the exact bug that made shot typing read 58% when it was 31%.
+    """
+    try:
+        from tools.truth_store import known_shots
+    except ImportError:
+        return []
+    out = []
+    for s in known_shots(clip):
+        ty = (s.get("type") or "").strip().lower()
+        if ty:
+            out.append({"frame": None, "t_sec": float(s["t_sec"]), "true_type": ty,
+                        "src": "truth_store", "role": s.get("hitter") or ""})
+    return out
+
+
 def load_labels(label_dir: Path, fps: float) -> list[dict]:
     """Operator labels keyed to a FRAME.
 
@@ -151,7 +171,14 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     fps = float(json.loads((a.clip / "classified.json").read_text(encoding="utf-8"))
                 .get("fps") or 60.0)
-    labels = load_labels(a.labels or a.clip, fps)
+    store = load_from_truth_store(a.clip) if a.labels is None else []
+    if store:
+        for l in store:
+            l["frame"] = int(round(l["t_sec"] * fps))
+        labels = store
+        print(f"  scoring against the truth store: {len(labels)} typed shots")
+    else:
+        labels = load_labels(a.labels or a.clip, fps)
     # Fall back to the shared set, and prefer it when the clip's own is a thin subset --
     # a partial label file is worse than none, because it looks like a score.
     if a.labels is None and source_video(a.clip) == source_video(SHARED_LABELS):

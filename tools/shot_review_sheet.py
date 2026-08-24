@@ -52,17 +52,44 @@ def clock(t: float) -> str:
     return f"{int(t // 60)}:{t % 60:05.2f}"
 
 
-def parse_clock(s: str) -> Optional[float]:
-    s = str(s or "").strip()
+def parse_clock(s) -> Optional[float]:
+    """Seconds from whatever the operator actually typed.
+
+    The first version accepted only "M:SS.s" and silently dropped everything else -- which
+    threw away all 26 missed shots from a completed review, and reported "0 shots we MISSED"
+    while doing it. The formats that appeared in practice:
+
+        :18.37                      leading colon, seconds only
+        :1:08                       leading colon, minutes and seconds
+        1:03.82                     the documented form
+        datetime.time(0, 3, 14, 500000)   Excel silently retyped the cell
+
+    A parser for a human-filled sheet has to take what humans and Excel produce, and a value
+    it cannot read must be REPORTED, never skipped -- losing operator input without saying so
+    is the worst failure this tool can have.
+    """
+    import datetime as _dt
+    if isinstance(s, (_dt.time, _dt.datetime)):
+        return (s.hour * 3600 + s.minute * 60 + s.second + s.microsecond / 1e6)
+    if isinstance(s, _dt.timedelta):
+        return s.total_seconds()
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s or "").strip().strip(":")
     if not s:
         return None
+    parts = s.split(":")
     try:
-        if ":" in s:
-            mm, _, ss = s.partition(":")
-            return int(mm) * 60 + float(ss)
-        return float(s)
+        vals = [float(p) for p in parts]
     except ValueError:
         return None
+    if len(vals) == 1:
+        return vals[0]
+    if len(vals) == 2:
+        return vals[0] * 60 + vals[1]
+    if len(vals) == 3:
+        return vals[0] * 3600 + vals[1] * 60 + vals[2]
+    return None
 
 
 def rows_for(clip: Path) -> List[dict]:
@@ -115,14 +142,34 @@ def build(clip: Path, out_path: Path) -> Path:
                 "labelled with the type we assigned.")
     ws["A3"] = ("Fill CORRECT_TYPE only where we are WRONG. Leave it blank where we are "
                 "right — blank means agree.")
+    ws["A6"] = ("Rows with a green ALREADY KNOWN value have been reviewed before — SKIP THEM "
+                "unless that stored answer is wrong.")
     ws["A4"] = (f"Missed a shot entirely? Use the blank rows at the bottom: put the time and "
                 f"the correct type, leave # empty.")
     ws["A5"] = "Valid types: " + ", ".join(VALID)
-    for r in (2, 3, 4, 5):
+    for r in (2, 3, 4, 5, 6):
         ws[f"A{r}"].font = note
 
+    # What the truth store already knows about this video, so a shot reviewed once is not
+    # put in front of the operator again. This is the whole point of the store: "the info I
+    # provide on shots should be saved as truths and built upon so I don't have to keep
+    # reviewing the same info."
+    try:
+        from tools.truth_store import known as _known, MATCH_TOL_S as _TOL
+        store = _known(clip)
+    except Exception:                                    # noqa: BLE001 - optional input
+        store, _TOL = {"shots": [], "false_positives": []}, 1.0
+
+    def already(t_sec):
+        best, bd = None, _TOL + 1e-9
+        for s in store.get("shots", []):
+            d = abs(float(s.get("t_sec", -999)) - t_sec)
+            if d < bd and s.get("type"):
+                best, bd = s, d
+        return best
+
     headers = ["#", "time", "hitter", "side", "our_type", "our_volley",
-               "CORRECT_TYPE", "CORRECT_VOLLEY", "notes"]
+               "ALREADY KNOWN", "CORRECT_TYPE", "CORRECT_VOLLEY", "notes"]
     hr = 7
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=hr, column=c, value=h)
@@ -134,23 +181,33 @@ def build(clip: Path, out_path: Path) -> Path:
     # one worked example, so the expected format is unambiguous
     ex = hr + 1
     for c, v in enumerate([" e.g. 12", "1:03.82", "user", "near", "drive", "no",
-                           "drop", "", "was a soft third shot, not a drive"], start=1):
+                           "", "drop", "", "was a soft third shot, not a drive"], start=1):
         cell = ws.cell(row=ex, column=c, value=v)
         cell.font = note
         cell.border = box
 
+    fill_known = PatternFill("solid", fgColor="E2EFDA")     # already reviewed: skip it
     first = ex + 1
+    n_known = 0
     for i, r in enumerate(rows):
         rr = first + i
+        prev = already(r["t"])
+        kn = ""
+        if prev:
+            n_known += 1
+            kn = prev["type"] + ("  (agrees)" if prev["type"] == r["our_type"]
+                                 else f"  (you said {prev['type']})")
         vals = [r["n"], clock(r["t"]), r["hitter"], r["side"], r["our_type"],
-                r["our_volley"], "", "", ""]
+                r["our_volley"], kn, "", "", ""]
         for c, v in enumerate(vals, start=1):
             cell = ws.cell(row=rr, column=c, value=v)
             cell.font = body
             cell.border = box
             if c in (5, 6):
                 cell.fill = fill_ours
-            if c in (7, 8, 9):
+            if c == 7 and prev:
+                cell.fill = fill_known
+            if c in (8, 9, 10) and not prev:
                 cell.fill = fill_edit
     last = first + len(rows) - 1
 
@@ -163,18 +220,18 @@ def build(clip: Path, out_path: Path) -> Path:
             cell = ws.cell(row=rr, column=c, value="")
             cell.font = body
             cell.border = box
-            if c in (2, 7, 8, 9):
+            if c in (2, 8, 9, 10):
                 cell.fill = fill_edit
     last_blank = blank_hdr + N_BLANK_ROWS
 
     dv = DataValidation(type="list", formula1='"' + ",".join(VALID) + '"', allow_blank=True)
     ws.add_data_validation(dv)
-    dv.add(f"G{first}:G{last_blank}")
+    dv.add(f"H{first}:H{last_blank}")
     dv2 = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
     ws.add_data_validation(dv2)
-    dv2.add(f"H{first}:H{last_blank}")
+    dv2.add(f"I{first}:I{last_blank}")
 
-    for col, w in zip("ABCDEFGHI", (7, 10, 10, 7, 12, 12, 16, 16, 46)):
+    for col, w in zip("ABCDEFGHIJ", (7, 10, 10, 7, 12, 12, 22, 16, 16, 46)):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = ws[f"A{first}"]
 
@@ -203,15 +260,20 @@ def score(clip: Path, xlsx: Path) -> int:
         raise SystemExit("could not find the header row in the sheet")
 
     out, n_corr, n_agree, n_missed = [], 0, 0, 0
+    unparsed: List[tuple] = []
     for r in range(hdr_row + 1, ws.max_row + 1):
         n = ws.cell(row=r, column=1).value
         tstr = ws.cell(row=r, column=2).value
         ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
-        corr = str(ws.cell(row=r, column=7).value or "").strip().lower()
-        vol = str(ws.cell(row=r, column=8).value or "").strip().lower()
-        notes = str(ws.cell(row=r, column=9).value or "").strip()
+        known_prev = str(ws.cell(row=r, column=7).value or "").strip().lower()
+        corr = str(ws.cell(row=r, column=8).value or "").strip().lower()
+        vol = str(ws.cell(row=r, column=9).value or "").strip().lower()
+        notes = str(ws.cell(row=r, column=10).value or "").strip()
         t = parse_clock(tstr)
         if t is None:
+            if any(str(ws.cell(row=r, column=c).value or "").strip()
+                   for c in (3, 4, 5, 8, 10)):
+                unparsed.append((r, tstr))
             continue
         if isinstance(n, str) and not str(n).strip().isdigit():
             continue                      # the worked example row
@@ -243,6 +305,13 @@ def score(clip: Path, xlsx: Path) -> int:
     print(f"  {n_agree} confirmed as already correct")
     print(f"  {n_corr} corrected")
     print(f"  {n_missed} shots we MISSED entirely")
+    if unparsed:
+        print(f"\n  {len(unparsed)} row(s) had content but an UNREADABLE time -- "
+              f"these were NOT counted:")
+        for r, v in unparsed[:12]:
+            print(f"    row {r}: time={v!r}")
+        if len(unparsed) > 12:
+            print(f"    ...and {len(unparsed) - 12} more")
     if n_corr + n_agree + n_missed:
         print(f"\n  now run:  python -m tools.regression --clip {clip}")
     return 0
@@ -255,6 +324,8 @@ def main(argv=None) -> int:
     ap.add_argument("--score", action="store_true",
                     help="read the filled-in sheet back and write the label CSV")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing sheet even if it has been filled in")
     a = ap.parse_args(argv)
     if not a.clip.is_dir():
         raise SystemExit(f"not a folder: {a.clip}")
@@ -263,9 +334,44 @@ def main(argv=None) -> int:
         return score(a.clip, out)
     if not (a.clip / "classified.json").exists():
         raise SystemExit(f"{a.clip}/classified.json missing — analyse the clip first")
+    # Never overwrite a sheet that has work in it. The operator's time is the scarce input
+    # here, and rebuilding on top of a filled-in review would destroy hours of it silently.
+    if out.exists() and not a.force:
+        try:
+            from openpyxl import load_workbook
+            ws = load_workbook(out, data_only=True).active
+            hdr = next((r for r in range(1, 20)
+                        if str(ws.cell(row=r, column=1).value or "").strip() == "#"), None)
+            filled = 0
+            if hdr:
+                cols = [c for c in range(1, ws.max_column + 1)
+                        if "CORRECT" in str(ws.cell(row=hdr, column=c).value or "").upper()]
+                cols += [c for c in range(1, ws.max_column + 1)
+                         if str(ws.cell(row=hdr, column=c).value or "").strip() == "notes"]
+                for r in range(hdr + 2, ws.max_row + 1):
+                    if any(str(ws.cell(row=r, column=c).value or "").strip() for c in cols):
+                        filled += 1
+            if filled:
+                msg = (f"{out} already has {filled} filled-in row(s). "
+                       "Refusing to overwrite your review. Either import it first "
+                       f"(python -m tools.truth_store --import-review {a.clip}), "
+                       "or pass --force / --out <other.xlsx>.")
+                raise SystemExit(msg)
+        except SystemExit:
+            raise
+        except Exception:                                # noqa: BLE001
+            pass
     p = build(a.clip, out)
     n = len(rows_for(a.clip))
     print(f"wrote {p}  ({n} shots prepopulated, {N_BLANK_ROWS} blank rows for missed ones)")
+    try:
+        from tools.truth_store import known as _k
+        kn = sum(1 for s in _k(a.clip).get("shots", []) if s.get("type"))
+        if kn:
+            print(f"  {kn} shots already have a stored answer — those rows are marked green "
+                  f"and can be skipped")
+    except Exception:                                    # noqa: BLE001
+        pass
     print(f"\nnext: python -m tools.annotate_full {a.clip}")
     print(f"      watch it, correct the sheet, then:")
     print(f"      python -m tools.shot_review_sheet {a.clip} --score")
