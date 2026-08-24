@@ -3073,3 +3073,50 @@ Height is relevant there too, and this time with a signal already proven: a dead
 **sustained z ≈ 0**, which is how net hits were confirmed against the operator's timestamps.
 That was attempted before ball_3d was in the pipeline and before the regression harness
 existed, and was recorded as net negative. Both of those have changed.
+
+## Dead-ball suppression from ball height — REJECTED (2026-08-23)
+
+The largest remaining error class is 19 of 22 surviving false positives sitting on a REAL ball
+in genuine motion: feeds and throws between points, balls rolling after a net hit, pick-ups,
+play after the point ended. Ball detection cannot remove them. The hypothesis was that height
+can, since a dead ball reads sustained z ≈ 0 — the signal already confirmed against the
+operator's own note at the 19.45s net hit, where the reconstruction has the ball pinned to the
+floor for over two seconds.
+
+Implemented conservatively: suppress a contact only when the ball is on the floor AT that
+moment (a run of >= 0.8 s at z <= 0.6 ft, allowing 30% noisy frames). Extending "dead" forward
+to the next serve would also catch the feeds, but a missed serve would then suppress a whole
+rally, which is how the earlier between-point attempt went net negative.
+
+**It did not do what it was built for.** The gate fires 138 times over 3,098 grounded frames on
+the acceptance clip, and the operator-labelled false positives stay at **22 of 34 — not one
+removed.** The reason is now clear and worth recording: a feed, a throw and a roll are a real
+ball genuinely moving, and a thrown ball is *physically identical to a struck one*. Height
+separates a ball at REST, and the shots detected during those moments were already being
+rejected by the no-player and latch gates. What the class actually needs is game STRUCTURE —
+is the point live — not physics.
+
+The changes it did produce were side effects of rejecting candidates earlier, which reshuffles
+the same-side-run collapse. Stable across thresholds of 0.5 s, 0.8 s and 1.2 s, so not noise:
+
+| | change |
+|---|---|
+| outdoor real shots kept | 102 → 103 |
+| outdoor serve precision | 0.80 → **0.86** |
+| court B in-rally (truth 82) | 66 → **68** |
+| court C between-point junk | 12 → **9** |
+| court C serve recall / precision | 0.80/0.80 → **0.90/0.90** |
+| outdoor wrong player | 1 → **2** |
+| court C in-rally (truth 59) | 58 → **56** |
+
+Net positive on truth, and still reverted: `tools/test_score_shots.py::test_attribution_does_not_regress`
+holds a hard bar of `MAX_WRONG_PLAYER = 1` and this makes it 2. That guard exists because
+wrong-player attribution was an operator-reported defect that took real work to get down to 1,
+and a rule written down in a test is not a judgement call to re-take in the moment.
+
+Worth noting for whoever revisits: the gains above are real and reproducible, but they came
+from a mechanism the change was not designed to exercise. Shipping a change for effects it did
+not intend, through a path not understood, is how this project accumulated the filters it later
+had to retract. If those gains are wanted, the thing to find is *why* rejecting candidates
+earlier helps the run collapse — that is a statement about `reject_same_side_runs`, and it
+should be made there, deliberately, where it can be reasoned about.
