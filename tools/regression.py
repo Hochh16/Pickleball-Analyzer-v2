@@ -178,6 +178,26 @@ def measure(clip: Path) -> Dict[str, object]:
             found, _ = score_shots.claim([s["t_sec"] for s in kn_missed], shots,
                                          score_shots.TOL_S)
             m["truth_missed_recovered"] = len(found)
+            # Volleys, scored ONLY against shots the operator actually judged. The rest carry
+            # a value inherited by "blank means agree", and scoring against those would be
+            # scoring against ourselves -- it reads as agreement however wrong we are.
+            ex = [s for s in st["shots"]
+                  if s.get("volley_explicit") and s.get("volley") is not None]
+            if ex:
+                idx, _ = score_shots.claim([s["t_sec"] for s in ex], shots,
+                                           score_shots.TOL_S)
+                miss = inv = okv = 0
+                for i in idx:
+                    near = min(ex, key=lambda s: abs(s["t_sec"] - shots[i]["t_sec"]))
+                    got = bool(shots[i].get("is_volley"))
+                    want = bool(near["volley"])
+                    okv += want == got
+                    miss += want and not got
+                    inv += (not want) and got
+                m["volley_judged"] = len(idx)
+                m["volley_correct"] = okv
+                m["volley_missed"] = miss
+                m["volley_invented"] = inv
     except Exception:                                    # noqa: BLE001
         pass
 
@@ -214,7 +234,8 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "serve_recall", "serve_precision", "serve_timing_median_s",
                   "shot_type_correct", "shot_type_labelled",
                   "truth_shots_known", "truth_missed_known", "truth_missed_recovered",
-                  "truth_fp_known",
+                  "truth_fp_known", "volley_judged", "volley_correct",
+                  "volley_missed", "volley_invented",
                   "dinks", "rating", "rating_confidence"]
     n_moved = 0
     for name, m in results.items():

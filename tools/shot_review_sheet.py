@@ -140,8 +140,8 @@ def build(clip: Path, out_path: Path) -> Path:
     ws["A1"].font = title
     ws["A2"] = ("Watch _labeling/<clip>_annotated.mp4. Each shot is numbered on screen and "
                 "labelled with the type we assigned.")
-    ws["A3"] = ("Fill CORRECT_TYPE only where we are WRONG. Leave it blank where we are "
-                "right — blank means agree.")
+    ws["A3"] = ("Fill CORRECT_TYPE only where we are WRONG. A BLANK row is recorded as you "
+                "CONFIRMING we are right — so if you stop part-way, say where you stopped.")
     ws["A6"] = ("Rows with a green ALREADY KNOWN value have been reviewed before — SKIP THEM "
                 "unless that stored answer is wrong.")
     ws["A4"] = (f"Missed a shot entirely? Use the blank rows at the bottom: put the time and "

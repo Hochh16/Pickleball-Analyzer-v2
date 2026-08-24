@@ -133,7 +133,7 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
              hitter: Optional[str] = None, side: Optional[str] = None,
              volley: Optional[bool] = None, detected: Optional[bool] = None,
              source: str = "", notes: str = "", kind: str = "unknown",
-             claimed: Optional[set] = None) -> str:
+             claimed: Optional[set] = None, volley_explicit: bool = False) -> str:
     """Merge one shot fact. Returns 'new' | 'enriched' | 'agreed' | 'CONFLICT'.
 
     Enrichment only ever ADDS fields that were unknown. A field already recorded is never
@@ -148,6 +148,7 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
         row = {k: v for k, v in
                {"t_sec": round(float(t), 2), "type": type_, "hitter": hitter,
                 "side": side, "volley": volley, "detected": detected,
+                "volley_explicit": volley_explicit or None,
                 "source": source, "notes": notes, "authority": auth}.items()
                if v is not None and v != ""}
         doc["shots"].append(row)
@@ -182,6 +183,11 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
             ex.setdefault("conflicts", []).append(
                 {"field": key, "kept": cur, "rejected": val, "from": source})
             verdict = "CONFLICT"
+    if volley_explicit:
+        # The operator actually judged this one. Distinguishing that from a value inherited
+        # by "blank means agree" matters: scoring against inherited values would be scoring
+        # against ourselves, and would read as agreement no matter how wrong we are.
+        ex["volley_explicit"] = True
     if auth > prev_auth:
         ex["authority"] = auth
         ex["source"] = source
@@ -209,6 +215,10 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 if str(ws.cell(row=r, column=1).value or "").strip() == "#"), None)
     if hdr is None:
         return {}
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    for need in ("CORRECT_TYPE", "CORRECT_VOLLEY", "notes"):
+        col.setdefault(need, {"CORRECT_TYPE": 7, "CORRECT_VOLLEY": 8, "notes": 9}[need])
     c = Counter()
     claimed: set = set()
     src = f"shot_review.xlsx / {clip.name}"
@@ -218,9 +228,12 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
             continue                                     # the worked-example row
         t = parse_clock(ws.cell(row=r, column=2).value)
         ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
-        corr = str(ws.cell(row=r, column=7).value or "").strip().lower()
-        volley_txt = str(ws.cell(row=r, column=8).value or "").strip().lower()
-        notes = str(ws.cell(row=r, column=9).value or "").strip()
+        corr = str(ws.cell(row=r, column=col["CORRECT_TYPE"]).value or "").strip().lower()
+        # column layout differs between sheet generations (an ALREADY KNOWN column was
+        # inserted at G), so find the columns by HEADER rather than by position -- a review
+        # silently read from the wrong column is how 26 missed shots were lost once already.
+        volley_txt = str(ws.cell(row=r, column=col["CORRECT_VOLLEY"]).value or "").strip().lower()
+        notes = str(ws.cell(row=r, column=col["notes"]).value or "").strip()
         if t is None:
             if notes:
                 doc.setdefault("free_notes", []).append({"source": src, "note": notes})
@@ -230,6 +243,14 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         if not ty:
             continue
         vol = {"yes": True, "no": False}.get(volley_txt)
+        # A BLANK is a deliberate confirmation, not an absence -- the operator: "if I did not
+        # mark it as wrong, then I deliberately considered it to be correct." So every row in
+        # a completed review is the operator's own answer, and scoring against it is scoring
+        # against them, not against ourselves.
+        #
+        # This holds only while a review covers every row. A PARTIAL review must say so, or
+        # its untouched rows would be recorded as confirmations of things nobody looked at.
+        vol_explicit = True
         if vol is None and not corr and str(ws.cell(row=r, column=6).value or "").strip():
             vol = str(ws.cell(row=r, column=6).value).strip().lower() == "yes"
         detected = n not in (None, "")
@@ -240,10 +261,12 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                                                "notes": notes})
                 c["false_positive"] += 1
             continue
+        c["confirmed"] += 1 if not corr else 0
         c[add_shot(doc, t, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
                    side=str(ws.cell(row=r, column=4).value or "") or None, volley=vol,
                    detected=detected, source=src, notes=notes,
-                   kind="review", claimed=claimed)] += 1
+                   kind="review", claimed=claimed,
+                   volley_explicit=vol_explicit)] += 1
         if not detected:
             c["missed"] += 1
     return dict(c)

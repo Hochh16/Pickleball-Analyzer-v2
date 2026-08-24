@@ -17,7 +17,8 @@
    "authority": 3,
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 4.65,
@@ -26,6 +27,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -51,7 +53,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 6.8,
@@ -84,7 +87,8 @@
     }
    ],
    "side": "far",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 8.1,
@@ -108,7 +112,8 @@
    ],
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 8.1,
@@ -133,7 +138,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 13.0,
@@ -171,7 +177,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 13.4,
@@ -189,7 +196,8 @@
     }
    ],
    "side": "far",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 14.03,
@@ -198,6 +206,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -210,7 +219,8 @@
    "notes": "in same time frame opponent hit dink to me, and I hit dink back. Partner was not involved. | shot was by opponent on far side",
    "authority": 3,
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 16.73,
@@ -219,6 +229,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -231,7 +242,8 @@
    "notes": "at end of clip, after opponent hit dink to me, I hit backhand dink into the net | shot was missed",
    "authority": 3,
    "side": "far",
-   "detected": false
+   "detected": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 19.5,
@@ -240,6 +252,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "dink was into net. Rally ended",
    "authority": 3
@@ -251,6 +264,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "between points - not a shot",
    "authority": 3
@@ -262,6 +276,7 @@
    "side": "far",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "Corrected this and end of rally multiple times. Doesn't seem to capture this info in one place",
    "authority": 3
@@ -273,7 +288,8 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 35.52,
@@ -281,6 +297,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
    "authority": 3
@@ -292,6 +309,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -301,6 +319,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "view blocked so can't tell if volley. Hit into net. Rally ends",
    "authority": 3
@@ -320,6 +339,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Between rallies. Opponent feeding ball to their partner",
    "authority": 3
@@ -331,6 +351,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Looks like it picked up something from court behind this one.",
    "authority": 3
@@ -342,6 +363,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -368,7 +390,8 @@
    ],
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 48.62,
@@ -377,6 +400,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "shot bounced on far side and was missed by opponent. Rally ended.",
    "authority": 3
@@ -388,6 +412,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Feed between shots",
    "authority": 3
@@ -399,6 +424,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -418,7 +444,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 67.6,
@@ -437,7 +464,8 @@
    ],
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 68.7,
@@ -448,7 +476,8 @@
    "type": "dink",
    "hitter": "opponent",
    "side": "far",
-   "volley": false
+   "volley": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 74.5,
@@ -457,6 +486,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. User doesn't have ball",
    "authority": 3
@@ -475,6 +505,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -484,6 +515,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -504,6 +536,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side"
   },
   {
@@ -523,7 +556,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 83.0,
@@ -548,7 +582,8 @@
    ],
    "side": "far",
    "volley": true,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 83.9,
@@ -573,7 +608,8 @@
    ],
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 83.92,
@@ -582,6 +618,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -592,6 +629,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot.",
    "authority": 3
@@ -603,6 +641,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -622,7 +661,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 97.4,
@@ -641,7 +681,8 @@
      "now": true,
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
-   ]
+   ],
+   "volley_explicit": true
   },
   {
    "t_sec": 98.0,
@@ -650,6 +691,7 @@
    "side": "far",
    "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -662,7 +704,8 @@
    "type": "lob",
    "hitter": "partner",
    "side": "near",
-   "volley": false
+   "volley": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 101.2,
@@ -673,7 +716,8 @@
    "authority": 3,
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 102.5,
@@ -691,7 +735,8 @@
    ],
    "side": "near",
    "volley": true,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 104.0,
@@ -710,7 +755,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 104.0,
@@ -719,6 +765,7 @@
    "side": "far",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -729,6 +776,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -738,6 +786,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent was near baseline when they hit the shot.",
    "authority": 3
@@ -751,7 +800,8 @@
    "type": "dink",
    "side": "near",
    "volley": true,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 108.1,
@@ -759,6 +809,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -769,6 +820,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -789,7 +841,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 120.5,
@@ -798,6 +851,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Partner feeding to user.",
    "authority": 3
@@ -810,7 +864,8 @@
    "authority": 3,
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 130.77,
@@ -819,6 +874,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -829,6 +885,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -839,6 +896,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -849,6 +907,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -859,6 +918,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -869,6 +929,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "dink by user.  Ball going towards user and passes by partner.",
    "authority": 3
@@ -880,6 +941,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -889,6 +951,7 @@
    "hitter": "user",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -909,7 +972,8 @@
      "now": true,
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
-   ]
+   ],
+   "volley_explicit": true
   },
   {
    "t_sec": 143.45,
@@ -918,6 +982,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Looks like ball was picked up on adjacent court. Other than one opponent, noone else is in position for a serve.",
    "authority": 3
@@ -938,7 +1003,8 @@
    "type": "serve",
    "hitter": "user",
    "side": "near",
-   "volley": false
+   "volley": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 153.68,
@@ -946,6 +1012,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -956,6 +1023,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. Rally is over",
    "authority": 3
@@ -974,6 +1042,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Ball being fed to opponent side",
    "authority": 3
@@ -985,6 +1054,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Opponent picking up ball",
    "authority": 3
@@ -997,7 +1067,8 @@
    "authority": 3,
    "side": "far",
    "volley": false,
-   "detected": false
+   "detected": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 166.58,
@@ -1005,6 +1076,7 @@
    "hitter": "user",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1014,6 +1086,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1033,6 +1106,7 @@
    ],
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "notes": "3rd shot drop"
   },
   {
@@ -1042,6 +1116,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "NOT a shot. Ball was not hit by anyone yet and heading to opp_b",
    "authority": 3
@@ -1053,6 +1128,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1073,7 +1149,8 @@
      "now": true,
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
-   ]
+   ],
+   "volley_explicit": true
   },
   {
    "t_sec": 174.0,
@@ -1082,6 +1159,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1092,6 +1170,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1102,6 +1181,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "this was winning shot. Looked like she hit it and user/partner went for ball and one of them hit it out at 2:57.5",
    "authority": 3
@@ -1113,6 +1193,7 @@
    "side": "near",
    "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "partner hit it out. Never made it back over the net",
    "authority": 3
@@ -1126,7 +1207,8 @@
    "authority": 3,
    "side": "near",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 186.43,
@@ -1135,6 +1217,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Between serves",
    "authority": 3
@@ -1145,6 +1228,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1157,7 +1241,8 @@
    "type": "return",
    "hitter": "partner",
    "side": "near",
-   "volley": false
+   "volley": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 196.8,
@@ -1166,6 +1251,7 @@
    "side": "far",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1176,6 +1262,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1196,7 +1283,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 200.13,
@@ -1207,7 +1295,8 @@
    "type": "drop",
    "side": "near",
    "volley": true,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 200.9,
@@ -1215,6 +1304,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1224,6 +1314,7 @@
    "hitter": "user",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1233,6 +1324,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1243,6 +1335,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1253,6 +1346,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. End of rally",
    "authority": 3
@@ -1264,6 +1358,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot.",
    "authority": 3
@@ -1275,6 +1370,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot.",
    "authority": 3
@@ -1286,6 +1382,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot.",
    "authority": 3
@@ -1297,6 +1394,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot.",
    "authority": 3
@@ -1308,6 +1406,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot.",
    "authority": 3
@@ -1319,6 +1418,7 @@
    "side": "far",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1338,7 +1438,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 221.83,
@@ -1346,6 +1447,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1356,6 +1458,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "was hit in transition zone",
    "authority": 3
@@ -1377,7 +1480,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 226.3,
@@ -1386,6 +1490,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1396,6 +1501,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1415,7 +1521,8 @@
      "now": true,
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
-   ]
+   ],
+   "volley_explicit": true
   },
   {
    "t_sec": 227.8,
@@ -1424,6 +1531,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1434,6 +1542,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "hit into net. End of rally",
    "authority": 3
@@ -1445,6 +1554,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1464,6 +1574,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1474,6 +1585,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1484,6 +1596,7 @@
    "hitter": "partner",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1493,6 +1606,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
    "authority": 3
@@ -1504,6 +1618,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1514,6 +1629,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1534,7 +1650,8 @@
      "now": true,
      "by": "shot_review.xlsx / pb_5_minute_outdoor-7"
     }
-   ]
+   ],
+   "volley_explicit": true
   },
   {
    "t_sec": 250.8,
@@ -1543,6 +1660,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1563,7 +1681,8 @@
    ],
    "side": "far",
    "volley": false,
-   "detected": false
+   "detected": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 258.13,
@@ -1572,6 +1691,7 @@
    "side": "far",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "opponent hit ball out. Rally is over.",
    "authority": 3
@@ -1583,6 +1703,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Was player from adjacent court picking up his ball on our court",
    "authority": 3
@@ -1594,6 +1715,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Adjacent court ball",
    "authority": 3
@@ -1605,6 +1727,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shirt. Partner feeding ball",
    "authority": 3
@@ -1616,6 +1739,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Feeding ball",
    "authority": 3
@@ -1627,6 +1751,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Server getting ready",
    "authority": 3
@@ -1638,6 +1763,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1648,6 +1774,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1667,7 +1794,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 285.45,
@@ -1675,6 +1803,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
    "authority": 3
@@ -1688,7 +1817,8 @@
    "type": "dink",
    "side": "near",
    "volley": true,
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 286.95,
@@ -1697,6 +1827,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot. Confusing opp_a with ball moving towards opp_b before shot is taken",
    "authority": 3
@@ -1708,6 +1839,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1726,6 +1858,7 @@
    "side": "near",
    "volley": false,
    "detected": false,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1735,6 +1868,7 @@
    "hitter": "opponent",
    "side": "far",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1744,6 +1878,7 @@
    "hitter": "user",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "3rd shot drop",
    "authority": 3
@@ -1755,6 +1890,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1774,7 +1910,8 @@
     }
    ],
    "side": "near",
-   "detected": true
+   "detected": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 307.85,
@@ -1783,6 +1920,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1793,6 +1931,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1803,6 +1942,7 @@
    "side": "far",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1812,6 +1952,7 @@
    "hitter": "partner",
    "side": "near",
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1822,6 +1963,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1833,6 +1975,7 @@
    "side": "near",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3
   },
@@ -1843,6 +1986,7 @@
    "side": "far",
    "volley": false,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "not a shot",
    "authority": 3
@@ -1854,6 +1998,7 @@
    "side": "near",
    "volley": true,
    "detected": true,
+   "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "notes": "winning shot",
    "authority": 3
@@ -2035,7 +2180,24 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   }
  ],
- "dead_intervals": [],
+ "dead_intervals": [
+  [
+   19.78,
+   32.48
+  ],
+  [
+   38.3,
+   46.57
+  ],
+  [
+   50.87,
+   64.6
+  ],
+  [
+   68.95,
+   78.7
+  ]
+ ],
  "serve_strikes": [
   {
    "t_sec": 3.35,
@@ -2057,12 +2219,12 @@
  "totals": {},
  "provenance": [
   {
-   "at": "2026-08-24T22:00:22.313655+00:00",
+   "at": "2026-08-24T22:38:09.215818+00:00",
    "source": "import from pb_5_minute_outdoor-2",
    "new": 32
   },
   {
-   "at": "2026-08-24T22:00:22.336060+00:00",
+   "at": "2026-08-24T22:38:09.230954+00:00",
    "source": "import from pb_5_minute_outdoor-7",
    "false_positive": 29,
    "new": 121,
@@ -2071,6 +2233,7 @@
    "agreed": 5,
    "CONFLICT": 4,
    "serve_strike": 4,
+   "confirmed": 103,
    "updated": 27,
    "free_notes": 5
   }
@@ -2097,5 +2260,5 @@
    "note": "between points from 1:08.95 to 1:18.7"
   }
  ],
- "updated_at_utc": "2026-08-24T22:00:22.339286+00:00"
+ "updated_at_utc": "2026-08-24T22:38:09.233376+00:00"
 }

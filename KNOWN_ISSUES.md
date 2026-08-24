@@ -3184,3 +3184,79 @@ there; z and the horizontal position mid-flight inherit the full error.
 So drops stay where they were: decided by a real bounce when there is one, and by the
 fallback when the opponent volleys. Closing that needs a better range measurement — not a
 cleverer use of this one.
+
+## The three patterns the operator reported, measured (2026-08-24)
+
+Their review of all 124 detected shots produced 42 corrections, 21 missed shots and three
+reported patterns. With the truth store there are now 153 known shots for this video instead
+of 32 scattered labels, so each is answerable.
+
+### 1. "False shots often before serves" — NOT confirmed
+
+| seconds before the next serve | junk detections |
+|---|---|
+| 0-1 | 3 |
+| 1-2 | 0 |
+| 2-3 | 3 |
+| 3-5 | 5 |
+| 5-10 | 10 |
+| 10+ | 6 |
+
+11 of 29 junk detections (38%) land within 5 s before a serve — but those windows are 115 s of
+a 312 s clip, i.e. **37% of the clip**. Chance alone puts 37% there. The impression is
+understandable (that is when you are watching for the serve) but there is no clustering.
+
+Testing the better-posed version with the four dead intervals they supplied: junk is **1.2x**
+over-represented in dead time and real shots **0.5x**. A signal, but a weak one — 5 of 29.
+
+### 2. Volleys — CONFIRMED, and the largest single error class
+
+Scored against the 94 shots the operator judged (a blank row is a deliberate confirmation, in
+their words: *"if I did not mark it as wrong, then I deliberately considered it to be
+correct"*):
+
+    72 correct (77%)   17 volleys MISSED   5 INVENTED
+
+The height fix took volley typing from the pixel scan's measured 50% to 77%, which is real —
+but 22 errors remain on one clip, and the direction has flipped from over-calling to
+under-calling. Attributing each error to the path that made it:
+
+| | missed | invented |
+|---|---|---|
+| decided by HEIGHT | 6 | 5 |
+| decided by the PRIOR (height blind) | 6 | 0 |
+
+**Half the missed volleys come from the fallback I chose rather than measured** — "when height
+cannot see the interval, assume not a volley", justified on the 17% base rate. It is right on
+average and wrong six times here.
+
+The other half are height itself getting the per-shot call wrong, which is the same limit
+found three other ways this week: **the reconstruction is sound for sustained and relative
+questions and unreliable per-shot.** The volley RATE it produces matches truth (17% vs 17%)
+while the individual decisions are wrong 23% of the time — right total, wrong decisions, which
+is exactly the failure mode this project has hit before.
+
+### 3. Shot types — CONFIRMED, and now measurable per class
+
+**86 of 152 = 57%** overall (not the 37.5% quoted on 32 labels). Per class, on the 122 typed
+shots that matched a detection:
+
+| true type | n | correct | |
+|---|---|---|---|
+| drive | 38 | 31 | 82% |
+| serve | 12 | 9 | 75% |
+| dink | 27 | 19 | 70% |
+| drop | 26 | 13 | **50%** |
+| return | 16 | 7 | **44%** |
+| lob | 2 | 1 | 50% |
+
+Most common confusions: `drop -> drive` 6, `return -> serve` 6, `drive -> dink` 5,
+`dink -> drive` 4, `drop -> dink` 3, `serve -> drive` 3.
+
+**Return is the worst class and it is structural, not perceptual.** A return is defined as the
+shot after a serve from the other side, so a mis-detected serve makes the return look like a
+serve — `return -> serve` 6 times and `serve -> drive` 3 times are the same fault seen from
+two ends. That is a sequencing bug, not a trajectory one, and it is the cheapest of these to
+fix.
+
+Drop at 50% is the known problem: it needs a landing, and a volleyed drop has none.
