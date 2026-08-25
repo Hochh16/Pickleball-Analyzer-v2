@@ -504,6 +504,21 @@ def import_legacy(doc: dict, clip: Path) -> Dict[str, int]:
         for k, v in (d.get("totals") or {}).items():
             doc["totals"].setdefault(k, v)
         pts = d.get("points") or []
+        for pt in pts:
+            # The operator's own point ENDS. They were sitting in per-clip truth.json where
+            # only tools/detect_rally_ends.py --score could see them, so rally-end accuracy
+            # could be measured on the indoor clips and nowhere else. Note the convention
+            # caveat: this file's start_t_sec is NOT the serve strike (early by ~1.06 s
+            # indoors), so treat end_t_sec as the operator's mark of the point ending rather
+            # than a frame-accurate event, and score it with a window.
+            et = pt.get("end_t_sec")
+            if et is None:
+                continue
+            et = float(et)
+            if not any(abs(float(x["t_sec"]) - et) < 0.5 for x in doc.setdefault("rally_ends", [])):
+                doc["rally_ends"].append({"t_sec": round(et, 2), "source": src,
+                                          "notes": (pt.get("end_reason") or "")})
+                c["rally_end"] += 1
         for a, b in zip(pts, pts[1:]):
             lo, hi = float(a.get("end_t_sec", 0)), float(b.get("start_t_sec", 0))
             if hi > lo and not any(abs(x[0] - lo) < 0.5 for x in doc["dead_intervals"]):

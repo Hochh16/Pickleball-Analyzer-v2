@@ -30,6 +30,7 @@ from pathlib import Path
 from stages.detect_shots.detect_shots import main as detect_main
 from stages.detect_bounces.detect_bounces import main as bounces_main
 from stages.classify_shots.classify_shots import main as classify_main
+from stages.segment_rallies import segment_rallies as sr
 from stages.segment_rallies.segment_rallies import main as rallies_main
 
 TEST_FOLDER = Path("data/test_clip")
@@ -334,3 +335,35 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+def test_only_trusted_ends_gate_the_rally():
+    """`out` and `not-returned` ends are right about a quarter of the time, and a false end
+    marks the live play behind it as dead. Taking every end cost 37 real shots to exclude 21
+    junk ones; taking only the trusted NET ends reversed the trade."""
+    shots = [{"shot_id": 0, "frame": 60, "t_sec": 1.0, "is_serve": True},
+             {"shot_id": 1, "frame": 120, "t_sec": 2.0},
+             {"shot_id": 2, "frame": 480, "t_sec": 8.0}]     # after the ends below
+    untrusted = [{"t_sec": 3.0, "reason": "out", "trusted": False}]
+    assert sr.apply_rally_ends([dict(s) for s in shots], untrusted) == 0
+
+    trusted = [{"t_sec": 3.0, "reason": "net", "trusted": True}]
+    got = [dict(s) for s in shots]
+    assert sr.apply_rally_ends(got, trusted) == 1
+    assert got[2]["is_between_point"] is True
+
+    # an ends file written before `trusted` existed must behave as it did
+    legacy = [{"t_sec": 3.0, "reason": "net"}]
+    assert sr.apply_rally_ends([dict(s) for s in shots], legacy) == 1
+
+
+def test_a_rally_that_starts_with_a_serve_is_never_a_micro_rally():
+    """The gate trims junk off the END of a point, which can leave a real point only two
+    shots long. Deleting it as a micro-rally took its serve with it -- serve recall fell
+    0.86 -> 0.79 on the acceptance clip. Net-tapping between points has no serve in front."""
+    served = [{"shot_id": 0, "frame": 60, "is_serve": True},
+              {"shot_id": 1, "frame": 120}]                   # 1.0s, 2 shots
+    unserved = [{"shot_id": 2, "frame": 600}, {"shot_id": 3, "frame": 660}]
+    kept, dropped = sr.drop_micro_rallies([served, unserved], fps=60.0)
+    assert kept == [served]
+    assert dropped == [unserved]

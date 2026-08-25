@@ -89,7 +89,14 @@ POST_STEPS = [
          module="stages.detect_bounces.detect_bounces", args=["--force"]),
     Step("trajectory", "Ball trajectory", module="stages.ball_trajectory.ball_trajectory", args=["--force"]),
     Step("classify", "Classify shots", module="stages.classify_shots.classify_shots", args=["--force"]),
-    Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies", args=["--force"]),
+    # Where each point ENDED, measured from the ball (dead at the net / bounce out / bounce
+    # in and not returned). Stage 7 needs it to tell between-point ball-handling from play:
+    # its own is_between_point inference set the flag on 0 of 125 shots on the acceptance
+    # clip, so every feed, throw and post-point tap counted as a real shot. Must run after
+    # classify (it reads classified.json) and before rallies (which reads rally_ends.json).
+    Step("ends", "Point ends", module="tools.detect_rally_ends", args=["--force"]),
+    Step("rallies", "Segment rallies", module="stages.segment_rallies.segment_rallies",
+         args=["--force", "--use-rally-ends"]),
     Step("metrics", "Compute metrics", module="stages.compute_metrics.compute_metrics", args=["--force"]),
     Step("rate", "USAPA rating", module="stages.rate.rate", args=["--force"]),
     Step("plan", "Improvement plan", module="stages.plan_improvement.plan_improvement", args=["--force"]),

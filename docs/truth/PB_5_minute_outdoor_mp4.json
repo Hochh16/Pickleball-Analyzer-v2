@@ -20,12 +20,6 @@
      "type": "serve",
      "hitter": "partner",
      "source": "legacy / pb_5_minute_outdoor-7:labels.csv"
-    },
-    {
-     "t_sec": 3.33,
-     "type": "serve",
-     "hitter": "partner",
-     "source": "legacy / pb_5_minute_outdoor-7:labels_interactive.csv"
     }
    ]
   },
@@ -383,7 +377,7 @@
    "type": "return",
    "hitter": "user",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "which looks like it went out  | not a shot. Looks like opponent shot pass near partner on way to user. | shot bounced on far side and was missed by opponent. Rally ended. | not a shot. Looks like opponent shot pass near partner on way to user. | not a shot. Looks like opponent shot pass near partner on way to user.",
+   "notes": "which looks like it went out  | not a shot. Looks like opponent shot pass near partner on way to user. | shot bounced on far side and was missed by opponent. Rally ended.",
    "authority": 3,
    "seq": 1787608042,
    "not_a_shot": true,
@@ -504,7 +498,7 @@
    "authority": 3,
    "seq": 1787608042,
    "not_a_shot": true,
-   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side | shot was by partner, not user | not a shot. Ball passed by opponent's partner near the net on its way to near side | not a shot. Ball passed by opponent's partner near the net on its way to near side",
+   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side | shot was by partner, not user",
    "key": "shot_review.xlsx / pb_5_minute_outdoor-7#27",
    "side": "near",
    "detected": true,
@@ -627,8 +621,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7@98.00",
-   "notes": "no label on shot. Was a drive at the kitchen by opponent"
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7@98.00"
   },
   {
    "t_sec": 99.2,
@@ -684,7 +677,7 @@
    "type": "drive",
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "end of video segment shows partner hitting volley drive back to opponent | not a shot. Looks like red circle around wrong opponent. | not a shot. Looks like red circle around wrong opponent. | not a shot. Looks like red circle around wrong opponent.",
+   "notes": "end of video segment shows partner hitting volley drive back to opponent | not a shot. Looks like red circle around wrong opponent.",
    "authority": 3,
    "seq": 1787608042,
    "not_a_shot": true,
@@ -1136,7 +1129,7 @@
    "type": null,
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball. | not a shot. Between serves | not a shot. Between serves | not a shot. Between serves",
+   "notes": "opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball. | not a shot. Between serves",
    "authority": 1,
    "seq": 0,
    "not_a_shot": true
@@ -1480,9 +1473,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#96",
-   "not_a_shot": true,
-   "notes": "not a shot | not a shot"
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#96"
   },
   {
    "t_sec": 247.37,
@@ -1527,7 +1518,7 @@
    "t_sec": 250.8,
    "detected": false,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "shot is missed. It was a backhand dink by partner | not a shot. Ball on opposite side of net from user | not a shot. Ball on opposite side of net from user | not a shot. Ball on opposite side of net from user",
+   "notes": "shot is missed. It was a backhand dink by partner | not a shot. Ball on opposite side of net from user",
    "authority": 3,
    "seq": 1787608042,
    "not_a_shot": true,
@@ -1584,9 +1575,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#107",
-   "not_a_shot": true,
-   "notes": "not a shot | not a shot"
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#107"
   },
   {
    "t_sec": 283.7,
@@ -1778,9 +1767,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#122",
-   "not_a_shot": true,
-   "notes": "not a shot | not a shot"
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#122"
   },
   {
    "t_sec": 312.25,
@@ -1791,11 +1778,10 @@
    "detected": true,
    "volley_explicit": true,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "winning shot | not a shot | not a shot",
+   "notes": "winning shot",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#124",
-   "not_a_shot": true
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#124"
   }
  ],
  "false_positives": [
@@ -2076,12 +2062,12 @@
  "totals": {},
  "provenance": [
   {
-   "at": "2026-08-25T02:31:21.599216+00:00",
+   "at": "2026-08-25T02:43:21.824411+00:00",
    "source": "import from pb_5_minute_outdoor-2",
    "new": 32
   },
   {
-   "at": "2026-08-25T02:31:21.615832+00:00",
+   "at": "2026-08-25T02:43:21.839685+00:00",
    "source": "import from pb_5_minute_outdoor-7",
    "false_positive": 45,
    "new": 88,
@@ -2095,40 +2081,6 @@
    "updated": 22,
    "retracted": 5,
    "rally_end": 16,
-   "free_notes": 5
-  },
-  {
-   "at": "2026-08-25T02:31:22.417644+00:00",
-   "source": "import from pb_5_minute_outdoor-2",
-   "agreed": 31,
-   "enriched": 1
-  },
-  {
-   "at": "2026-08-25T02:31:22.433754+00:00",
-   "source": "import from pb_5_minute_outdoor-7",
-   "agreed": 132,
-   "missed": 31,
-   "new": 1,
-   "confirmed": 69,
-   "retracted": 9,
-   "enriched": 8,
-   "free_notes": 5
-  },
-  {
-   "at": "2026-08-25T02:31:23.153222+00:00",
-   "source": "import from pb_5_minute_outdoor-2",
-   "agreed": 31,
-   "enriched": 1
-  },
-  {
-   "at": "2026-08-25T02:31:23.167105+00:00",
-   "source": "import from pb_5_minute_outdoor-7",
-   "agreed": 132,
-   "missed": 31,
-   "new": 1,
-   "confirmed": 69,
-   "retracted": 9,
-   "enriched": 8,
    "free_notes": 5
   }
  ],
@@ -2242,47 +2194,7 @@
   {
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "note": "between points from 1:08.95 to 1:18.7"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "for all shots the video says between points - no rally live - whether there is a rally or not."
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points from 19:78 to :32.48"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points :38.30 to 46.57"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between 50.87 and 104.6"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points from 1:08.95 to 1:18.7"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "for all shots the video says between points - no rally live - whether there is a rally or not."
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points from 19:78 to :32.48"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points :38.30 to 46.57"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between 50.87 and 104.6"
-  },
-  {
-   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "note": "between points from 1:08.95 to 1:18.7"
   }
  ],
- "updated_at_utc": "2026-08-25T02:31:23.181824+00:00"
+ "updated_at_utc": "2026-08-25T02:43:21.842950+00:00"
 }

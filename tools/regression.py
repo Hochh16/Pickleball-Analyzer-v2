@@ -175,6 +175,22 @@ def measure(clip: Path) -> Dict[str, object]:
             m["truth_shots_known"] = len(st["shots"])
             m["truth_missed_known"] = len(kn_missed)
             m["truth_fp_known"] = len(st["false_positives"])
+            # What the rally gate is actually for: keeping known junk OUT of the rally
+            # stream while leaving real play in. Neither `fp_emitted` nor `in_rally_shots`
+            # could see it -- the first reads classified.json, which the gate never
+            # rewrites, and the second needs a `points` truth file only two clips have. The
+            # gate's whole trade was invisible in this table while it was being tuned.
+            ra = _load(clip, "rallies.json")
+            if ra and st["false_positives"]:
+                spans = [(float(r["start_t_sec"]), float(r["end_t_sec"]))
+                         for r in ra["rallies"]]
+                def _inside(x):
+                    return any(a - 0.2 <= x <= b + 0.2 for a, b in spans)
+                m["junk_in_rallies"] = sum(
+                    1 for f in st["false_positives"] if _inside(float(f["t_sec"])))
+                real_t = [float(s["t_sec"]) for s in st["shots"]
+                          if not s.get("not_a_shot") and s.get("detected") is not False]
+                m["real_outside_rallies"] = sum(1 for x in real_t if not _inside(x))
             found, _ = score_shots.claim([s["t_sec"] for s in kn_missed], shots,
                                          score_shots.TOL_S)
             m["truth_missed_recovered"] = len(found)
@@ -250,6 +266,7 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "missed_recovered", "missed_labelled", "wrong_player",
                   "confirmed_missed_recovered", "confirmed_missed_total",
                   "in_rally_shots", "in_rally_truth", "between_point_shots",
+                  "junk_in_rallies", "real_outside_rallies",
                   "serve_recall", "serve_precision", "serve_timing_median_s",
                   "shot_type_correct", "shot_type_labelled",
                   "truth_shots_known", "truth_missed_known", "truth_missed_recovered",

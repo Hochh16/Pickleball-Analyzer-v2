@@ -48,10 +48,63 @@
  },
  "provenance": [
   {
-   "at": "2026-08-25T02:31:21.578077+00:00",
+   "at": "2026-08-25T02:43:21.808136+00:00",
    "source": "import from pb_3_min_indoor_1_court_c",
+   "rally_end": 10,
    "dead_interval": 9
   }
  ],
- "updated_at_utc": "2026-08-25T02:31:23.183612+00:00"
+ "rally_ends": [
+  {
+   "t_sec": 13.86,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "not-returned"
+  },
+  {
+   "t_sec": 30.04,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "net"
+  },
+  {
+   "t_sec": 41.62,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "out"
+  },
+  {
+   "t_sec": 77.0,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "not-returned"
+  },
+  {
+   "t_sec": 92.2,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "not-returned"
+  },
+  {
+   "t_sec": 107.0,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "out"
+  },
+  {
+   "t_sec": 118.0,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "net"
+  },
+  {
+   "t_sec": 142.9,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "out"
+  },
+  {
+   "t_sec": 154.3,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "not-returned"
+  },
+  {
+   "t_sec": 173.7,
+   "source": "legacy / pb_3_min_indoor_1_court_c",
+   "notes": "out"
+  }
+ ],
+ "updated_at_utc": "2026-08-25T02:43:21.845041+00:00"
 }

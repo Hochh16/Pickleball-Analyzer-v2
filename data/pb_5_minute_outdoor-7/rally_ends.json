@@ -11,15 +11,17 @@
     7.8,
     48.0
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
-   "t_sec": 20.22,
+   "t_sec": 20.2,
    "reason": "net",
-   "by_shot_t": 15.6,
+   "by_shot_t": 16.73,
    "hitter_side": "near",
-   "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "hitter_is_user": true,
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 28.72,
@@ -31,7 +33,8 @@
     2.5,
     48.5
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 39.4,
@@ -39,7 +42,8 @@
    "by_shot_t": 35.52,
    "hitter_side": "far",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 50.17,
@@ -51,7 +55,8 @@
     7.5,
     47.8
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 57.27,
@@ -63,7 +68,8 @@
     14.8,
     12.2
    ],
-   "outcome": "hitter_wins"
+   "outcome": "hitter_wins",
+   "trusted": false
   },
   {
    "t_sec": 70.6,
@@ -71,7 +77,21 @@
    "by_shot_t": 67.6,
    "hitter_side": "near",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
+  },
+  {
+   "t_sec": 74.73,
+   "reason": "not-returned",
+   "by_shot_t": 74.5,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    6.9,
+    4.0
+   ],
+   "outcome": "hitter_wins",
+   "trusted": false
   },
   {
    "t_sec": 87.25,
@@ -83,7 +103,8 @@
     -9.1,
     22.7
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 98.67,
@@ -95,7 +116,8 @@
     2.6,
     7.4
    ],
-   "outcome": "hitter_wins"
+   "outcome": "hitter_wins",
+   "trusted": false
   },
   {
    "t_sec": 105.18,
@@ -107,7 +129,8 @@
     8.3,
     48.4
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 111.02,
@@ -115,19 +138,21 @@
    "by_shot_t": 110.18,
    "hitter_side": "far",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 121.2,
    "reason": "out",
-   "by_shot_t": 120.47,
+   "by_shot_t": 120.5,
    "hitter_side": "near",
    "hitter_is_user": false,
    "bounce_xy_ft": [
     7.0,
     -2.5
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 132.12,
@@ -137,9 +162,10 @@
    "hitter_is_user": false,
    "bounce_xy_ft": [
     7.6,
-    45.8
+    45.7
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 139.23,
@@ -147,7 +173,8 @@
    "by_shot_t": 138.22,
    "hitter_side": "far",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 155.82,
@@ -155,7 +182,8 @@
    "by_shot_t": 153.68,
    "hitter_side": "far",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 160.53,
@@ -167,7 +195,8 @@
     -3.1,
     42.6
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 174.82,
@@ -179,7 +208,8 @@
     -1.4,
     21.9
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 177.35,
@@ -191,7 +221,8 @@
     -7.7,
     22.0
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 180.13,
@@ -199,19 +230,8 @@
    "by_shot_t": 180.13,
    "hitter_side": "near",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
-  },
-  {
-   "t_sec": 183.8,
-   "reason": "out",
-   "by_shot_t": 181.92,
-   "hitter_side": "near",
-   "hitter_is_user": true,
-   "bounce_xy_ft": [
-    1.9,
-    46.5
-   ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 200.73,
@@ -221,9 +241,10 @@
    "hitter_is_user": false,
    "bounce_xy_ft": [
     -6.7,
-    55.5
+    55.4
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 203.12,
@@ -235,7 +256,8 @@
     -1.5,
     54.3
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 205.55,
@@ -243,7 +265,8 @@
    "by_shot_t": 205.02,
    "hitter_side": "near",
    "hitter_is_user": true,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 211.78,
@@ -255,19 +278,21 @@
     5.7,
     46.4
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
-   "t_sec": 221.25,
+   "t_sec": 222.27,
    "reason": "out",
-   "by_shot_t": 219.77,
-   "hitter_side": "near",
-   "hitter_is_user": true,
+   "by_shot_t": 221.83,
+   "hitter_side": "far",
+   "hitter_is_user": false,
    "bounce_xy_ft": [
-    4.7,
-    45.6
+    44.8,
+    -50.7
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 225.02,
@@ -277,9 +302,10 @@
    "hitter_is_user": false,
    "bounce_xy_ft": [
     4.3,
-    45.6
+    45.5
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 229.37,
@@ -287,7 +313,8 @@
    "by_shot_t": 227.8,
    "hitter_side": "far",
    "hitter_is_user": false,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
   },
   {
    "t_sec": 252.8,
@@ -295,7 +322,21 @@
    "by_shot_t": 251.17,
    "hitter_side": "near",
    "hitter_is_user": true,
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": true
+  },
+  {
+   "t_sec": 261.05,
+   "reason": "out",
+   "by_shot_t": 260.53,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    48.1,
+    -63.0
+   ],
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 276.05,
@@ -307,7 +348,8 @@
     11.2,
     47.8
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 284.83,
@@ -319,7 +361,8 @@
     7.7,
     47.9
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 289.48,
@@ -331,7 +374,8 @@
     12.3,
     -1.1
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 297.0,
@@ -343,7 +387,8 @@
     -4.6,
     -4.6
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   },
   {
    "t_sec": 312.13,
@@ -355,7 +400,8 @@
     -11.9,
     54.9
    ],
-   "outcome": "hitter_loses"
+   "outcome": "hitter_loses",
+   "trusted": false
   }
  ]
 }

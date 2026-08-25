@@ -305,6 +305,17 @@ def apply_rally_ends(shots: List[dict], ends: List[dict], log=None,
     """
     if not ends:
         return 0
+    # Trusted ends only. Taking every end made this trade net NEGATIVE -- 21 junk shots
+    # excluded at a cost of 37 real ones across three clips -- because `out` and
+    # `not-returned` are right about a quarter of the time and every false end marks the live
+    # play behind it as dead. Restricted to the 85%-precise NET ends the same gate removes 14
+    # junk for 2 real shots, which is better than the operator's OWN point boundaries manage
+    # (17 junk for 3 real) because a missed end costs nothing while a false one costs play.
+    # Ends written before this flag existed carry no `trusted` key; treat those as trusted so
+    # an older rally_ends.json still behaves as it did.
+    ends = [e for e in ends if e.get("trusted", True)]
+    if not ends:
+        return 0
     end_times = sorted(float(e["t_sec"]) for e in ends)
     n = 0
     for s in shots:
@@ -351,7 +362,14 @@ def drop_micro_rallies(rally_groups: List[List[dict]], fps: float,
         n = len(g)
         span_sec = ((int(g[-1]["frame"]) - int(g[0]["frame"])) / fps
                     if fps > 0 else 0.0)
-        if n > 1 and n < min_shots and span_sec < min_sec:
+        # ...and never when the segment STARTS WITH A DETECTED SERVE. A serve is the
+        # definition of a point starting, so what follows is a point no matter how brief.
+        # This began to bite once the rally-end gate started trimming correctly: the real
+        # point at 33.9s (serve, return, then a measured end at 39.4s and two between-point
+        # drives) shrank to two shots spanning 1.65s and was deleted whole -- taking its
+        # serve with it, which is why serve recall fell 0.86 -> 0.79. The filter is there to
+        # remove between-point net-tapping, and net-tapping has no serve in front of it.
+        if n > 1 and n < min_shots and span_sec < min_sec and not g[0].get("is_serve"):
             dropped.append(g)
         else:
             kept.append(g)
@@ -543,19 +561,24 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     bounces = sorted(bounces_doc.get("bounces", []),
                      key=lambda b: int(b["frame"]))
 
-    # Re-derive between-point from MEASURED ends before segmenting. OFF BY DEFAULT, and
-    # the reason is measured rather than cautious: rally-end detection currently runs at
-    # 64-70% precision, and every false end marks the live play behind it as dead. On the
-    # acceptance clip the trade came out consistently NEGATIVE — at an 8s cap it excluded 9
-    # labelled junk shots and cost 16 real ones, and no cap setting reversed that:
+    # Re-derive between-point from MEASURED ends before segmenting. ON in the pipeline now
+    # (--use-rally-ends), which reverses an earlier recorded decision -- worth saying why,
+    # because the flag was switched off on evidence that was correct at the time.
     #
-    #     cap  4s   junk excluded  7/28   real shots lost 12/89
-    #     cap  8s   junk excluded  9/28   real shots lost 16/89
-    #     cap 15s   junk excluded 11/28   real shots lost 25/89
+    # It was taking EVERY end. `out` and `not-returned` are right about a quarter of the
+    # time, and a false end marks the live play behind it as dead, so the trade came out
+    # negative at every cap setting. Restricted to the NET ends (85% precise, measured on the
+    # operator's 36 point-ends across three clips) the same wiring gives, on the acceptance
+    # clip:
     #
-    # The wiring is correct and this is exactly where between-point balls should be resolved
-    # (the operator's point: with real boundaries they need no classifier at all). It needs
-    # END PRECISION materially above 70% first. Enable with --use-rally-ends to re-measure.
+    #     gate off   34 known-junk shots inside rallies,  4 real shots outside
+    #     gate on    19                                    6
+    #
+    # 15 junk removed for 2 real, against 17-for-3 using the operator's OWN point boundaries
+    # -- so this captures most of what perfect boundaries would, and a MISSED end costs
+    # nothing while a false one costs play. `junk_in_rallies` / `real_outside_rallies` in
+    # tools/regression.py are that trade; neither existed while the flag was being tuned,
+    # which is why it was judged on end precision instead of on what the gate is for.
     n_flagged = apply_rally_ends(shots, rally_ends, log) if args.use_rally_ends else 0
 
     rally_groups, pre_rally = segment_rallies(
@@ -704,10 +727,10 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
                    help="per-video folder with classified.json, bounces.json, court.json")
     p.add_argument("--force", action="store_true")
     p.add_argument("--use-rally-ends", action="store_true",
-                   help="derive is_between_point from rally_ends.json. OFF by default: "
-                        "end precision is 64-70%% and every false end marks live play as "
-                        "dead, which measured NET NEGATIVE on the acceptance clip "
-                        "(9 junk excluded, 16 real shots lost).")
+                   help="derive is_between_point from the TRUSTED ends in rally_ends.json. "
+                        "The pipeline passes it. Measured on the acceptance clip: 15 known "
+                        "junk shots removed from rallies for 2 real ones, against 17-for-3 "
+                        "using the operator's own point boundaries.")
     p.add_argument("--min-rally-sec", type=float, default=MIN_RALLY_SEC,
                    dest="min_rally_sec",
                    help="drop a rally shorter than this AND below --min-rally-shots "

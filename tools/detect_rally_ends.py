@@ -65,6 +65,25 @@ OUT_MARGIN_FT = 1.0     # tolerance outside the lines before calling a bounce OU
 NOT_RETURNED_S = 2.0    # no contact this long after a bounce = nobody played it
 SCORE_TOL_S = 2.5       # match window when scoring against operator truth
 
+# Only a NET end is trusted downstream. Measured against the operator's 36 point-ends across
+# three clips (one outdoor, two indoor courts):
+#
+#     reason         fires   correct   precision
+#     net              20       17        85%
+#     out              35       10        29%
+#     not-returned      6        1        17%
+#
+# The split is not a tuning artefact: it is the same durable limit that shows up everywhere
+# else in this pipeline. A NET end asks a SUSTAINED, RELATIVE question -- did the ball go to
+# the floor and stay there -- which the reconstruction answers well. `out` asks for an
+# ABSOLUTE position at one instant, which it answers badly. Recomputing the bounce from the
+# PIXEL through the ground homography (exact at z=0, where a bounce is) was tried and did not
+# rescue it: precision 50% vs 44%, and the gate it feeds still cost 30 real shots.
+#
+# The untrusted ends are still emitted -- they are what the next attempt has to beat -- but
+# `trusted` is False and Stage 7 ignores them.
+TRUSTED_REASONS = {"net"}
+
 
 def _dead_start(mask: np.ndarray, ts: np.ndarray, sustain_s: float, frac: float,
                 xs: np.ndarray | None = None, ys: np.ndarray | None = None,
@@ -198,6 +217,8 @@ def detect(clip: Path) -> list[dict]:
     ends = kept_ends
 
     # one END per point: collapse anything within NOT_RETURNED_S of the previous one
+    for e in ends:
+        e["trusted"] = e.get("reason") in TRUSTED_REASONS
     ends.sort(key=lambda e: e["t_sec"])
     merged: list[dict] = []
     for e in ends:
@@ -232,8 +253,27 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("clip", type=Path)
     ap.add_argument("--score", action="store_true")
-    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--write", action="store_true",
+                    help="write rally_ends.json (Stage 7 reads it)")
+    ap.add_argument("--force", action="store_true",
+                    help="implies --write; the name the pipeline uses for every stage, and "
+                         "this one has to write or Stage 7 sees no ends at all")
     a = ap.parse_args(argv)
+
+    # This is an ENHANCEMENT step in the pipeline: Stage 7 works without it, exactly as it
+    # did before. So a missing input must not take the whole run down -- write an empty ends
+    # file and let Stage 7 carry on. ball_3d.parquet is the one that can genuinely be absent
+    # (a synthetic-ball run has no reconstruction at all).
+    need = [a.clip / n for n in ("court.json", "classified.json", "ball_3d.parquet")]
+    missing = [p.name for p in need if not p.exists()]
+    if missing:
+        print(f"{a.clip.name}: no point-ends ({', '.join(missing)} missing); "
+              f"Stage 7 will segment on serves alone")
+        if a.write or a.force:
+            (a.clip / "rally_ends.json").write_text(
+                json.dumps({"schema_version": 1, "ends": [],
+                            "skipped_missing": missing}, indent=1), encoding="utf-8")
+        return 0
 
     ends = detect(a.clip)
     from collections import Counter
@@ -243,7 +283,7 @@ def main(argv=None) -> int:
     for e in ends:
         print(f"  {e['t_sec']:8.2f}s  {e['reason']:<13} after a {e['hitter_side']}-side "
               f"shot at {e['by_shot_t']:.2f}s  -> {e['outcome']}")
-    if a.write:
+    if a.write or a.force:
         (a.clip / "rally_ends.json").write_text(
             json.dumps({"schema_version": 1, "ends": ends}, indent=1), encoding="utf-8")
         print(f"  wrote {a.clip / 'rally_ends.json'}")
