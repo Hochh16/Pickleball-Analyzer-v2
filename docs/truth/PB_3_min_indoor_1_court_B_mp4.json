@@ -289,13 +289,25 @@
  },
  "provenance": [
   {
-   "at": "2026-08-25T03:15:18.981782+00:00",
+   "at": "2026-08-25T03:24:26.648081+00:00",
    "source": "import from pb_3_min_indoor_1_court_b",
    "new": 21,
    "missed": 21,
    "serve_strike": 10,
    "rally_end": 10,
    "dead_interval": 9
+  },
+  {
+   "at": "2026-08-25T03:24:27.278526+00:00",
+   "source": "import from pb_3_min_indoor_1_court_b",
+   "agreed": 21,
+   "missed": 21
+  },
+  {
+   "at": "2026-08-25T03:24:27.915991+00:00",
+   "source": "import from pb_3_min_indoor_1_court_b",
+   "agreed": 21,
+   "missed": 21
   }
  ],
  "rally_ends": [
@@ -350,5 +362,5 @@
    "notes": ""
   }
  ],
- "updated_at_utc": "2026-08-25T03:15:19.035136+00:00"
+ "updated_at_utc": "2026-08-25T03:24:27.985317+00:00"
 }

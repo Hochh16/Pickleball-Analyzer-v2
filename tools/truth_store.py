@@ -285,7 +285,46 @@ def fold_shadowed_legacy(doc: dict) -> int:
         n = _fold_once(doc)
         total += n
         if not n:
-            return total
+            break
+    return total + _demote_stale_legacy(doc)
+
+
+def _demote_stale_legacy(doc: dict) -> int:
+    """Inside the span a review sheet covers, the review is the complete account.
+
+    The sheet lists every shot we detected AND lets the operator add the ones we missed, so a
+    label from an older file at a time the sheet covers, with no row of its own, is
+    contradicted by it. Four such labels stood as confirmed real shots at 0:42.20, 1:16.30,
+    3:59.20 and 4:58.10 while the latest sheet marks the nearby rows "not a shot" -- and at
+    three of those times we detect nothing at all. Operator's rule: "use the last one I built
+    as the truth if there is a conflict between any reviews", and their decision to apply it
+    here (2026-08-24).
+
+    Demoted, not deleted: the entries move to `superseded_shots` so the older reading stays
+    inspectable and can be restored if a later review disagrees.
+    """
+    keyed = [s for s in doc["shots"] if s.get("key")]
+    if not keyed:
+        return 0                          # no review for this video: nothing overrules
+    lo = min(float(s["t_sec"]) for s in keyed)
+    hi = max(float(s["t_sec"]) for s in keyed)
+    keep, moved = [], []
+    for s in doc["shots"]:
+        if (not s.get("key") and not s.get("not_a_shot")
+                and lo <= float(s.get("t_sec", -999)) <= hi):
+            moved.append(s)
+            continue
+        keep.append(s)
+    if not moved:
+        return 0
+    doc["shots"] = keep
+    prior = doc.setdefault("superseded_shots", [])
+    for s in moved:
+        # the legacy import re-creates these every run; do not re-record them
+        if not any(abs(float(x.get("t_sec", -999)) - float(s["t_sec"])) < 0.01
+                   and x.get("source") == s.get("source") for x in prior):
+            prior.append({**s, "superseded_by": "the review sheet covering this span"})
+    return len(moved)
 
 
 def _fold_once(doc: dict) -> int:
@@ -409,8 +448,11 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         notes = str(ws.cell(row=r, column=col["notes"]).value or "").strip()
         if t is None:
             if notes:
-                doc.setdefault("free_notes", []).append({"source": src, "note": notes})
-                c["free_notes"] += 1
+                fn = doc.setdefault("free_notes", [])
+                # a set of facts, not an append log: re-importing must not duplicate them
+                if not any(x.get("note") == notes and x.get("source") == src for x in fn):
+                    fn.append({"source": src, "note": notes})
+                    c["free_notes"] += 1
             continue
         flags = read_note(notes)
         # Dedicated columns win over the note text: a column cannot be silently mis-parsed,
@@ -497,7 +539,13 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         keep.append(f)
     if dropped:
         doc["false_positives"] = keep
-        doc.setdefault("superseded_false_positives", []).extend(dropped)
+        prior = doc.setdefault("superseded_false_positives", [])
+        for f in dropped:
+            # the legacy import re-creates these every run, so this list must be a SET of
+            # facts, not an append log -- it reached 21 entries for 7 overruled claims
+            if not any(abs(float(x.get("t_sec", -999)) - float(f["t_sec"])) < 0.01
+                       and x.get("source") == f.get("source") for x in prior):
+                prior.append(f)
         c["fp_overruled_by_latest_review"] = len(dropped)
     return dict(c)
 

@@ -199,3 +199,33 @@ def test_the_latest_review_overrules_an_older_reviews_false_positive(tmp_path):
     ts.import_review_xlsx(doc, clip)
     assert doc["false_positives"] == []
     assert doc["superseded_false_positives"][0]["source"] == "legacy / old_review"
+
+
+def test_a_label_the_latest_review_covers_but_does_not_list_is_demoted(tmp_path):
+    """The sheet lists every shot we detected AND lets the operator add the ones we missed,
+    so within the span it covers it is the complete account. Four older labels stood as
+    confirmed real shots at times the latest sheet marks "not a shot". Operator's call
+    (2026-08-24): go with the latest. Demoted, not deleted."""
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    from openpyxl import load_workbook
+    clip = _clip(tmp_path)
+    sheet = clip / "_labeling" / srs.OUT_NAME
+    srs.build(clip, sheet)
+    wb = load_workbook(sheet)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
+    wb.save(sheet)
+
+    doc = ts.empty("v.mp4")
+    ts.add_shot(doc, 3.0, type_="lob", kind="labels_csv", source="old.csv")   # inside
+    ts.add_shot(doc, 90.0, type_="lob", kind="labels_csv", source="old.csv")  # outside
+    ts.import_review_xlsx(doc, clip)
+    ts.fold_shadowed_legacy(doc)
+    left = {round(float(s["t_sec"]), 1) for s in doc["shots"]}
+    assert 3.0 not in left, "a label inside the reviewed span should be overruled"
+    assert 90.0 in left, "a label beyond the reviewed span is not contradicted by it"
+    assert any(x["t_sec"] == 3.0 for x in doc["superseded_shots"]), "kept, not deleted"

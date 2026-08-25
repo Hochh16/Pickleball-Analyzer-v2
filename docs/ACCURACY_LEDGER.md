@@ -173,6 +173,54 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## THE TRUTH STORE — one home for the operator's answers (2026-08-24)
+
+`docs/truth/<VIDEO>.json`, keyed by SOURCE VIDEO so it survives re-analysis into a new clip
+folder. Built by `python -m tools.truth_store --import-all`, read by every scorer through
+`known_shots(clip)`. Inspect with `--report`.
+
+Its whole purpose is that the operator never reviews the same thing twice. That failed
+silently in five ways at once, all found while chasing "6 real shots sit outside a rally" —
+of which **only one was a real pipeline problem**.
+
+| defect | what it did |
+|---|---|
+| an untouched sheet was importable | filed **109 of our own detections** as operator truth at top authority |
+| import was not idempotent | re-running appended clones; **8 duplicate pairs** had accumulated |
+| a higher-authority source never corrected the TIME | **35 shots** carried an older hand-typed time; every scorer matches on a window, so a stale time silently moves a shot |
+| the not-a-shot path retracted without CLAIMING | two of the operator's rows became one record — "not a shot" merged with the next row's real shot |
+| row-order greedy matching | once row #26 took the entry nearest IT, #27 took the one belonging to #28; three notes landed on the wrong shots |
+| an OLDER review overruled the latest | `shot_review.json` names SHOT NUMBERS ("#18 is mislabeled") and the numbering changed between reviews — **7 times counted as junk AND as a confirmed shot** |
+
+Rules now enforced, all of them the operator's own words:
+
+* **"Use the last one I built as the truth if there is a conflict between any reviews."** An
+  older false-positive claim cannot stand where the latest sheet confirms a shot, and within
+  the span a sheet covers it is the complete account — the sheet lists every detection and
+  lets the operator add the ones we missed, so an older label with no row of its own is
+  contradicted by it. Overruled entries move to `superseded_shots` /
+  `superseded_false_positives`; nothing the operator said is ever deleted.
+* **"If I did not mark it as wrong, then I deliberately considered it to be correct."** A
+  blank row is a confirmation — but ONLY in a sheet that carries at least one mark.
+* Matching is **shortest-pair-first and one-to-one**, never greedy in row order. Greedy-in-
+  order matching invents a story; it read rally-end recall as 0/16 when the answer was 12/16.
+
+**Counts after the corrections: 112 known shots** (was 118 before the stale labels were
+demoted, 131 before junk retraction), 38 false positives, 16 rally ends, 21 shots we missed.
+Shot type 51/111 = **46%**.
+
+### The one real finding: a whole point is missing
+
+| video | xls row | shot # | operator marked |
+|---|---|---|---|
+| **0:46.57** | 25 | #17 | `serve` |
+| **0:48.62** | 27 | #19 | `return` — *"bounced on far side and was missed by opponent. Rally ended"* |
+
+We DETECT both and type the serve as a `drive`. `is_serve` is therefore false, no rally
+opens, and the rally-end gate discards the pair as dead-time ball-handling. Rally 1 ends
+0:36.83 and rally 2 starts 1:04.60 — the point in between is simply absent from the
+analysis, and it is one of the two serves behind serve recall 0.86. **Still open.**
+
 ## RALLY END — three of the operator's four rules are noise; one is not (2026-08-24)
 
 Scored every detected point-end against the operator's **36 point-ends across three clips**
