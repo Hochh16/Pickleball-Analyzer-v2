@@ -173,6 +173,53 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## RALLY END — three of the operator's four rules are noise; one is not (2026-08-24)
+
+Scored every detected point-end against the operator's **36 point-ends across three clips**
+(`pb_5_minute_outdoor-7`, and indoor courts B and C — the indoor ones were sitting unused in
+per-clip `truth.json` until the truth store absorbed them):
+
+| reason | fires | correct | precision |
+|---|---|---|---|
+| **net** | 20 | **17** | **85%** |
+| out | 35 | 10 | 29% |
+| not-returned | 6 | 1 | 17% |
+
+The operator's rules are all correct as rules. Only one of them is a question our
+measurement can answer. A **net** end asks a *sustained, relative* question — did the ball go
+to the floor and stay there — which the reconstruction handles. **out** asks for an *absolute
+position at one instant*, which it does not. That is the same split that governs volleys,
+bounces and everything else built on `ball_3d.parquet`; it is not specific to rally ends.
+
+**Recomputing the bounce from the PIXEL did not rescue `out`.** The ground homography is
+exact at z=0, which is precisely where a bounce is, so projecting the bounce pixel should
+beat the reconstructed position. Measured: precision 50% vs 44%, and the gate it feeds still
+cost 30 real shots. Rejected. The untrusted ends are still emitted — they are the bar the
+next attempt has to clear.
+
+### What the trusted ends buy
+
+Gating shots on `[serve, rally end]` — the operator's ask, *"every shot outside the serve to
+rally can be ignored"* — on the acceptance clip:
+
+| | known junk inside rallies | real shots outside |
+|---|---|---|
+| gate off | 34 | 4 |
+| **gate on (net ends only)** | **19** | **6** |
+| operator's own point boundaries | 17 | 3 |
+
+**15 junk removed for 2 real shots**, which is most of what perfect boundaries would give.
+A MISSED end costs nothing; a FALSE end marks the live play behind it as dead. That asymmetry
+is why precision, not recall, is the thing to optimise here — and why taking all ends (44%
+precise) measured net negative and got the feature switched off for weeks.
+
+Rally-end timing: median error **6.33s → 1.47s**, 10 of 16 within 2s.
+
+**Method note worth keeping.** This was judged on END PRECISION for weeks because the
+regression table had no metric for what the gate is *for*. `junk_in_rallies` and
+`real_outside_rallies` exist now. Same lesson as the ground-ball filter that went inert:
+build the scorer for the thing you actually want before tuning the thing you can see.
+
 ## RALLY END + 3-D FIT — the dependency chain resolved (2026-08-03)
 
 ### 3-D projectile fit is NOT the unlock — the operator was right, it is camera-blocked
