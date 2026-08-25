@@ -289,13 +289,25 @@
  },
  "provenance": [
   {
-   "at": "2026-08-24T23:47:14.744106+00:00",
+   "at": "2026-08-25T02:31:21.577119+00:00",
    "source": "import from pb_3_min_indoor_1_court_b",
    "new": 21,
    "missed": 21,
    "serve_strike": 10,
    "dead_interval": 9
+  },
+  {
+   "at": "2026-08-25T02:31:22.375323+00:00",
+   "source": "import from pb_3_min_indoor_1_court_b",
+   "agreed": 21,
+   "missed": 21
+  },
+  {
+   "at": "2026-08-25T02:31:23.117198+00:00",
+   "source": "import from pb_3_min_indoor_1_court_b",
+   "agreed": 21,
+   "missed": 21
   }
  ],
- "updated_at_utc": "2026-08-24T23:47:14.767281+00:00"
+ "updated_at_utc": "2026-08-25T02:31:23.183089+00:00"
 }

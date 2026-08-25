@@ -24,7 +24,7 @@
    "serve_recall": 0.86,
    "serve_precision": 0.8,
    "serve_timing_median_s": 0.02,
-   "truth_shots_known": 120,
+   "truth_shots_known": 118,
    "truth_missed_known": 22,
    "truth_fp_known": 45,
    "truth_missed_recovered": 4,
@@ -32,8 +32,11 @@
    "volley_correct": 44,
    "volley_missed": 15,
    "volley_invented": 3,
-   "shot_type_correct": 54,
-   "shot_type_labelled": 118
+   "rally_end_truth": 16,
+   "rally_end_within_2s": 7,
+   "rally_end_median_err_s": 6.33,
+   "shot_type_correct": 52,
+   "shot_type_labelled": 116
   },
   "pb_3_min_indoor_1_court_b": {
    "shots": 77,

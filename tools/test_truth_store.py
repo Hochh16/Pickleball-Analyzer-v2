@@ -79,3 +79,67 @@ def test_store_is_keyed_by_video_not_by_folder():
     b = ts.store_path("PB 5 minute outdoor.mp4")
     assert a == b and a.suffix == ".json"
     assert ts.store_path("PB 3 min indoor 1 court B.mp4") != a
+
+
+def test_an_untouched_review_sheet_is_not_imported_as_truth(tmp_path):
+    """A blank row means "the operator agreed" -- but only in a sheet they worked through.
+
+    Importing a freshly built sheet would file OUR OWN detections as operator truth at the
+    highest authority, and every accuracy figure for that clip would be us scoring ourselves.
+    """
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    clip = _clip(tmp_path)
+    srs.build(clip, clip / "_labeling" / srs.OUT_NAME)
+    doc = ts.empty("v.mp4")
+    assert ts.import_review_xlsx(doc, clip) == {}
+    assert doc["shots"] == []
+
+    # ...and one mark anywhere in it is enough to make the whole sheet count.
+    from openpyxl import load_workbook
+    wb = load_workbook(clip / "_labeling" / srs.OUT_NAME)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
+    wb.save(clip / "_labeling" / srs.OUT_NAME)
+    doc2 = ts.empty("v.mp4")
+    ts.import_review_xlsx(doc2, clip)
+    assert doc2["shots"]
+
+
+def test_importing_the_same_review_twice_changes_nothing(tmp_path):
+    """The store accumulates the operator's answers, so it must be a function of its sources.
+
+    It was not: re-running --import-all appended clones of shots whose neighbours sat inside
+    the +/-1s match window, because each of the two rows claimed the other's entry and the
+    loser appended a fresh one. Eight duplicate pairs had built up that way, and a duplicated
+    shot inflates the total and every rate computed from it.
+    """
+    import json
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    from openpyxl import load_workbook
+    clip = _clip(tmp_path)
+    sheet = clip / "_labeling" / srs.OUT_NAME
+    srs.build(clip, sheet)
+    wb = load_workbook(sheet)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
+    # two shots inside one match window: the case that produced the clones
+    blank = hdr + 3
+    ws.cell(row=blank, column=col["time"], value="0:01.40")
+    ws.cell(row=blank, column=col["CORRECT_TYPE"], value="dink")
+    wb.save(sheet)
+
+    doc = ts.empty("v.mp4")
+    ts.import_review_xlsx(doc, clip)
+    ts.fold_shadowed_legacy(doc)
+    once = json.dumps(doc, sort_keys=True)
+    ts.import_review_xlsx(doc, clip)
+    ts.fold_shadowed_legacy(doc)
+    assert json.dumps(doc, sort_keys=True) == once

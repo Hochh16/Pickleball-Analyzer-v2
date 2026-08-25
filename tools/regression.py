@@ -201,6 +201,25 @@ def measure(clip: Path) -> Dict[str, object]:
     except Exception:                                    # noqa: BLE001
         pass
 
+    # --- rally ends, and what gating on them would be worth -------------------
+    # The operator: "if we can accurately know when a rally ends, every shot outside the
+    # serve to rally can be ignored." Measured on their boundaries that trade is 30 junk for
+    # 2 real shots -- decisive. So rally-end accuracy is now a first-class number, not a
+    # detail: it is the only thing between us and that.
+    try:
+        from tools import truth_store as _ts2
+        st2 = _ts2.known(clip)
+        t_ends = sorted(e["t_sec"] for e in st2.get("rally_ends") or [])
+        if t_ends and ral:
+            ours = sorted(float(r["start_t_sec"]) + float(r.get("duration_sec") or 0)
+                          for r in ral["rallies"])
+            errs = sorted(abs(min(ours, key=lambda o: abs(o - x)) - x) for x in t_ends)
+            m["rally_end_truth"] = len(t_ends)
+            m["rally_end_within_2s"] = sum(1 for e in errs if e <= 2.0)
+            m["rally_end_median_err_s"] = round(errs[len(errs) // 2], 2)
+    except Exception:                                    # noqa: BLE001
+        pass
+
     # --- shot types ---------------------------------------------------------
     # The accumulating truth store is the one home for the operator's input; the scattered
     # labels*.csv files are what it was built from, so reading both would double-count.
@@ -236,6 +255,7 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "truth_shots_known", "truth_missed_known", "truth_missed_recovered",
                   "truth_fp_known", "volley_judged", "volley_correct",
                   "volley_missed", "volley_invented",
+                  "rally_end_truth", "rally_end_within_2s", "rally_end_median_err_s",
                   "dinks", "rating", "rating_confidence"]
     n_moved = 0
     for name, m in results.items():

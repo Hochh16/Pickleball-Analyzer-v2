@@ -144,10 +144,13 @@ def build(clip: Path, out_path: Path) -> Path:
                 "CONFIRMING we are right — so if you stop part-way, say where you stopped.")
     ws["A6"] = ("Rows with a green ALREADY KNOWN value have been reviewed before — SKIP THEM "
                 "unless that stored answer is wrong.")
-    ws["A4"] = (f"Missed a shot entirely? Use the blank rows at the bottom: put the time and "
-                f"the correct type, leave # empty.")
+    ws["A4"] = ("Missed a shot entirely? Use the blank rows at the bottom: time + "
+                "CORRECT_TYPE, leave # empty.")
+    ws["A7"] = ("Put 'y' in NOT_A_SHOT for a detection that is not a shot (a feed, a "
+                "pick-up, an adjacent court), and 'y' in RALLY_END for the shot that ENDED "
+                "the point (into the net, hit out, a winner).")
     ws["A5"] = "Valid types: " + ", ".join(VALID)
-    for r in (2, 3, 4, 5, 6):
+    for r in (2, 3, 4, 5, 6, 7):
         ws[f"A{r}"].font = note
 
     # What the truth store already knows about this video, so a shot reviewed once is not
@@ -168,9 +171,15 @@ def build(clip: Path, out_path: Path) -> Path:
                 best, bd = s, d
         return best
 
+    # NOT_A_SHOT and RALLY_END are their own columns now. The operator had to record both in
+    # free text last time -- "not a shot. Between rallies. Opponent feeding ball to their
+    # partner" -- because the sheet only asked for a corrected TYPE. Sixteen false positives
+    # and sixteen rally ends were sitting in the notes, and a regex bug meant the first pass
+    # read none of them. A column cannot be silently mis-parsed.
+    hr = 9
     headers = ["#", "time", "hitter", "side", "our_type", "our_volley",
-               "ALREADY KNOWN", "CORRECT_TYPE", "CORRECT_VOLLEY", "notes"]
-    hr = 7
+               "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "CORRECT_TYPE",
+               "CORRECT_VOLLEY", "notes"]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=hr, column=c, value=h)
         cell.font = head
@@ -181,7 +190,8 @@ def build(clip: Path, out_path: Path) -> Path:
     # one worked example, so the expected format is unambiguous
     ex = hr + 1
     for c, v in enumerate([" e.g. 12", "1:03.82", "user", "near", "drive", "no",
-                           "", "drop", "", "was a soft third shot, not a drive"], start=1):
+                           "", "", "", "drop", "",
+                           "was a soft third shot, not a drive"], start=1):
         cell = ws.cell(row=ex, column=c, value=v)
         cell.font = note
         cell.border = box
@@ -198,7 +208,7 @@ def build(clip: Path, out_path: Path) -> Path:
             kn = prev["type"] + ("  (agrees)" if prev["type"] == r["our_type"]
                                  else f"  (you said {prev['type']})")
         vals = [r["n"], clock(r["t"]), r["hitter"], r["side"], r["our_type"],
-                r["our_volley"], kn, "", "", ""]
+                r["our_volley"], kn, "", "", "", "", ""]
         for c, v in enumerate(vals, start=1):
             cell = ws.cell(row=rr, column=c, value=v)
             cell.font = body
@@ -207,7 +217,7 @@ def build(clip: Path, out_path: Path) -> Path:
                 cell.fill = fill_ours
             if c == 7 and prev:
                 cell.fill = fill_known
-            if c in (8, 9, 10) and not prev:
+            if c in (8, 9, 10, 11, 12) and not prev:
                 cell.fill = fill_edit
     last = first + len(rows) - 1
 
@@ -220,18 +230,25 @@ def build(clip: Path, out_path: Path) -> Path:
             cell = ws.cell(row=rr, column=c, value="")
             cell.font = body
             cell.border = box
-            if c in (2, 8, 9, 10):
+            if c in (2, 8, 9, 10, 11, 12):
                 cell.fill = fill_edit
     last_blank = blank_hdr + N_BLANK_ROWS
 
     dv = DataValidation(type="list", formula1='"' + ",".join(VALID) + '"', allow_blank=True)
     ws.add_data_validation(dv)
-    dv.add(f"H{first}:H{last_blank}")
+    dv.add(f"J{first}:J{last_blank}")
     dv2 = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
     ws.add_data_validation(dv2)
-    dv2.add(f"I{first}:I{last_blank}")
+    dv2.add(f"K{first}:K{last_blank}")
+    dv3 = DataValidation(type="list", formula1='"y"', allow_blank=True)
+    ws.add_data_validation(dv3)
+    dv3.add(f"H{first}:H{last_blank}")
+    dv4 = DataValidation(type="list", formula1='"y"', allow_blank=True)
+    ws.add_data_validation(dv4)
+    dv4.add(f"I{first}:I{last_blank}")
 
-    for col, w in zip("ABCDEFGHIJ", (7, 10, 10, 7, 12, 12, 22, 16, 16, 46)):
+    for col, w in zip("ABCDEFGHIJKL",
+                      (7, 10, 10, 7, 12, 12, 20, 12, 11, 15, 15, 46)):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = ws[f"A{first}"]
 
@@ -254,10 +271,19 @@ def score(clip: Path, xlsx: Path) -> int:
     court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
     fps = float(court["video"]["fps"])
 
-    hdr_row = next((r for r in range(1, 20)
+    hdr_row = next((r for r in range(1, 30)
                     if str(ws.cell(row=r, column=1).value or "").strip() == "#"), None)
     if hdr_row is None:
         raise SystemExit("could not find the header row in the sheet")
+    # By header, never by position: the layout has gained columns twice, and a review read
+    # from the wrong column is how 26 missed shots were lost.
+    col = {str(ws.cell(row=hdr_row, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    C_TYPE = col.get("CORRECT_TYPE", 8)
+    C_VOL = col.get("CORRECT_VOLLEY", 9)
+    C_NOTE = col.get("notes", 10)
+    C_KNOWN = col.get("ALREADY KNOWN")
+    C_NAS = col.get("NOT_A_SHOT")
 
     out, n_corr, n_agree, n_missed = [], 0, 0, 0
     unparsed: List[tuple] = []
@@ -265,14 +291,17 @@ def score(clip: Path, xlsx: Path) -> int:
         n = ws.cell(row=r, column=1).value
         tstr = ws.cell(row=r, column=2).value
         ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
-        known_prev = str(ws.cell(row=r, column=7).value or "").strip().lower()
-        corr = str(ws.cell(row=r, column=8).value or "").strip().lower()
-        vol = str(ws.cell(row=r, column=9).value or "").strip().lower()
-        notes = str(ws.cell(row=r, column=10).value or "").strip()
+        known_prev = (str(ws.cell(row=r, column=C_KNOWN).value or "").strip().lower()
+                      if C_KNOWN else "")
+        corr = str(ws.cell(row=r, column=C_TYPE).value or "").strip().lower()
+        vol = str(ws.cell(row=r, column=C_VOL).value or "").strip().lower()
+        notes = str(ws.cell(row=r, column=C_NOTE).value or "").strip()
+        if C_NAS and str(ws.cell(row=r, column=C_NAS).value or "").strip().lower().startswith("y"):
+            corr = "not a shot"
         t = parse_clock(tstr)
         if t is None:
             if any(str(ws.cell(row=r, column=c).value or "").strip()
-                   for c in (3, 4, 5, 8, 10)):
+                   for c in (3, 4, 5, C_TYPE, C_NOTE)):
                 unparsed.append((r, tstr))
             continue
         if isinstance(n, str) and not str(n).strip().isdigit():

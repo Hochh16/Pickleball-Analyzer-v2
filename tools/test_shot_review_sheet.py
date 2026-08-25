@@ -49,8 +49,10 @@ def test_build_refuses_to_clobber_a_filled_in_review(tmp_path, monkeypatch):
     srs.build(c, out)
     wb = load_workbook(out)
     ws = wb.active
-    hdr = next(r for r in range(1, 20) if ws.cell(row=r, column=1).value == "#")
-    ws.cell(row=hdr + 2, column=8, value="drop")
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
     wb.save(out)
     monkeypatch.setattr(sys, "argv", ["x", str(c)])
     with pytest.raises(SystemExit) as e:
@@ -79,14 +81,17 @@ def test_a_correction_overrides_and_a_missed_shot_is_added(tmp_path):
     srs.build(c, out)
     wb = load_workbook(out)
     ws = wb.active
-    hdr = next(r for r in range(1, 20) if ws.cell(row=r, column=1).value == "#")
-    # CORRECT_TYPE is column H: an ALREADY KNOWN column sits at G so a shot reviewed once is
-    # not put in front of the operator again.
-    ws.cell(row=hdr + 2, column=8, value="drop")          # correct the first real row
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    # Find the columns by HEADER. The layout has gained an ALREADY KNOWN column and then
+    # NOT_A_SHOT / RALLY_END; a test pinned to a letter breaks on every such change and, worse,
+    # would pass while writing into the wrong column.
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
     blank = next(r for r in range(hdr, ws.max_row + 1)
                  if str(ws.cell(row=r, column=1).value or "").startswith("SHOTS WE MISSED"))
-    ws.cell(row=blank + 1, column=2, value="0:09.50")     # a shot we never detected
-    ws.cell(row=blank + 1, column=8, value="lob")
+    ws.cell(row=blank + 1, column=col["time"], value="0:09.50")   # never detected
+    ws.cell(row=blank + 1, column=col["CORRECT_TYPE"], value="lob")
     wb.save(out)
     srs.score(c, out)
     with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:
@@ -106,3 +111,24 @@ def test_output_name_is_globbed_by_the_scorer():
 def test_clock_round_trips():
     for t in (0.0, 9.5, 63.82, 301.05):
         assert abs(srs.parse_clock(srs.clock(t)) - t) < 0.01
+
+
+def test_not_a_shot_column_is_read(tmp_path):
+    """The operator had to bury these in free text last time, and a regex bug then read none
+    of them -- 16 false positives lost. A column cannot be silently mis-parsed."""
+    from openpyxl import load_workbook
+    c = _clip(tmp_path)
+    out = c / "_labeling" / srs.OUT_NAME
+    srs.build(c, out)
+    wb = load_workbook(out)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    assert "NOT_A_SHOT" in col and "RALLY_END" in col
+    ws.cell(row=hdr + 2, column=col["NOT_A_SHOT"], value="y")
+    wb.save(out)
+    srs.score(c, out)
+    with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["true_type"] == "not a shot"

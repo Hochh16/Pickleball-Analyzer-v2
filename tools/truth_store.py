@@ -139,13 +139,23 @@ def save(doc: dict) -> Path:
 
 
 def _find(rows: List[dict], t: float, tol: float = MATCH_TOL_S,
-          claimed: Optional[set] = None) -> Optional[dict]:
+          claimed: Optional[set] = None, key: Optional[str] = None) -> Optional[dict]:
     """Nearest stored shot within `tol`, skipping any already claimed in this import.
+
+    A row that carries a `key` matches its OWN previous entry first, whatever the times say.
+    Without that the store was not idempotent: re-running the same import appended clones
+    (8 pairs of them), because two review rows less than the ±1 s window apart would each
+    claim the other's entry and the loser appended a fresh one. Duplicated truth inflates
+    the shot total and every rate computed from it.
 
     One-to-one on purpose. A ±1 s window is right for hand-typed times but wide enough to
     span three shots of a kitchen exchange, and without the claim set one stored shot
     absorbed several distinct ones and then "conflicted" with all of them.
     """
+    if key:
+        for r in rows:
+            if r.get("key") == key:
+                return r
     best, bd = None, tol + 1e-9
     for r in rows:
         if claimed is not None and id(r) in claimed:
@@ -161,7 +171,7 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
              volley: Optional[bool] = None, detected: Optional[bool] = None,
              source: str = "", notes: str = "", kind: str = "unknown",
              claimed: Optional[set] = None, volley_explicit: bool = False,
-             seq: int = 0) -> str:
+             seq: int = 0, key: Optional[str] = None) -> str:
     """Merge one shot fact. Returns 'new' | 'enriched' | 'agreed' | 'CONFLICT'.
 
     Enrichment only ever ADDS fields that were unknown. A field already recorded is never
@@ -171,13 +181,14 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
     """
     hitter = norm_hitter(hitter)
     auth = AUTHORITY.get(kind, 0)
-    ex = _find(doc["shots"], t, claimed=claimed)
+    ex = _find(doc["shots"], t, claimed=claimed, key=key)
     if ex is None:
         row = {k: v for k, v in
                {"t_sec": round(float(t), 2), "type": type_, "hitter": hitter,
                 "side": side, "volley": volley, "detected": detected,
                 "volley_explicit": volley_explicit or None,
-                "source": source, "notes": notes, "authority": auth, "seq": seq}.items()
+                "source": source, "notes": notes, "authority": auth, "seq": seq,
+                "key": key}.items()
                if v is not None and v != ""}
         doc["shots"].append(row)
         if claimed is not None:
@@ -185,6 +196,8 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
         return "new"
     if claimed is not None:
         claimed.add(id(ex))
+    if key and not ex.get("key"):
+        ex["key"] = key                  # adopt the identity so the NEXT import is stable
     prev_auth = int(ex.get("authority", 0))
     prev_seq = int(ex.get("seq", 0))
     newer = (auth, seq) > (prev_auth, prev_seq)
@@ -228,12 +241,69 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
     return verdict
 
 
+def fold_shadowed_legacy(doc: dict) -> int:
+    """Drop a legacy label that a reviewed row already covers.
+
+    The review sheet enumerates EVERY shot in the video, so a `labels*.csv` entry within the
+    match window of a reviewed row is the same shot written down twice -- and the operator
+    was explicit that the last sheet they built wins any conflict. Left in place the pair
+    counts as two shots, which is the same silent inflation the retraction fix removed.
+    """
+    # to a fixed point: folding one row frees the claim that was hiding the next, and a
+    # single pass left the store still changing on the following run
+    total = 0
+    while True:
+        n = _fold_once(doc)
+        total += n
+        if not n:
+            return total
+
+
+def _fold_once(doc: dict) -> int:
+    keyed = [s for s in doc["shots"] if s.get("key")]
+    drop = []
+    for s in doc["shots"]:
+        if s.get("key"):
+            continue
+        near = _find(keyed, float(s.get("t_sec", -999)))
+        if near is not None:
+            seen = {"t_sec": s.get("t_sec"), "type": s.get("type"),
+                    "hitter": s.get("hitter"), "source": s.get("source")}
+            # the legacy import re-creates this row on every run, so the fold must not keep
+            # re-recording it -- the note would grow without bound
+            if seen not in near.setdefault("also_seen", []):
+                near["also_seen"].append(seen)
+            drop.append(id(s))
+    if drop:
+        doc["shots"] = [s for s in doc["shots"] if id(s) not in drop]
+    return len(drop)
+
+
 def note_provenance(doc: dict, source: str, counts: Dict[str, int]) -> None:
     doc["provenance"].append({"at": dt.datetime.now(dt.timezone.utc).isoformat(),
                               "source": source, **counts})
 
 
 # ---------------------------------------------------------------- importers
+
+def _has_operator_marks(ws, hdr: int, col: dict) -> bool:
+    """Has anyone actually reviewed this sheet, or is it as we generated it?
+
+    Any of: a filled CORRECT_* / NOT_A_SHOT / RALLY_END / notes cell, or a row the operator
+    added by hand (a time with no row number, i.e. a shot we missed entirely).
+    """
+    marks = [col[k] for k in ("CORRECT_TYPE", "CORRECT_VOLLEY", "NOT_A_SHOT", "RALLY_END",
+                              "notes") if k in col]
+    for r in range(hdr + 1, ws.max_row + 1):
+        n = ws.cell(row=r, column=1).value
+        if isinstance(n, str) and not str(n).strip().isdigit():
+            continue                                     # the worked-example row
+        if any(str(ws.cell(row=r, column=i).value or "").strip() for i in marks):
+            return True
+        if n in (None, "") and str(ws.cell(row=r, column=2).value or "").strip():
+            return True                                  # a hand-added missed shot
+    return False
+
 
 def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
     """A filled-in shot_review.xlsx: corrections, confirmations, and missed shots."""
@@ -255,6 +325,16 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
     c = Counter()
     claimed: set = set()
     src = f"shot_review.xlsx / {clip.name}"
+    if not _has_operator_marks(ws, hdr, col):
+        # A blank row means "the operator looked at this and agreed" -- but ONLY in a sheet
+        # the operator actually worked through. An untouched, freshly built sheet is all
+        # blank rows, so importing it would file OUR OWN detections as operator truth at the
+        # highest authority and every accuracy figure for that clip would then be us scoring
+        # ourselves. This is the same class of bug as the label file that shadowed a fuller
+        # set: it does not error, it just quietly turns into a good score.
+        print(f"  {clip.name}: shot_review.xlsx has no operator marks -- not imported "
+              f"(a prepopulated sheet is our output, not truth)")
+        return {}
     for r in range(hdr + 1, ws.max_row + 1):
         n = ws.cell(row=r, column=1).value
         if isinstance(n, str) and not str(n).strip().isdigit():
@@ -275,6 +355,14 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 c["free_notes"] += 1
             continue
         flags = read_note(notes)
+        # Dedicated columns win over the note text: a column cannot be silently mis-parsed,
+        # and a regex over free text already lost 30 of these once.
+        if "NOT_A_SHOT" in col and str(ws.cell(row=r, column=col["NOT_A_SHOT"]).value
+                                       or "").strip().lower().startswith("y"):
+            flags["not_a_shot"] = True
+        if "RALLY_END" in col and str(ws.cell(row=r, column=col["RALLY_END"]).value
+                                      or "").strip().lower().startswith("y"):
+            flags["rally_end"] = True
         ty = corr or (known_prev.split("  ")[0] if known_prev else "") or ours
         if flags["not_a_shot"]:
             # The operator recorded these in the notes because the sheet had nowhere else to
@@ -325,7 +413,8 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 c["retracted"] += 1
             continue
         c["confirmed"] += 1 if not corr else 0
-        c[add_shot(doc, t, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
+        row_key = f"{src}#{str(n).strip()}" if detected else f"{src}@{t:.2f}"
+        c[add_shot(doc, t, key=row_key, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
                    side=str(ws.cell(row=r, column=4).value or "") or None, volley=vol,
                    detected=detected, source=src, notes=notes,
                    kind="review", claimed=claimed,
@@ -509,6 +598,10 @@ def main(argv=None) -> int:
                 print(f"  {clip.name:<34} -> {v:<28} {dict(got)}")
             touched[v] = doc
         for v, doc in touched.items():
+            n = fold_shadowed_legacy(doc)
+            if n:
+                print(f"  {v}: folded {n} legacy label(s) into the reviewed row for the "
+                      f"same shot")
             print(f"saved {save(doc)}")
         return 0
 
