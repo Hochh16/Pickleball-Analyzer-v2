@@ -171,7 +171,8 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
              volley: Optional[bool] = None, detected: Optional[bool] = None,
              source: str = "", notes: str = "", kind: str = "unknown",
              claimed: Optional[set] = None, volley_explicit: bool = False,
-             seq: int = 0, key: Optional[str] = None) -> str:
+             seq: int = 0, key: Optional[str] = None,
+             existing: Optional[dict] = None, assigned: bool = False) -> str:
     """Merge one shot fact. Returns 'new' | 'enriched' | 'agreed' | 'CONFLICT'.
 
     Enrichment only ever ADDS fields that were unknown. A field already recorded is never
@@ -181,7 +182,12 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
     """
     hitter = norm_hitter(hitter)
     auth = AUTHORITY.get(kind, 0)
-    ex = _find(doc["shots"], t, claimed=claimed, key=key)
+    # `assigned` means the caller matched this row globally (shortest pair first) and is
+    # telling us which entry it belongs to -- `existing=None` then means "no entry, create
+    # one", not "look one up". Row-order greedy matching cascades: once row #26 took the
+    # entry nearest IT, row #27 took the one that belonged to #28, and three of the
+    # operator's notes landed on the wrong shots.
+    ex = existing if assigned else _find(doc["shots"], t, claimed=claimed, key=key)
     if ex is None:
         row = {k: v for k, v in
                {"t_sec": round(float(t), 2), "type": type_, "hitter": hitter,
@@ -227,12 +233,35 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
             ex.setdefault("conflicts", []).append(
                 {"field": key, "kept": cur, "rejected": val, "from": source})
             verdict = "CONFLICT"
+    if type_ and ex.get("not_a_shot") and newer:
+        # A retraction has to be reversible. An OLDER review called #18 "no shot, ball
+        # rolling along back fence" at 48.617s; shot numbers were renumbered before the next
+        # review, and at that time the operator's LATEST sheet says #19, a return that ended
+        # the point. Their rule is explicit -- "use the last one I built as the truth if
+        # there is a conflict between any reviews" -- but not_a_shot was one-way, so the
+        # older note won and a real return counted as junk.
+        ex["not_a_shot"] = False
+        ex.setdefault("superseded", []).append(
+            {"field": "not_a_shot", "was": True, "now": False, "by": source})
+        for i, f in enumerate(doc.get("false_positives", [])):
+            if abs(float(f.get("t_sec", -999)) - t) <= MATCH_TOL_S:
+                doc["false_positives"].pop(i)
+                break                    # ...and it is no longer a false positive either
     if volley_explicit:
         # The operator actually judged this one. Distinguishing that from a value inherited
         # by "blank means agree" matters: scoring against inherited values would be scoring
         # against ourselves, and would read as agreement no matter how wrong we are.
         ex["volley_explicit"] = True
     if newer:
+        # ...including the TIME. A shot first recorded from missed_shots.csv at 2:19.20 and
+        # later confirmed by review row #54 at 2:18.22 kept the older, hand-typed time, and
+        # then read as sitting 0.9 s outside the rally it is plainly in. Every scorer matches
+        # on a time window, so a stale t_sec is not cosmetic -- it silently moves a shot.
+        if abs(float(ex.get("t_sec", t)) - float(t)) > 0.01:
+            ex.setdefault("superseded", []).append(
+                {"field": "t_sec", "was": ex.get("t_sec"), "now": round(float(t), 2),
+                 "by": source})
+            ex["t_sec"] = round(float(t), 2)
         ex["authority"] = auth
         ex["seq"] = seq
         ex["source"] = source
@@ -335,11 +364,40 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         print(f"  {clip.name}: shot_review.xlsx has no operator marks -- not imported "
               f"(a prepopulated sheet is our output, not truth)")
         return {}
+    parsed = []
     for r in range(hdr + 1, ws.max_row + 1):
-        n = ws.cell(row=r, column=1).value
-        if isinstance(n, str) and not str(n).strip().isdigit():
+        n0 = ws.cell(row=r, column=1).value
+        if isinstance(n0, str) and not str(n0).strip().isdigit():
             continue                                     # the worked-example row
-        t = parse_clock(ws.cell(row=r, column=2).value)
+        parsed.append((r, n0, parse_clock(ws.cell(row=r, column=2).value)))
+
+    # Assign each row to at most one existing entry, SHORTEST PAIR FIRST across the whole
+    # sheet, before touching anything. One-to-one: a sheet row is one of our detections (or
+    # one the operator added), so two rows can never be the same stored shot.
+    assign: Dict[int, dict] = {}
+    taken: set = set()
+    by_key = {s.get("key"): s for s in doc["shots"] if s.get("key")}
+    cand = []
+    for r, n0, tt in parsed:
+        if tt is None:
+            continue
+        k = f"{src}#{str(n0).strip()}" if n0 not in (None, "") else f"{src}@{tt:.2f}"
+        own = by_key.get(k)
+        if own is not None and id(own) not in taken:
+            assign[r] = own                              # its own entry from a prior import
+            taken.add(id(own))
+            continue
+        for s in doc["shots"]:
+            d = abs(float(s.get("t_sec", -999)) - tt)
+            if d <= MATCH_TOL_S:
+                cand.append((d, r, id(s), s))
+    for d, r, sid, s in sorted(cand, key=lambda x: (x[0], x[1])):
+        if r in assign or sid in taken:
+            continue
+        assign[r] = s
+        taken.add(sid)
+
+    for r, n, t in parsed:
         ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
         corr = str(ws.cell(row=r, column=col["CORRECT_TYPE"]).value or "").strip().lower()
         known_prev = (str(ws.cell(row=r, column=col["ALREADY KNOWN"]).value or "").strip().lower()
@@ -404,7 +462,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
             # have recorded this moment as a typed shot; leaving that behind means the same
             # detection counts as BOTH a real shot and a false positive, which inflates the
             # real-shot total and quietly flatters every accuracy figure computed from it.
-            prior = _find(doc["shots"], t, claimed=claimed)
+            prior = assign.get(r)
             if prior is not None and int(prior.get("authority", 0)) <= AUTHORITY["review"]:
                 prior["not_a_shot"] = True
                 prior["type"] = None
@@ -417,10 +475,30 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         c[add_shot(doc, t, key=row_key, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
                    side=str(ws.cell(row=r, column=4).value or "") or None, volley=vol,
                    detected=detected, source=src, notes=notes,
-                   kind="review", claimed=claimed,
+                   kind="review", claimed=claimed, existing=assign.get(r), assigned=True,
                    volley_explicit=vol_explicit, seq=seq)] += 1
         if not detected:
             c["missed"] += 1
+
+    # An OLDER review's false-positive claim cannot stand where the LATEST sheet says there
+    # is a real shot. The old review names SHOT NUMBERS -- "#18 is mislabeled", "#124, #125
+    # were not shots" -- and the numbering changed between reviews, so those notes now land
+    # on different shots. Seven times were counted as junk AND as a confirmed shot because of
+    # it, including the return at 48.62 that ends a point. Operator's rule, verbatim: "use
+    # the last one I built as the truth if there is a conflict between any reviews."
+    confirmed = [s for s in doc["shots"]
+                 if not s.get("not_a_shot") and str(s.get("key") or "").startswith(src)]
+    keep, dropped = [], []
+    for f in doc["false_positives"]:
+        if f.get("source") != src and any(
+                abs(float(s["t_sec"]) - float(f["t_sec"])) <= 0.4 for s in confirmed):
+            dropped.append(f)
+            continue
+        keep.append(f)
+    if dropped:
+        doc["false_positives"] = keep
+        doc.setdefault("superseded_false_positives", []).extend(dropped)
+        c["fp_overruled_by_latest_review"] = len(dropped)
     return dict(c)
 
 

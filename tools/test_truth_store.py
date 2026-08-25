@@ -143,3 +143,59 @@ def test_importing_the_same_review_twice_changes_nothing(tmp_path):
     ts.import_review_xlsx(doc, clip)
     ts.fold_shadowed_legacy(doc)
     assert json.dumps(doc, sort_keys=True) == once
+
+
+def test_two_rows_of_one_sheet_never_become_one_shot(tmp_path):
+    """Each sheet row is one of our detections. Matching row-by-row nearest-first let row A
+    take the entry that belonged to row B, and the cascade put three of the operator's notes
+    on the wrong shots -- one row marked "not a shot" merged with the next row's real shot,
+    so a confirmed drive carried a not-a-shot flag."""
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    from openpyxl import load_workbook
+    clip = _clip(tmp_path)
+    sheet = clip / "_labeling" / srs.OUT_NAME
+    srs.build(clip, sheet)
+    wb = load_workbook(sheet)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 1, column=col["NOT_A_SHOT"], value="y")     # row 1: junk
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")  # row 2: a real shot
+    wb.save(sheet)
+
+    doc = ts.empty("v.mp4")
+    # a prior entry sitting between the two rows, which both could match
+    ts.add_shot(doc, 3.0, type_="drive", kind="labels_csv", source="old.csv")
+    ts.import_review_xlsx(doc, clip)
+    keys = [s.get("key") for s in doc["shots"]]
+    assert len(keys) == len(set(keys)), "two rows share one stored shot"
+    drops = [s for s in doc["shots"] if s.get("type") == "drop"]
+    assert len(drops) == 1 and not drops[0].get("not_a_shot")
+
+
+def test_the_latest_review_overrules_an_older_reviews_false_positive(tmp_path):
+    """The old review names SHOT NUMBERS ("#18 is mislabeled") and the numbering changed
+    between reviews, so those notes now land on different shots. Seven times were counted as
+    junk AND as a confirmed shot. Operator: "use the last one I built as the truth"."""
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    from openpyxl import load_workbook
+    clip = _clip(tmp_path)
+    sheet = clip / "_labeling" / srs.OUT_NAME
+    srs.build(clip, sheet)
+    wb = load_workbook(sheet)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="drop")
+    wb.save(sheet)
+
+    doc = ts.empty("v.mp4")
+    doc["false_positives"].append({"t_sec": 5.0, "source": "legacy / old_review",
+                                   "notes": "#18 is mislabeled. No shot."})
+    ts.import_review_xlsx(doc, clip)
+    assert doc["false_positives"] == []
+    assert doc["superseded_false_positives"][0]["source"] == "legacy / old_review"

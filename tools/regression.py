@@ -188,9 +188,19 @@ def measure(clip: Path) -> Dict[str, object]:
                     return any(a - 0.2 <= x <= b + 0.2 for a, b in spans)
                 m["junk_in_rallies"] = sum(
                     1 for f in st["false_positives"] if _inside(float(f["t_sec"])))
+                # Only shots WE ACTUALLY EMITTED can be "left outside a rally" -- an
+                # operator label with no detection near it is a missed shot, a different
+                # problem with its own metric. Counting those made this read 6 when 2 was
+                # the honest answer, and 4 of the 6 turned out to be stale labels from an
+                # older file that the latest review contradicts.
                 real_t = [float(s["t_sec"]) for s in st["shots"]
                           if not s.get("not_a_shot") and s.get("detected") is not False]
-                m["real_outside_rallies"] = sum(1 for x in real_t if not _inside(x))
+                # claim() returns (claimed SHOT indices, unmatched TRUTH times) -- the
+                # second is the one that says which operator times we never emitted.
+                _, unmatched = score_shots.claim(real_t, shots, score_shots.TOL_S)
+                never = {round(x, 3) for x in unmatched}
+                m["real_outside_rallies"] = sum(
+                    1 for x in real_t if round(x, 3) not in never and not _inside(x))
             found, _ = score_shots.claim([s["t_sec"] for s in kn_missed], shots,
                                          score_shots.TOL_S)
             m["truth_missed_recovered"] = len(found)
