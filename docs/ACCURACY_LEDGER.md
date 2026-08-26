@@ -173,6 +173,51 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## DINKS — half junk, half a LANDING-COVERAGE problem (2026-08-26)
+
+Court C emits 17 dinks against the operator's 5; the acceptance clip is nearly exact (34 vs
+their 32). The gap splits cleanly in two.
+
+**Half of the extras are junk we emit as dinks.** Of the dinks matching no operator label, 4
+of 6 on court C and 6 of 8 on the acceptance clip are on their NOT-A-SHOT list. Those are the
+between-point problem wearing a dink label, not a typing error.
+
+**The rest is drive <-> dink confusion, and it tracks LANDING COVERAGE:**
+
+| | landing available |
+|---|---|
+| shots we get RIGHT on drive/dink | 13/24 and 20/30 (54-67%) |
+| shots we CONFUSE | 2/6 and 5/14 (33-36%) |
+
+Without a landing the classifier falls back to SPEED, and the speed is not fit for the job.
+On shots the operator calls drives we measure **3.5-14 ft/s** (a drive at the kitchen is 30+),
+and on shots they call dinks we measure **27-65**. Wrong by 3-10x in both directions, from
+both speed sources (`ppf_instantaneous` and `trajectory_horizontal`). Tuning the 16/25 ft/s
+thresholds cannot fix a measurement that far out.
+
+### REJECTED: ball travel as the fallback
+
+A dink travels a few feet into the kitchen, a drive travels the court -- a displacement over
+a window, the kind this reconstruction handles. It does not separate them:
+
+    all labelled dinks/drives      dink median 31.5 ft   drive median 31.0 ft
+    only those with NO landing     dink median 22.3 ft   drive median 26.7 ft
+
+The apparent "77% at an 11 ft split" on the no-landing subset is **the majority class**: 30 of
+those 39 shots are drives, so predicting "drive" for everything scores 77%. Not a signal.
+
+### The lead worth taking next
+
+`bounces_height.json` holds **131 floor contacts on court C and 175 on the acceptance clip**,
+against 43 and 76 in `bounces.json` -- and `tools/detect_rally_ends.py` already prefers it
+("~1.8x more in-play bounces"). Stage 6 reads only `bounces.json`, so it is guessing at
+landings that may already be measured next door.
+
+Caution before using it wholesale: 175 floor contacts against the operator's bounce count of
+**81** means it is over-detecting, so it cannot be swapped in directly -- it would have to
+supply a landing only for shots that currently have none, bounded to the interval before the
+next contact, and be measured against the operator's drive/dink labels.
+
 ## SERVE / RETURN — where it stands, and one fix REJECTED after measuring (2026-08-26)
 
     serves FLAGGED as serves      10/25 -> 17/25
