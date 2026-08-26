@@ -173,6 +173,48 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## SERVER ATTRIBUTION — 50%, and the cause is the RETURN being flagged as the serve (2026-08-24)
+
+Newly measurable: the operator recorded who served every point on both indoor courts, and
+nothing had ever scored it. **10 of 20 correct** (court B 6/10, court C 4/10).
+
+Nine of the ten errors get the SIDE wrong, which looked at first like the rally opening on a
+serve we had missed. It is not that. Split by `serve_is_inferred`:
+
+| | servers correct |
+|---|---|
+| rallies where we DETECTED a serve | **8/18 (44%)** |
+| rallies where the serve was inferred | 2/2 |
+
+The errors are concentrated where we DID flag a serve. So we are not failing to find the
+opening shot — **we are flagging the RETURN as the serve** whenever the real serve went
+undetected, and then crediting the receiving side as the server.
+
+**Depth and gap cannot separate the two, by the operator's own domain rule: a return is hit
+from behind the baseline.** After a missed serve the return also has a long clear gap in
+front of it, so it satisfies both serve conditions exactly. `structure_points` is not
+misjudging anything — it is being handed a shot that is identical on every axis it can see.
+
+**What could separate them, and how far it got.** Before a serve the ball is on the server's
+own side; before a return it has just crossed the net. That is a sustained, relative question,
+the kind the reconstruction answers well. Measured — flipping the server whenever the ball
+crossed into the striker's side just before:
+
+| look-back | fires | fixes | breaks | net |
+|---|---|---|---|---|
+| 1.2 s | 5 | 4 | 1 | **+3** |
+| 1.8 s | 8 | 4 | 4 | 0 |
+| 2.5 s | 4 | 2 | 2 | 0 |
+| 3.5 s | 2 | 2 | 0 | +2 |
+
+**Not shipped.** +3 on 20 samples, from 5 fires, at a window that gives nothing one step
+either side — non-monotonic in the threshold is the shape of noise, not of signal. The
+principle is right and the route is worth returning to; the sample is far too small to accept
+a swept threshold on, and this codebase has been burned by exactly that before.
+
+What it needs is more labelled rallies, not more tuning. `server_correct` / `server_judged`
+are in the regression table so the number cannot quietly drift while that is arranged.
+
 ## WHAT IS ACTUALLY LABELLED — a full audit (2026-08-24)
 
 Before asking the operator for more labels, an inventory of every labelled file under
