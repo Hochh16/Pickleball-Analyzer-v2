@@ -1,27 +1,26 @@
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-24)
 
-## 2026-08-24 — READ FIRST: NEXT ACTION IS THE MISSING POINT AT 0:46.57
+## 2026-08-24 — READ FIRST
 
-A whole rally is absent from the analysis, and it is fully diagnosed:
+The missing point at 0:46.57 is FIXED (see `docs/ACCURACY_LEDGER.md`, "The one real
+finding"). Junk immediately before a serve was hiding it: the "opens a point" gap was
+measured to the previous detection of any kind, so a false shot 2.45s earlier put the serve
+below the 3s threshold and its whole point vanished. The gap is now measured to the last
+contact from the OTHER side -- a rule of the game, no new threshold. `real_outside_rallies`
+reads 0; serve recall 0.86 -> 0.93.
 
-| video | xls row | shot # | operator marked |
-|---|---|---|---|
-| **0:46.57** | 25 | #17 | `serve` |
-| **0:48.62** | 27 | #19 | `return` — *"bounced on far side and was missed by opponent. Rally ended"* |
+**Where the accuracy still is, on the acceptance clip:**
 
-We detect both. We type the serve as a `drive`, so `is_serve` is false, so no rally opens
-there, so the rally-end gate discards the pair as dead-time ball-handling. Rally 1 ends
-0:36.83, rally 2 starts 1:04.60, and the point between them is gone. It is one of the two
-serves behind serve recall 0.86 on the acceptance clip.
+| | value | note |
+|---|---|---|
+| shot type | 52/111 = 47% | the biggest gap by far |
+| junk still inside rallies | 14 of 38 known | the rally gate took the other 24 |
+| shots we miss entirely | 21 known | |
+| serve recall / precision | 0.93 / 0.81 | |
+| volleys | 47/62 judged correct | |
 
-Start at Stage 5's serve detection (`structure_points` in `stages/detect_shots/`), not at
-the gate — the gate is behaving correctly given a shot that is not flagged as a serve. The
-scorer already exists: `real_outside_rallies` in `tools/regression.py` reads **2**, and both
-are this point. It should read 0.
-
-Everything else from this session is committed, measured, and recorded in
-`docs/ACCURACY_LEDGER.md` — the rally-end gate (15 junk shots removed from rallies for 2
-real ones) and the truth store (`docs/truth/<VIDEO>.json`, five silent defects fixed).
+Shot type is the obvious next target: it is under half right, and every downstream number
+(dinks, the rating, the improvement plan) is built on it.
 
 Two pre-existing test failures remain untouched and unrelated:
 `test_annotated_render_is_skipped` and `test_notebook_builds_as_git_bootstrapper`.

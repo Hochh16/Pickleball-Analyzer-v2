@@ -23,7 +23,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from stages.detect_shots.detect_shots import main as detect_main, reject_same_side_runs
+from stages.detect_shots.detect_shots import (main as detect_main,
+                                              reject_same_side_runs,
+                                              structure_points)
 
 TEST_FOLDER = Path("data/test_clip")
 SEED = 1234
@@ -348,3 +350,59 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+
+def _shot(frame, side, dist_from_net, net_y=22.0):
+    """A shot at `frame`, hit by `side`, that far from the net."""
+    y = net_y - dist_from_net if side == "near" else net_y + dist_from_net
+    return {"frame": frame, "hitter_side": side, "hitter_court_xy_ft": [10.0, y]}
+
+
+def _args(fps=60.0):
+    return dict(net_y_ft=22.0, behind_baseline_ft=21.0,
+                open_gap_frames=int(3.0 * fps), return_frames=int(2.5 * fps),
+                dead_gap_frames=int(3.0 * fps), min_inter_serve_frames=int(10.0 * fps))
+
+
+def test_junk_on_the_servers_own_side_does_not_hide_the_serve():
+    """The operator's most-reported pattern is false shots just before a serve, and they do
+    real damage: a detection 2.45s before the confirmed serve at 0:46.57 shortened the gap
+    below the 3s "opens a point" threshold, so the serve was never even a candidate and its
+    whole point -- serve and return -- vanished from the analysis.
+
+    Every rally shot crosses the net, so the gap that matters is to the last contact from the
+    OTHER side. Junk on the server's own side cannot hide their serve.
+    """
+    fps = 60.0
+    shots = [_shot(0, "near", 25.0),                    # a serve, 0.0s
+             _shot(int(1.0 * fps), "far", 25.0),        # returned
+             _shot(int(20.0 * fps), "far", 8.0),        # junk, own side, 20.0s
+             _shot(int(22.5 * fps), "far", 30.0),       # THE SERVE, 2.5s after the junk
+             _shot(int(23.5 * fps), "near", 20.0)]      # answered
+    structure_points(shots, **_args(fps))
+    assert [bool(s["is_serve"]) for s in shots] == [True, False, False, True, False]
+
+
+def test_a_relaxed_candidate_must_be_answered():
+    """A serve is played back; a ball handled in dead time is not. Without this the
+    relaxation opened a rally at 3:31 made of four junk shots and no real ones."""
+    fps = 60.0
+    shots = [_shot(0, "near", 25.0),
+             _shot(int(1.0 * fps), "far", 25.0),
+             _shot(int(20.0 * fps), "far", 8.0),
+             _shot(int(22.5 * fps), "far", 30.0)]       # deep, but nobody replies
+    structure_points(shots, **_args(fps))
+    assert not shots[3]["is_serve"]
+
+
+def test_a_relaxed_candidate_never_displaces_a_strict_one():
+    """Weaker evidence may fill a slot the strict rule left empty, never take one it filled.
+    Letting it displace cost court B its 1:44 serve to a candidate 2.9s later -- recall +1
+    outdoors and -1 indoors, a wash. Restricted this way it is +1 with nothing lost."""
+    fps = 60.0
+    shots = [_shot(0, "near", 25.0),                    # strict serve
+             _shot(int(2.9 * fps), "near", 30.0),       # relaxed candidate, same slot
+             _shot(int(3.9 * fps), "far", 20.0)]        # answers the SECOND one
+    structure_points(shots, **_args(fps))
+    assert shots[0]["is_serve"] and not shots[1]["is_serve"]

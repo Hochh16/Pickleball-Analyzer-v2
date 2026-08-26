@@ -649,22 +649,69 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
                 return True
         return False
 
+    def gap_prev_opposite(i):
+        """Frames since the ball last came from the OTHER side.
+
+        "Opens a point" means nothing was in play. The ball is only in play if it came from
+        the opponent, so a gap measured to the last detection OF ANY KIND is the wrong
+        question: junk on the server's own side shortens it and hides the serve behind it.
+        That is the operator's most-reported pattern -- "false shots often before serves" --
+        and it is what loses the confirmed serve at 0:46.57 on the acceptance clip: 31.6 ft
+        deep, plainly a serve, but 2.45 s after a detection the operator calls "not a shot.
+        Looks like it picked up something from court behind". Against the last opposite-side
+        contact the gap is 9.7 s.
+
+        Every rally shot crosses the net, so this is a rule of the game rather than a new
+        threshold -- it reuses `open_gap_frames` unchanged.
+        """
+        if i == 0 or side(i) is None:
+            return gap_prev(i)
+        for j in range(i - 1, -1, -1):
+            if side(j) is not None and side(j) != side(i):
+                return ss[i]["frame"] - ss[j]["frame"]
+        return open_gap_frames + 1        # nothing ever came from the other side
+
     def serve_cand(i):
         return dist(i) >= behind_baseline_ft and gap_prev(i) >= open_gap_frames
 
+    def weak_serve_cand(i):
+        """A serve the strict gap misses, admitted only on the opposite-side gap.
+
+        It must also be ANSWERED -- the opposing side plays the ball back within
+        `return_frames`. A serve is replied to; a ball handled in dead time is not (measured
+        over the labelled serves: 8 of 11 real serves draw a reply against 1 of 5 false
+        ones). That is too weak to gate the strict rule on, and the code already declines to,
+        but this candidate is weaker evidence by construction, so it should have to
+        corroborate. Without it the relaxation opened a second rally at 3:31 made of four
+        junk shots and no real ones.
+        """
+        return (not serve_cand(i) and dist(i) >= behind_baseline_ft
+                and gap_prev_opposite(i) >= open_gap_frames
+                and returned(i) is True)
+
     ends = {i for i in range(N)
-            if not serve_cand(i) and returned(i) is False
+            if not serve_cand(i) and not weak_serve_cand(i) and returned(i) is False
             and gap_next(i) >= dead_gap_frames}
 
     accepted: List[int] = []
     for i in range(N):
+        weak = False
         if not serve_cand(i):
-            continue
+            if not weak_serve_cand(i):
+                continue
+            weak = True
         end_since = bool(accepted) and any(accepted[-1] < e < i for e in ends)
         gap_since = (not accepted
                      or (ss[i]["frame"] - ss[accepted[-1]]["frame"]) >= min_inter_serve_frames)
         if not accepted or end_since or gap_since:
             accepted.append(i)
+        elif weak:
+            # A weak candidate may FILL a slot the strict rule left empty, never TAKE one it
+            # already filled. Letting it displace cost court B its 1:44 serve to a candidate
+            # 2.9s later, which is why the first version of this measured as a wash: recall
+            # +1 outdoor, -1 indoor. Restricted this way it is +1 with nothing lost --
+            # 79% -> 83% against the operator's serve strikes.
+            continue
         elif returned(i) is True and returned(accepted[-1]) is not True:
             # RETURN TIE-BREAK. Acceptance is otherwise greedy first-wins, so a deep
             # between-point ball (a feed lobbed back to the server) claims the slot and

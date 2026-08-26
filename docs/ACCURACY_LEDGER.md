@@ -209,17 +209,54 @@ Rules now enforced, all of them the operator's own words:
 demoted, 131 before junk retraction), 38 false positives, 16 rally ends, 21 shots we missed.
 Shot type 51/111 = **46%**.
 
-### The one real finding: a whole point is missing
+### The one real finding: a whole point was missing — FIXED 2026-08-24
 
 | video | xls row | shot # | operator marked |
 |---|---|---|---|
 | **0:46.57** | 25 | #17 | `serve` |
 | **0:48.62** | 27 | #19 | `return` — *"bounced on far side and was missed by opponent. Rally ended"* |
 
-We DETECT both and type the serve as a `drive`. `is_serve` is therefore false, no rally
-opens, and the rally-end gate discards the pair as dead-time ball-handling. Rally 1 ends
-0:36.83 and rally 2 starts 1:04.60 — the point in between is simply absent from the
-analysis, and it is one of the two serves behind serve recall 0.86. **Still open.**
+We DETECTED both and typed the serve as a `drive`. `is_serve` was therefore false, no rally
+opened, and the rally-end gate discarded the pair as dead-time ball-handling. Rally 1 ended
+0:36.83 and rally 2 started 1:04.60 — the point between them was simply absent.
+
+**Cause: junk immediately before a serve hides it.** `structure_points` asks for a >= 3 s gap
+to the previous detection before a deep shot can "open a point". The serve is 31.6 ft deep —
+plainly a serve — but sits 2.45 s after a detection the operator calls *"not a shot. Looks
+like it picked up something from court behind"*. This is the operator's own most-reported
+pattern ("false shots often before serves") and it was costing whole points, not just a
+false positive.
+
+**Fix: measure the gap to the last contact from the OTHER side.** "Opens a point" means
+nothing was in play, and the ball is only in play if it came from the opponent — so junk on
+the server's own side cannot hide their serve. Against the last opposite-side contact the gap
+at 0:46.57 is 9.7 s. Every rally shot crosses the net, so this is a rule of the game, and it
+**adds no new threshold** — it reuses the same 3 s.
+
+Two restrictions, each measured, without which the change is a wash:
+
+* **A relaxed candidate may FILL a slot the strict rule left empty, never TAKE one it
+  filled.** Letting it displace cost court B its 1:44 serve to a candidate 2.9 s later —
+  recall +1 outdoors, −1 indoors.
+* **A relaxed candidate must be ANSWERED.** A serve is played back; a ball handled in dead
+  time is not. Without it the relaxation opened a rally at 3:31 built from four junk shots
+  and no real ones.
+
+| | recall | precision |
+|---|---|---|
+| shipped | 27/34 (79%) | 82% |
+| relaxed, may displace | 27/34 (79%) | 77% |
+| relaxed, no displace | 28/34 (82%) | 80% |
+| **+ must be answered** | **28/34 (82%)** | **82%** |
+
+End to end: `real_outside_rallies` **2 → 0**, serve recall 0.86 → 0.93, serve precision
+0.80 → 0.81, `junk_in_rallies` unchanged at 14, shot type 51 → 52, volleys invented 2 → 1,
+rally ends within 2 s 10 → 11.
+
+`serve_timing_median_s` rose 0.02 → 0.73 s and that is not a regression: all four of the
+operator's strike marks on the acceptance clip are matched now (it was three), and the
+recovered one is 0.73 s early, which at n = 4 lands in the middle. A median over four
+samples is a poor summary — read it with the recall figure beside it.
 
 ## RALLY END — three of the operator's four rules are noise; one is not (2026-08-24)
 
