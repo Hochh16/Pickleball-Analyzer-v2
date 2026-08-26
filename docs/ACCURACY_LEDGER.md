@@ -173,6 +173,52 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## WHAT IS ACTUALLY LABELLED — a full audit (2026-08-24)
+
+Before asking the operator for more labels, an inventory of every labelled file under
+`data/`. Ten distinct videos have been touched; the labelling is far more uneven than the
+folder count suggests.
+
+| axis | coverage |
+|---|---|
+| shot-by-shot review (a type per shot) | **1 video** — PB 5 minute outdoor, 111 typed |
+| rally-level truth (points, servers, shot counts, ends) | **3 videos** — outdoor, indoor court B (10 pts / 82 shots), court C (10 pts / 59 shots) |
+| hand-labelled ball PIXELS | **~10 videos**, 18,862 frames, 12,576 with a visible ball |
+| nothing at all | PB 5 min indoor 1 court A |
+
+Three defects found in the audit, all fixed without asking for a single new label:
+
+**1. The operator's vocabulary was being discarded.** They type the shot the way a player
+says it — `drive/volley`, `backhand drive`, `3rd shot drive`. Eight of court B's twenty-one
+typed shots were not in the canonical set, and `score_shot_types` treats an unrecognised type
+as a NON-SHOT label, so **six real shots were being reported as false positives over a
+wording difference**. `norm_type()` now splits the phrasing into the fields it carries —
+`drive/volley` is a drive AND a volley, `3rd shot drop` records where in the rally it fell.
+Court B: **4/12 = 33% -> 8/20 = 40%**, and its 6 phantom false positives are gone.
+
+**2. Court B's typed shots are ALL shots we MISSED.** Every one carries `detected: False` —
+they came from a missed-shot review, so they are the hardest cases by construction and the
+rate is NOT comparable to a clip reviewed shot by shot. Reading "court B 33%" beside "outdoor
+47%" invites exactly the wrong conclusion, and I did that once. `shot_type_sample_was_missed`
+now sits next to the rate: **20 of 20 for court B, 21 of 111 for outdoor.**
+
+**3. Per-rally SERVER truth existed and nothing measured it.** `truth.json` records `server`
+and `n_shots` for every point on both indoor courts; only the end time was being read. Now
+imported as `rally_truth` and scored:
+
+| clip | server correct |
+|---|---|
+| court B | 6/10 |
+| court C | 4/10 |
+| **total** | **10/20 = 50%** |
+
+A coin flip, on the axis a known-weak subsystem depends on. That is a new open finding, not a
+regression — it was simply never looked at.
+
+**The real gap needing new labels is shot TYPES on a second video.** Court C is the best
+target: it already has rally windows, servers, per-rally shot counts and outcome notes, so a
+review sheet drops into a frame that is already anchored.
+
 ## THE TRUTH STORE — one home for the operator's answers (2026-08-24)
 
 `docs/truth/<VIDEO>.json`, keyed by SOURCE VIDEO so it survives re-analysis into a new clip

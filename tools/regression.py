@@ -152,6 +152,44 @@ def measure(clip: Path) -> Dict[str, object]:
         m["confirmed_missed_recovered"] = len(found)
         m["confirmed_missed_total"] = len(mr["missed"])
 
+    # --- who served, against the operator's per-rally truth -------------------
+    # 20 rallies of server truth across the two indoor courts, previously measured by
+    # nothing. Shot-to-player attribution is a known weak point and this is the one axis
+    # where the operator had already written the answer down.
+    try:
+        from tools import truth_store as _ts3
+        rt = _ts3.known(clip).get("rally_truth") or []
+        ra3 = _load(clip, "rallies.json")
+        roles = _load(clip, "track_roles.json")
+        if rt and ra3 and roles:
+            by_track = {}
+            for role, info in (roles.get("roles") or {}).items():
+                for tid in (info.get("track_ids") or []):
+                    by_track[int(tid)] = _ts3.norm_hitter(role)
+            ok = judged = 0
+            for r in rt:
+                if not r.get("server"):
+                    continue
+                a, b = float(r["start_t_sec"]), float(r["end_t_sec"])
+                # our rally whose span overlaps the operator's most
+                best, bov = None, 0.0
+                for our in ra3["rallies"]:
+                    ov = min(b, float(our["end_t_sec"])) - max(a, float(our["start_t_sec"]))
+                    if ov > bov:
+                        best, bov = our, ov
+                if best is None:
+                    continue
+                got = by_track.get(int(best.get("server_track_id", -1)))
+                if got is None:
+                    continue
+                judged += 1
+                ok += int(got == r["server"])
+            if judged:
+                m["server_correct"] = ok
+                m["server_judged"] = judged
+    except (KeyError, OSError, ValueError, TypeError):
+        pass
+
     # --- serves -------------------------------------------------------------
     truth_sv = score_serves.truth_serves(clip)
     if truth_sv:
@@ -264,6 +302,20 @@ def measure(clip: Path) -> Dict[str, object]:
         st = score_shot_types.score(clip, labels)
         m["shot_type_correct"] = st["hit"]
         m["shot_type_labelled"] = st["n_real"]
+        # How much of that sample is shots we had MISSED. It matters: court B's typed shots
+        # are ALL shots we failed to detect -- the hardest cases by construction -- so its
+        # rate is not comparable to a clip reviewed shot by shot, and reading the two side by
+        # side invites exactly the wrong conclusion. Made visible rather than explained in a
+        # comment nobody reads at the moment of comparison.
+        try:
+            from tools import truth_store as _ts2
+            typed = [s for s in _ts2.known(clip)["shots"]
+                     if s.get("type") and not s.get("not_a_shot")]
+            if typed:
+                miss = sum(1 for s in typed if s.get("detected") is False)
+                m["shot_type_sample_was_missed"] = miss
+        except (KeyError, OSError):
+            pass
 
     return m
 
@@ -277,8 +329,10 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "confirmed_missed_recovered", "confirmed_missed_total",
                   "in_rally_shots", "in_rally_truth", "between_point_shots",
                   "junk_in_rallies", "real_outside_rallies",
+                  "server_correct", "server_judged",
                   "serve_recall", "serve_precision", "serve_timing_median_s",
                   "shot_type_correct", "shot_type_labelled",
+                  "shot_type_sample_was_missed",
                   "truth_shots_known", "truth_missed_known", "truth_missed_recovered",
                   "truth_fp_known", "volley_judged", "volley_correct",
                   "volley_missed", "volley_invented",

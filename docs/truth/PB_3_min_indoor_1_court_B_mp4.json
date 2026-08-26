@@ -31,7 +31,7 @@
   },
   {
    "t_sec": 71.2,
-   "type": "drive - backhand",
+   "type": "drive",
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
@@ -49,27 +49,33 @@
   },
   {
    "t_sec": 74.3,
-   "type": "drive/volley",
+   "type": "drive",
    "hitter": "user",
+   "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "authority": 2,
    "seq": 0
   },
   {
    "t_sec": 74.8,
-   "type": "drive/volley",
+   "type": "drive",
    "hitter": "opponent",
+   "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "authority": 2,
    "seq": 0
   },
   {
    "t_sec": 75.6,
-   "type": "drive/volley",
+   "type": "drive",
    "hitter": "partner",
+   "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "notes": "however, it says opponent #30",
    "authority": 2,
@@ -77,9 +83,11 @@
   },
   {
    "t_sec": 76.3,
-   "type": "drive/volley",
+   "type": "drive",
    "hitter": "opponent",
+   "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "authority": 2,
    "seq": 0
@@ -143,16 +151,17 @@
   },
   {
    "t_sec": 171.3,
-   "type": "3rd shot drive",
+   "type": "drive",
    "hitter": "opponent",
    "detected": false,
+   "rally_position": "3rd",
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "authority": 2,
    "seq": 0
   },
   {
    "t_sec": 171.9,
-   "type": "backhand drive",
+   "type": "drive",
    "hitter": "user",
    "detected": false,
    "source": "legacy / pb_3_min_indoor_1_court_b",
@@ -171,9 +180,11 @@
   },
   {
    "t_sec": 173.5,
-   "type": "drive/volley",
+   "type": "drive",
    "hitter": "user",
+   "volley": true,
    "detected": false,
+   "volley_explicit": true,
    "source": "legacy / pb_3_min_indoor_1_court_b",
    "authority": 2,
    "seq": 0
@@ -289,25 +300,14 @@
  },
  "provenance": [
   {
-   "at": "2026-08-25T03:24:26.648081+00:00",
+   "at": "2026-08-26T03:42:31.734282+00:00",
    "source": "import from pb_3_min_indoor_1_court_b",
    "new": 21,
    "missed": 21,
    "serve_strike": 10,
    "rally_end": 10,
+   "rally_truth": 10,
    "dead_interval": 9
-  },
-  {
-   "at": "2026-08-25T03:24:27.278526+00:00",
-   "source": "import from pb_3_min_indoor_1_court_b",
-   "agreed": 21,
-   "missed": 21
-  },
-  {
-   "at": "2026-08-25T03:24:27.915991+00:00",
-   "source": "import from pb_3_min_indoor_1_court_b",
-   "agreed": 21,
-   "missed": 21
   }
  ],
  "rally_ends": [
@@ -362,5 +362,97 @@
    "notes": ""
   }
  ],
- "updated_at_utc": "2026-08-25T03:24:27.985317+00:00"
+ "rally_truth": [
+  {
+   "start_t_sec": 3.0,
+   "end_t_sec": 20.0,
+   "server": "user",
+   "n_shots": 17,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 29.0,
+   "end_t_sec": 35.0,
+   "server": "opponent",
+   "n_shots": 4,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 45.0,
+   "end_t_sec": 53.0,
+   "server": "opponent",
+   "n_shots": 5,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 63.0,
+   "end_t_sec": 77.0,
+   "server": "opponent",
+   "n_shots": 14,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 86.0,
+   "end_t_sec": 98.0,
+   "server": "partner",
+   "n_shots": 10,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 104.0,
+   "end_t_sec": 116.0,
+   "server": "partner",
+   "n_shots": 10,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 127.0,
+   "end_t_sec": 134.0,
+   "server": "partner",
+   "n_shots": 5,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 140.0,
+   "end_t_sec": 144.0,
+   "server": "user",
+   "n_shots": 3,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 152.0,
+   "end_t_sec": 159.0,
+   "server": "opponent",
+   "n_shots": 3,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "start_t_sec": 166.0,
+   "end_t_sec": 178.0,
+   "server": "opponent",
+   "n_shots": 11,
+   "end_reason": null,
+   "note": "",
+   "source": "legacy / pb_3_min_indoor_1_court_b"
+  }
+ ],
+ "updated_at_utc": "2026-08-26T03:42:31.774420+00:00"
 }

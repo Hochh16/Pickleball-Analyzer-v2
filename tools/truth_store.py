@@ -86,6 +86,48 @@ RALLY_END_RE = _re.compile(
 THIRD_DROP_RE = _re.compile(r"3rd shot drop", _re.I)
 
 
+# The operator types the shot the way a player says it: "drive/volley", "backhand drive",
+# "3rd shot drive". Compared raw against the canonical set those are simply absent -- and
+# worse, tools/score_shot_types treats an unrecognised type as a NON-SHOT label, so six real
+# shots on court B were being reported as false positives over a wording difference. Eight of
+# that clip's twenty-one typed shots were unusable this way.
+#
+# Splitting them also RECOVERS information: "drive/volley" says the shot was a volley, which
+# is a field of its own, and "3rd shot drop" says where in the rally it fell.
+#
+# Word matching is done by SPLITTING, not by a word-boundary regex. Writing one here has now
+# twice produced a literal backspace character instead of a boundary, and the pattern then
+# matches nothing while looking correct -- it silently discarded 30 of the operator's notes
+# once already.
+CANON_TYPES = ("serve", "return", "drive", "drop", "dink", "lob", "reset")
+STROKE_WORDS = ("backhand", "forehand", "bh", "fh", "handed", "two")
+
+
+def norm_type(raw):
+    """'drive/volley' -> ('drive', True, None); '3rd shot drop' -> ('drop', None, '3rd').
+
+    Returns (type, volley_or_None, rally_position_or_None). An input yielding no canonical
+    word comes back UNCHANGED: a vocabulary this cannot read must stay visible rather than be
+    dropped or coerced into the nearest guess.
+    """
+    s = str(raw or "").strip().lower()
+    if not s:
+        return (None, None, None)
+    if s in CANON_TYPES:
+        return (s, None, None)
+    words = [w for w in _re.split(r"[^a-z0-9]+", s) if w]
+    volley = True if "volley" in words else None
+    third = "3rd" if "3rd" in words else None
+    hits = [w for w in words
+            if w in CANON_TYPES and w not in STROKE_WORDS]
+    if len(set(hits)) == 1:
+        return (hits[0], volley, third)
+    if volley and not hits:
+        # "volley" alone is not a type -- it says HOW the shot was taken, not what it was
+        return (None, True, third)
+    return (s, volley, third)
+
+
 def read_note(note: str) -> dict:
     """What a free-text note asserts. Flags only -- the note itself is always kept."""
     n = note or ""
@@ -181,6 +223,14 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
     whole file exists to prevent.
     """
     hitter = norm_hitter(hitter)
+    # Split the operator's phrasing into the fields it actually carries. "drive/volley" is a
+    # drive AND a volley; scoring it as a type named "drive/volley" matches nothing, and the
+    # volley it states is thrown away. Only FILL a volley the caller did not judge -- a
+    # CORRECT_VOLLEY column the operator filled in must win over a word in the type.
+    type_, ty_volley, ty_third = norm_type(type_)
+    if ty_volley is not None and volley is None:
+        volley = ty_volley
+        volley_explicit = True          # they said "volley"; that is a judgement, not a guess
     auth = AUTHORITY.get(kind, 0)
     # `assigned` means the caller matched this row globally (shortest pair first) and is
     # telling us which entry it belongs to -- `existing=None` then means "no entry, create
@@ -192,6 +242,7 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
         row = {k: v for k, v in
                {"t_sec": round(float(t), 2), "type": type_, "hitter": hitter,
                 "side": side, "volley": volley, "detected": detected,
+                "rally_position": ty_third,
                 "volley_explicit": volley_explicit or None,
                 "source": source, "notes": notes, "authority": auth, "seq": seq,
                 "key": key}.items()
@@ -247,6 +298,8 @@ def add_shot(doc: dict, t: float, *, type_: Optional[str] = None,
             if abs(float(f.get("t_sec", -999)) - t) <= MATCH_TOL_S:
                 doc["false_positives"].pop(i)
                 break                    # ...and it is no longer a false positive either
+    if ty_third and not ex.get("rally_position"):
+        ex["rally_position"] = ty_third      # "3rd shot drop" says where in the rally it fell
     if volley_explicit:
         # The operator actually judged this one. Distinguishing that from a value inherited
         # by "blank means agree" matters: scoring against inherited values would be scoring
@@ -645,6 +698,20 @@ def import_legacy(doc: dict, clip: Path) -> Dict[str, int]:
                 doc["rally_ends"].append({"t_sec": round(et, 2), "source": src,
                                           "notes": (pt.get("end_reason") or "")})
                 c["rally_end"] += 1
+            # The rally as the operator described it: who served, how many shots, how it
+            # ended. Only the end TIME was being read, so per-rally server truth for two
+            # videos sat unused -- and shot-to-player attribution is a known weak point, so
+            # that is the one axis where truth was most worth having.
+            rt = doc.setdefault("rally_truth", [])
+            st = pt.get("start_t_sec")
+            if st is not None and not any(abs(float(x["start_t_sec"]) - float(st)) < 0.5
+                                          for x in rt):
+                rt.append({"start_t_sec": round(float(st), 2), "end_t_sec": round(et, 2),
+                           "server": norm_hitter(pt.get("server")),
+                           "n_shots": pt.get("n_shots"),
+                           "end_reason": pt.get("end_reason"),
+                           "note": pt.get("note") or "", "source": src})
+                c["rally_truth"] += 1
         for a, b in zip(pts, pts[1:]):
             lo, hi = float(a.get("end_t_sec", 0)), float(b.get("start_t_sec", 0))
             if hi > lo and not any(abs(x[0] - lo) < 0.5 for x in doc["dead_intervals"]):

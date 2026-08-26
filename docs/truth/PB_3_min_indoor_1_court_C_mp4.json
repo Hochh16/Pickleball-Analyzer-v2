@@ -48,9 +48,10 @@
  },
  "provenance": [
   {
-   "at": "2026-08-25T03:24:26.648828+00:00",
+   "at": "2026-08-26T03:42:31.735213+00:00",
    "source": "import from pb_3_min_indoor_1_court_c",
    "rally_end": 10,
+   "rally_truth": 10,
    "dead_interval": 9
   }
  ],
@@ -106,5 +107,97 @@
    "notes": "out"
   }
  ],
- "updated_at_utc": "2026-08-25T03:24:27.986605+00:00"
+ "rally_truth": [
+  {
+   "start_t_sec": 8.14,
+   "end_t_sec": 13.86,
+   "server": "user",
+   "n_shots": 5,
+   "end_reason": "not-returned",
+   "note": "ended with partner hitting drive and missed by opponent.  Winning shot bounced in on opponents side",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 24.83,
+   "end_t_sec": 30.04,
+   "server": "user",
+   "n_shots": 4,
+   "end_reason": "net",
+   "note": "shot 4 was hit into the net by opponent",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 39.7,
+   "end_t_sec": 41.62,
+   "server": "user",
+   "n_shots": 1,
+   "end_reason": "out",
+   "note": "serve was out. Hit long.",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 57.8,
+   "end_t_sec": 77.0,
+   "server": "partner",
+   "n_shots": 19,
+   "end_reason": "not-returned",
+   "note": "winning shot was by partner. Ball bounced on opposing side and noone hit it back",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 86.0,
+   "end_t_sec": 92.2,
+   "server": "partner",
+   "n_shots": 5,
+   "end_reason": "not-returned",
+   "note": "winning shot by partner. Ball bounced on opposing side and noone hit it back",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 104.0,
+   "end_t_sec": 107.0,
+   "server": "partner",
+   "n_shots": 2,
+   "end_reason": "out",
+   "note": "return was hit long",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 113.0,
+   "end_t_sec": 118.0,
+   "server": "partner",
+   "n_shots": 4,
+   "end_reason": "net",
+   "note": "opponent hit winning shot at feet of user.  User hit the ball but it did Not go back over the net.",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 133.9,
+   "end_t_sec": 142.9,
+   "server": "opponent",
+   "n_shots": 9,
+   "end_reason": "out",
+   "note": "opponent hit last shot out of bounds",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 150.3,
+   "end_t_sec": 154.3,
+   "server": "opponent",
+   "n_shots": 3,
+   "end_reason": "not-returned",
+   "note": "opponent hit last shot over the net and user could not get to it",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  },
+  {
+   "start_t_sec": 165.2,
+   "end_t_sec": 173.7,
+   "server": "opponent",
+   "n_shots": 7,
+   "end_reason": "out",
+   "note": "opponent hit shot that went long",
+   "source": "legacy / pb_3_min_indoor_1_court_c"
+  }
+ ],
+ "updated_at_utc": "2026-08-26T03:42:31.775029+00:00"
 }

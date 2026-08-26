@@ -229,3 +229,37 @@ def test_a_label_the_latest_review_covers_but_does_not_list_is_demoted(tmp_path)
     assert 3.0 not in left, "a label inside the reviewed span should be overruled"
     assert 90.0 in left, "a label beyond the reviewed span is not contradicted by it"
     assert any(x["t_sec"] == 3.0 for x in doc["superseded_shots"]), "kept, not deleted"
+
+
+def test_the_operators_shot_vocabulary_is_split_into_its_fields():
+    """They type the shot the way a player says it. Compared raw against the canonical set
+    those types are absent -- and score_shot_types treats an unrecognised type as a NON-SHOT
+    label, so six real shots on court B were reported as false positives over a wording
+    difference. Splitting also recovers information: "drive/volley" states a volley."""
+    assert ts.norm_type("drive/volley") == ("drive", True, None)
+    assert ts.norm_type("drive / volley") == ("drive", True, None)
+    assert ts.norm_type("backhand drive") == ("drive", None, None)
+    assert ts.norm_type("drive - backhand") == ("drive", None, None)
+    assert ts.norm_type("3rd shot drop") == ("drop", None, "3rd")
+    assert ts.norm_type("volley dink") == ("dink", True, None)
+    # already canonical, and idempotent
+    for c in ts.CANON_TYPES:
+        assert ts.norm_type(c) == (c, None, None)
+    # "volley" alone says HOW, not what
+    assert ts.norm_type("volley") == (None, True, None)
+    # a vocabulary this cannot read stays VISIBLE rather than being guessed at
+    assert ts.norm_type("drive/dink")[0] == "drive/dink"
+    assert ts.norm_type("soft roll")[0] == "soft roll"
+    assert ts.norm_type("") == (None, None, None)
+
+
+def test_a_volley_the_operator_judged_outranks_one_read_from_the_type():
+    """A CORRECT_VOLLEY column they filled in must beat a word inside the type string."""
+    doc = ts.empty("v.mp4")
+    ts.add_shot(doc, 1.0, type_="drive/volley", volley=False, kind="review",
+                volley_explicit=True, source="sheet")
+    assert doc["shots"][0]["volley"] is False
+    doc2 = ts.empty("v.mp4")
+    ts.add_shot(doc2, 1.0, type_="drive/volley", kind="review", source="sheet")
+    assert doc2["shots"][0]["volley"] is True
+    assert doc2["shots"][0]["volley_explicit"] is True

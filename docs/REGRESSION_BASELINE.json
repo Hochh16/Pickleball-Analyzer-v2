@@ -38,7 +38,8 @@
    "rally_end_within_2s": 11,
    "rally_end_median_err_s": 1.47,
    "shot_type_correct": 52,
-   "shot_type_labelled": 111
+   "shot_type_labelled": 111,
+   "shot_type_sample_was_missed": 21
   },
   "pb_3_min_indoor_1_court_b": {
    "shots": 77,
@@ -54,6 +55,8 @@
    "between_point_shots": 11,
    "confirmed_missed_recovered": 12,
    "confirmed_missed_total": 21,
+   "server_correct": 6,
+   "server_judged": 10,
    "serve_recall": 0.8,
    "serve_precision": 0.89,
    "serve_timing_median_s": 0.34,
@@ -61,11 +64,16 @@
    "truth_missed_known": 21,
    "truth_fp_known": 0,
    "truth_missed_recovered": 12,
+   "volley_judged": 3,
+   "volley_correct": 2,
+   "volley_missed": 1,
+   "volley_invented": 0,
    "rally_end_truth": 10,
    "rally_end_within_2s": 5,
    "rally_end_median_err_s": 2.34,
-   "shot_type_correct": 4,
-   "shot_type_labelled": 12
+   "shot_type_correct": 8,
+   "shot_type_labelled": 20,
+   "shot_type_sample_was_missed": 20
   },
   "pb_3_min_indoor_1_court_c": {
    "shots": 70,
@@ -79,6 +87,8 @@
    "in_rally_shots": 58,
    "in_rally_truth": 59,
    "between_point_shots": 12,
+   "server_correct": 4,
+   "server_judged": 10,
    "serve_recall": 0.9,
    "serve_precision": 0.82,
    "rally_end_truth": 10,

@@ -20,12 +20,6 @@
      "type": "serve",
      "hitter": "partner",
      "source": "legacy / pb_5_minute_outdoor-7:labels.csv"
-    },
-    {
-     "t_sec": 3.33,
-     "type": "serve",
-     "hitter": "partner",
-     "source": "legacy / pb_5_minute_outdoor-7:labels_interactive.csv"
     }
    ]
   },
@@ -200,22 +194,14 @@
    "side": "near",
    "detected": true,
    "volley_explicit": true,
-   "notes": "hard shot at the net that landed close to kitchen on opponents side",
-   "also_seen": [
-    {
-     "t_sec": 12.2,
-     "type": "drive",
-     "hitter": "partner",
-     "source": "legacy / pb_5_minute_outdoor-7:labels.csv"
-    }
-   ]
+   "notes": "hard shot at the net that landed close to kitchen on opponents side"
   },
   {
    "t_sec": 13.4,
    "type": "drop",
    "hitter": "opponent",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "shot 8 includes partner drive followed by oppponent drive followed by user dink | shot near baseline and would have landed near kitchen but user took it out of air (volley) | next shot was volley by me (near)",
+   "notes": "shot 8 includes partner drive followed by oppponent drive followed by user dink | shot near baseline and would have landed near kitchen but user took it out of air (volley)",
    "authority": 3,
    "seq": 1787608042,
    "key": "shot_review.xlsx / pb_5_minute_outdoor-7#8",
@@ -664,8 +650,7 @@
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
    "authority": 3,
    "seq": 1787608042,
-   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#34",
-   "notes": "backhand drive by me. After that, Video also shows volley at kitchen by opponent."
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#34"
   },
   {
    "t_sec": 98.0,
@@ -1268,7 +1253,7 @@
    "type": null,
    "hitter": "partner",
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball. | not a shot. Between serves | not a shot. Between serves | not a shot. Between serves",
+   "notes": "opponent hit backhand drive into the net. Video segment also shows opponents partner picking up the ball. | not a shot. Between serves",
    "authority": 1,
    "seq": 0,
    "not_a_shot": true
@@ -2201,12 +2186,12 @@
  "totals": {},
  "provenance": [
   {
-   "at": "2026-08-25T03:24:26.664921+00:00",
+   "at": "2026-08-26T03:42:31.754418+00:00",
    "source": "import from pb_5_minute_outdoor-2",
    "new": 32
   },
   {
-   "at": "2026-08-25T03:24:26.679583+00:00",
+   "at": "2026-08-26T03:42:31.770437+00:00",
    "source": "import from pb_5_minute_outdoor-7",
    "false_positive": 45,
    "new": 89,
@@ -2221,42 +2206,6 @@
    "rally_end": 16,
    "retracted": 1,
    "free_notes": 5,
-   "fp_overruled_by_latest_review": 7
-  },
-  {
-   "at": "2026-08-25T03:24:27.322740+00:00",
-   "source": "import from pb_5_minute_outdoor-2",
-   "agreed": 26,
-   "new": 5,
-   "enriched": 1
-  },
-  {
-   "at": "2026-08-25T03:24:27.337244+00:00",
-   "source": "import from pb_5_minute_outdoor-7",
-   "false_positive": 7,
-   "agreed": 138,
-   "missed": 31,
-   "new": 3,
-   "confirmed": 69,
-   "retracted": 1,
-   "fp_overruled_by_latest_review": 7
-  },
-  {
-   "at": "2026-08-25T03:24:27.957335+00:00",
-   "source": "import from pb_5_minute_outdoor-2",
-   "agreed": 26,
-   "new": 5,
-   "enriched": 1
-  },
-  {
-   "at": "2026-08-25T03:24:27.973297+00:00",
-   "source": "import from pb_5_minute_outdoor-7",
-   "false_positive": 7,
-   "agreed": 138,
-   "missed": 31,
-   "new": 3,
-   "confirmed": 69,
-   "retracted": 1,
    "fp_overruled_by_latest_review": 7
   }
  ],
@@ -2474,5 +2423,5 @@
    "superseded_by": "the review sheet covering this span"
   }
  ],
- "updated_at_utc": "2026-08-25T03:24:27.984277+00:00"
+ "updated_at_utc": "2026-08-26T03:42:31.773150+00:00"
 }
