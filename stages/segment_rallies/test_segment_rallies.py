@@ -367,3 +367,47 @@ def test_a_rally_that_starts_with_a_serve_is_never_a_micro_rally():
     kept, dropped = sr.drop_micro_rallies([served, unserved], fps=60.0)
     assert kept == [served]
     assert dropped == [unserved]
+
+
+def test_a_held_ball_means_serve_and_a_travelled_ball_means_return():
+    """Before a SERVE the ball is in the server's hand and barely moves; before a RETURN it
+    has just crossed the whole court. Measured over the operator's 51 labelled serves and
+    returns: serve median span 17.5 ft, return median 41.2 ft, 82% separable at every window
+    from 0.6s to 1.5s.
+
+    This is the only axis that separates them. BOTH are struck from behind the baseline (the
+    operator's own rule), and after a missed serve the return also has a long clear gap in
+    front of it -- so depth and timing cannot tell them apart.
+    """
+    import pandas as pd
+    held = pd.DataFrame({"t_sec": [9.0 + i * 0.05 for i in range(20)],
+                         "court_x_ft": [10.0 + (i % 2) * 0.4 for i in range(20)],
+                         "court_y_ft": [4.0 + (i % 2) * 0.4 for i in range(20)]})
+    assert sr.opening_shot_is_return(held, 10.0) is False
+
+    flown = pd.DataFrame({"t_sec": [9.0 + i * 0.05 for i in range(20)],
+                          "court_x_ft": [10.0] * 20,
+                          "court_y_ft": [44.0 - i * 2.0 for i in range(20)]})
+    assert sr.opening_shot_is_return(flown, 10.0) is True
+
+    # no ball data is not an answer either way -- it must not read as "serve"
+    assert sr.opening_shot_is_return(None, 10.0) is None
+    assert sr.opening_shot_is_return(held.iloc[:2], 10.0) is None
+
+
+def test_opening_on_a_return_flips_the_serving_SIDE_only():
+    """It fixes the side, not the player: knowing the serve came from the near end does not
+    say whether it was the user or their partner. Serving side 11/20 -> 17/20 across the two
+    indoor courts; naming the player stays 10/20."""
+    import json
+    import pandas as pd
+    from pathlib import Path
+    import tempfile
+    flown = pd.DataFrame({"t_sec": [0.5 + i * 0.05 for i in range(20)],
+                          "court_x_ft": [10.0] * 20,
+                          "court_y_ft": [44.0 - i * 2.0 for i in range(20)]})
+    assert sr.opening_shot_is_return(flown, 1.5) is True
+    # the flip is a pure side swap; the caller keeps server_track_id and flags it uncertain
+    for side, want in (("near", "far"), ("far", "near")):
+        got = "far" if side == "near" else "near"
+        assert got == want

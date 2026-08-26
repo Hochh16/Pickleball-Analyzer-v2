@@ -166,7 +166,7 @@ def measure(clip: Path) -> Dict[str, object]:
             for role, info in (roles.get("roles") or {}).items():
                 for tid in (info.get("track_ids") or []):
                     by_track[int(tid)] = _ts3.norm_hitter(role)
-            ok = judged = 0
+            ok = judged = side_ok = side_judged = 0
             for r in rt:
                 if not r.get("server"):
                     continue
@@ -184,9 +184,21 @@ def measure(clip: Path) -> Dict[str, object]:
                     continue
                 judged += 1
                 ok += int(got == r["server"])
+                # The serving SIDE, scored separately. It is what the ball-span correction
+                # actually fixes: knowing the serve came from the near end does not say
+                # whether it was the user or their partner, so the two must not be reported
+                # as one number.
+                want = "far" if r["server"] == "opponent" else "near"
+                mine = best.get("server_side") or (
+                    "far" if got == "opponent" else "near")
+                side_judged += 1
+                side_ok += int(mine == want)
             if judged:
                 m["server_correct"] = ok
                 m["server_judged"] = judged
+            if side_judged:
+                m["server_side_correct"] = side_ok
+                m["server_side_judged"] = side_judged
     except (KeyError, OSError, ValueError, TypeError):
         pass
 
@@ -330,6 +342,7 @@ def render(results: Dict[str, Dict], base: Dict[str, Dict]) -> int:
                   "in_rally_shots", "in_rally_truth", "between_point_shots",
                   "junk_in_rallies", "real_outside_rallies",
                   "server_correct", "server_judged",
+                  "server_side_correct", "server_side_judged",
                   "serve_recall", "serve_precision", "serve_timing_median_s",
                   "shot_type_correct", "shot_type_labelled",
                   "shot_type_sample_was_missed",

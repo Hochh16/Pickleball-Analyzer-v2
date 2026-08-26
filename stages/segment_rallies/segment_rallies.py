@@ -56,6 +56,27 @@ BALL_DEAD_RUN_SEC = 1.5
 # visibility, 12 px/frame, four same-side contacts). A SHORT same-side gap is left
 # alone: that is a missed opponent shot mid-rally, which must NOT split the rally.
 SAME_SIDE_STALL_SEC = 3.0
+# --- Was the rally's opening shot really the SERVE? --------------------------------------
+# Before a SERVE the ball is in the server's hand: it barely moves. Before a RETURN it has
+# just crossed the whole court. Measured over the operator's 51 labelled serves and returns,
+# the ball's positional SPAN in the second before contact separates them at 82%, and the same
+# 82% at every window from 0.6s to 1.5s -- stable, unlike a threshold fitted to noise.
+#
+#     serves  median span 17.5 ft        returns  median span 41.2 ft
+#
+# This matters because a serve and a return are indistinguishable on the axes Stage 5 can
+# see: BOTH are struck from behind the baseline (the operator's own rule), and after a missed
+# serve the return also has a long clear gap in front of it. So when a serve goes undetected
+# we flag its RETURN as the serve and credit the receiving side -- half of all server errors.
+# The same signature catches junk: the "serve" at 0:41.40 on court C is the operator picking
+# the ball up after a serve that went out, and the ball had just flown the length of the
+# court.
+#
+# It fixes the SIDE, not the player: knowing the serve came from the near end does not say
+# whether it was the user or their partner. Serving side 11/20 -> 17/20; naming the player
+# stays 10/20 and needs something this cannot supply.
+SERVE_BALL_SPAN_FT = 20.0
+SERVE_SPAN_LOOK_S = 1.0
 # Inter-shot TIME GAP that separates rallies (primary boundary). Within one rally
 # regardless of side. In real play contacts are 0.5-2 s apart (a high lob ~3 s at
 # most); even one missed shot only doubles that. Gaps beyond this are dead time
@@ -345,6 +366,43 @@ def apply_rally_ends(shots: List[dict], ends: List[dict], log=None,
     return n
 
 
+def ball_span_before(b3, t_sec: float, look_s: float = SERVE_SPAN_LOOK_S):
+    """How far the ball ranged in the window before `t_sec`, in feet. None if too few samples.
+
+    A SPAN (bounding-box diagonal), not a path length: a held ball's reconstruction jitters,
+    which inflates path length but not span.
+    """
+    if b3 is None:
+        return None
+    seg = b3[(b3.t_sec >= t_sec - look_s) & (b3.t_sec < t_sec - 0.05)]
+    if len(seg) < 4:
+        return None
+    import numpy as np
+    x = seg.court_x_ft.to_numpy()
+    y = seg.court_y_ft.to_numpy()
+    if not (np.isfinite(x).any() and np.isfinite(y).any()):
+        return None
+    return float(np.hypot(np.nanmax(x) - np.nanmin(x), np.nanmax(y) - np.nanmin(y)))
+
+
+def opening_shot_is_return(b3, t_sec: float) -> Optional[bool]:
+    """True when the ball had just travelled, i.e. this shot ANSWERS one we did not detect."""
+    span = ball_span_before(b3, t_sec)
+    if span is None:
+        return None
+    return span >= SERVE_BALL_SPAN_FT
+
+
+def load_ball_3d(path: Path):
+    if not path.exists():
+        return None
+    try:
+        import pandas as pd
+        return pd.read_parquet(path, columns=["t_sec", "court_x_ft", "court_y_ft"])
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def drop_micro_rallies(rally_groups: List[List[dict]], fps: float,
                        min_sec: float = MIN_RALLY_SEC,
                        min_shots: int = MIN_RALLY_SHOTS
@@ -556,6 +614,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # Ball visibility drives the rally boundary on the real ball: a point breaks
     # only when the ball goes out of play (sustained not-in-play run).
     ball_known = load_ball_known(folder / "ball.parquet") if gap_split else None
+    ball_3d = load_ball_3d(folder / "ball_3d.parquet") if gap_split else None
 
     shots = sorted(classified.get("shots", []), key=lambda s: int(s["frame"]))
     bounces = sorted(bounces_doc.get("bounces", []),
@@ -614,6 +673,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         last_frame = int(last_shot["frame"])
         serve = rally_shots[0]
         start_frame = int(serve["frame"])
+        # Did this rally open on the serve, or on the shot that ANSWERED a serve we missed?
+        opened_on_return = opening_shot_is_return(ball_3d, start_frame / fps)
+        server_side = serve.get("hitter_side")
+        if opened_on_return and server_side in ("near", "far"):
+            server_side = "far" if server_side == "near" else "near"
         # End frame is max(last shot frame, ending bounce frame).
         if ending_bid is not None:
             ebf = next((int(b["frame"]) for b in bounces
@@ -639,6 +703,17 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # should treat server attribution / serve-fault stats as lower
             # confidence for these. Always False on the synthetic path.
             "serve_is_inferred": bool(gap_split and not serve.get("is_serve")),
+            # The serving SIDE, corrected when the opening shot turns out to be a return.
+            # Prefer this over server_track_id wherever the side is what matters:
+            # server_track_id then names a player on the WRONG side, and correcting it is not
+            # possible from this evidence -- knowing the serve came from the near end does not
+            # say whether it was the user or their partner.
+            "server_side": server_side,
+            "opened_on_return": bool(opened_on_return),
+            "server_track_id_uncertain": bool(opened_on_return),
+            "opening_ball_span_ft": (round(ball_span_before(ball_3d, start_frame / fps), 1)
+                                     if ball_span_before(ball_3d, start_frame / fps)
+                                     is not None else None),
             "end_reason": end_reason,
             "end_reason_confidence": round(conf, 3),
             "ending_bounce_id": ending_bid,
