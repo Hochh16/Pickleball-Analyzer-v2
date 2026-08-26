@@ -173,6 +173,65 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## THE SERVE DETECTOR HAS GONE INERT (2026-08-26)
+
+Operator asked how we know who hits each shot, given they identified themselves at setup.
+Two separate mechanisms, and measuring them separated the problem cleanly.
+
+**Attribution is not the problem.** A shot is credited to the closest player at contact --
+wrist from pose first, then bbox, then foot. Scored against the operator's labelled hitters
+on the two reviewed clips: **135/139 = 97% correct**, with 3 spatial misses and 1 frame where
+the right player was not tracked. Identity is a setup CLICK (confidence 0.95) propagated to
+the tracker's other fragments by appearance+height, simultaneity and continuity; it works.
+
+**The serve detector fires on a condition that no longer occurs.** A serve has no incoming
+ball trajectory, so the impulse detector is blind to it and a dedicated rule handles it: the
+ball REAPPEARS after >= 0.7 s of not being visible (dead time), with an outgoing launch, near
+a player. That was right when the ball was untracked between points. **TrackNet v4 now tracks
+the ball straight through the dead time** -- held, bounced, carried -- so the gap never opens:
+
+| | |
+|---|---|
+| operator serves where a >= 0.7 s invisible gap still exists | **9 of 24** |
+| on the acceptance clip alone | **2 of 14** |
+| serves we actually flag, at a 0.75 s match window | **9 of 24** |
+
+The two numbers are the same nine. The detector fires exactly when its trigger holds and
+nowhere else. Lowering the gap does not recover them (swept 0.7 -> 0.15 s: no gain, more
+false serves) -- the condition is wrong, not mistuned.
+
+**This is the third time a filter has gone inert under a better ball track**, after the
+ground-ball filter. The lesson stands and is now cheap to act on: every closed accuracy claim
+needs a standing score, because an improvement upstream can silently disable the thing that
+depended on the old weakness.
+
+### What it costs, downstream
+
+A missed serve is not one missing shot. The rally then opens on the RETURN, which is
+indistinguishable on every axis Stage 5 can see -- both are struck from behind the baseline,
+and after a missed serve the return also has a long clear gap in front of it. So:
+
+* the receiving side is credited as the server (half of all server errors),
+* the rally START shifts a shot later, which drags the measured rally END with it,
+* the third shot -- a core USAPA item -- is the wrong shot.
+
+Beware the match window when reading serve recall: **9/24 at 0.75 s, 13/24 at 1.0 s, 21/24 at
+1.5 s.** The extra eight only appear once the window spans the serve-to-return interval, so
+they are returns. Any serve figure quoted without its tolerance is meaningless.
+
+### The next fix
+
+Trigger the serve on the ball being AT REST on the server's side rather than ABSENT. The
+signal is already validated for the neighbouring question: the ball's positional span in the
+second before contact separates the operator's 51 labelled serves and returns at 82%, and at
+the same 82% for every window from 0.6 s to 1.5 s. It is a sustained, relative measurement,
+which is the kind this reconstruction answers well.
+
+Not attempted yet: span alone is not sufficient as a detector (real serves range 5-52 ft of
+pre-contact span, because the previous point's ball is sometimes still moving), so it needs
+pairing with the rally-end gate -- after a trusted end, the next launch from the serving side
+is the serve.
+
 ## SERVER ATTRIBUTION — 50%, and the cause is the RETURN being flagged as the serve (2026-08-24)
 
 Newly measurable: the operator recorded who served every point on both indoor courts, and
