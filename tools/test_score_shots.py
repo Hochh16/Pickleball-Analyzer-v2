@@ -29,7 +29,19 @@ CLIP = Path("data/pb_5_minute_outdoor-7")
 # serve return tie-break. Serve accuracy is scored separately by tools/score_serves.py --
 # a Stage 5 change can move BOTH, and one earlier version of the strength rule bought
 # 22/34 here by dropping serve recall to 50%. Never tighten these without re-running it.
-MAX_FALSE_POSITIVES = 23   # 34 -> 29 (latch) -> 23 (strength rule at 8s)
+# 2026-08-26: 23 -> 24. The same-side run now keeps the contact the BALL LEAVES ON rather
+# than the strongest impact, because the strongest impact in a pre-serve handling run is a
+# BOUNCE and the serve was the one shot systematically discarded. The trade, measured across
+# the operator's labelled serves on two clips:
+#
+#     serves FLAGGED           10/25 -> 17/25        shot types correct   95/191 -> 104/191
+#     serve contacts detected  13/25 -> 19/25        volleys correct      83/114 ->  93/114
+#     previously-missed real shots recovered  +8     false positives      23 -> 24
+#
+# One extra false positive against seven recovered serves and eight recovered real shots.
+# The bar moves because the cost was measured, not because it was in the way -- if it ever
+# rises without a block like this beside it, that is the creep it exists to catch.
+MAX_FALSE_POSITIVES = 24   # 34 -> 29 (latch) -> 23 (strength rule at 8s) -> 24 (ball-leaves-on)
 MIN_REAL_SHOTS_KEPT = 94   # 91 -> 94; the strength rule recovers real shots, not just junk
 MAX_WRONG_PLAYER = 1       # was 7; these were never attribution errors -- see KNOWN_ISSUES
 

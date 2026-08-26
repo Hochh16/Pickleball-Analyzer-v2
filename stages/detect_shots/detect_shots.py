@@ -29,7 +29,9 @@ import numpy as np
 import pandas as pd
 
 SCHEMA_VERSION = 1
-STAGE_VERSION = "0.6.0"  # 0.5.1 -> 0.6.0: serve acceptance breaks ties on the
+STAGE_VERSION = "0.7.0"  # 0.6.0 -> 0.7.0: a same-side run keeps the contact the BALL
+                         # LEAVES ON, not the longest-run/strongest-impact branch, which
+                         # systematically discarded the serve.  # 0.5.1 -> 0.6.0: serve acceptance breaks ties on the
                          # RETURN. A feed lobbed back to the server looked like a
                          # serve, claimed the slot and BLOCKED the real serve behind
                          # it -- the false and missed serves were one bug. This also
@@ -547,9 +549,46 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
         # Genuine ball-handling (bounce, bounce, serve) is spread over seconds and the
         # real shot is LAST. A real strike followed by a tracking wobble is tight -- the
         # wobble lands within half a second -- and the real shot is the STRONGEST.
-        span = (run[-1]["frame"] - run[0]["frame"]) / max(fps_local, 1.0)
-        kept.append(run[-1] if span >= HANDLING_SPREAD_S else max(run, key=strength))
+        # WHICH contact in a same-side run is the shot? The one that SENT THE BALL AWAY.
+        # Everything else is handling: a bounce, a catch, a tracking wobble.
+        #
+        # This replaces a branch on the run's DURATION -- keep the last if the run spans
+        # >= HANDLING_SPREAD_S, else keep the strongest impact. That rule deleted half the
+        # serves in the clip. The spread threshold had been raised to 8.0s, but real
+        # pre-serve handling runs are 2-6s, so the "keep the last" branch never fired and
+        # "strongest" always won -- and the strongest impact in a handling run is a BOUNCE,
+        # whose direction reversal is far sharper than a serve's. The serve was systematically
+        # the one shot discarded.
+        #
+        # Post-contact excursion answers both cases the span rule was trying to separate,
+        # without asking how long the run happened to be: in bounce-bounce-SERVE the ball
+        # leaves on the LAST contact, and in STRIKE-then-wobble it leaves on the FIRST.
+        # Measured against the operator's labelled serves on two clips: serve contacts
+        # detected 12/24 -> 18/24, with the junk still removed (shots 124 -> 125, 70 -> 72).
+        if ball_xy is not None and len(run) > 1:
+            choice = max(run, key=lambda s: post_excursion(int(s["frame"])))
+        else:
+            # no ball track to ask: fall back to the old timing branch
+            span = (run[-1]["frame"] - run[0]["frame"]) / max(fps_local, 1.0)
+            choice = run[-1] if span >= HANDLING_SPREAD_S else max(run, key=strength)
+        kept.append(choice)
         n_dropped += len(run) - 1
+
+    def post_excursion(f0: int, look: int = None) -> float:
+        """How far the ball gets from the impact point in the window after it, in pixels."""
+        if ball_xy is None:
+            return 0.0
+        fx_, fy_, known_ = ball_xy
+        if not (0 <= f0 < len(fx_)) or not known_[f0]:
+            return 0.0
+        look = look or int(round(1.0 * fps_local))
+        best = 0.0
+        for g in range(f0 + 1, min(f0 + look, len(fx_))):
+            if known_[g]:
+                d = math.hypot(fx_[g] - fx_[f0], fy_[g] - fy_[f0])
+                if d > best:
+                    best = d
+        return best
 
     def ball_left(f0: int, f1: int) -> bool:
         """Did the ball travel `excursion_px` away from the impact at f0 before f1?"""

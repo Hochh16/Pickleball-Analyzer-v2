@@ -56,6 +56,12 @@ POST_STAGES = ["detect_shots", "detect_bounces", "ball_trajectory", "classify_sh
 # folders share one video and the truth belongs to the video.
 VIDEO_TRUTH = {
     "PB 5 minute outdoor.mp4": {"shots_truth": 98, "volleys_truth": 17, "bounces_truth": 81,
+                                # dinks_truth is the 2026-07-22 acceptance figure for
+                                # pb_5_minute_outdoor-2. The operator's own shot-by-shot
+                                # review of THIS clip counts 32, so the truth store wins
+                                # below; 18 is kept only as the fallback for a clip with no
+                                # review. Reading 34-vs-18 as a threefold over-count -- which
+                                # I did -- is what a stale truth costs.
                                 "serves_truth": 14, "dinks_truth": 18},
 }
 
@@ -225,6 +231,20 @@ def measure(clip: Path) -> Dict[str, object]:
             m["truth_shots_known"] = len(st["shots"])
             m["truth_missed_known"] = len(kn_missed)
             m["truth_fp_known"] = len(st["false_positives"])
+            # The operator's shot-by-shot review supersedes the 2026-07-22 acceptance
+            # counts wherever it covers the same video. Those constants describe a
+            # DIFFERENT analysed folder of it, and reading 34 dinks against a stale 18
+            # looks like a threefold over-count when the review says 32.
+            # ...but ONLY when the review covers the whole clip. Court B's typed shots are
+            # every one of them a shot we MISSED (it came from a missed-shot review), so its
+            # "2 dinks" is two dinks among the misses, not the clip's total -- and printing
+            # that beside our 20 invents a tenfold error out of nothing.
+            typed = [s for s in st["shots"] if s.get("type") and not s.get("not_a_shot")]
+            n_missed = sum(1 for s in typed if s.get("detected") is False)
+            whole_clip = typed and n_missed < len(typed) / 2
+            if whole_clip:
+                for field, ty in (("dinks_truth", "dink"), ("serves_truth", "serve")):
+                    m[field] = sum(1 for s in typed if s.get("type") == ty)
             # What the rally gate is actually for: keeping known junk OUT of the rally
             # stream while leaving real play in. Neither `fp_emitted` nor `in_rally_shots`
             # could see it -- the first reads classified.json, which the gate never

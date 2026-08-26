@@ -4,7 +4,7 @@
   {
    "t_sec": 10.13,
    "reason": "out",
-   "by_shot_t": 7.85,
+   "by_shot_t": 8.08,
    "hitter_side": "near",
    "hitter_is_user": false,
    "bounce_xy_ft": [
@@ -24,14 +24,14 @@
    "trusted": true
   },
   {
-   "t_sec": 28.72,
+   "t_sec": 35.23,
    "reason": "out",
-   "by_shot_t": 27.88,
-   "hitter_side": "far",
+   "by_shot_t": 33.87,
+   "hitter_side": "near",
    "hitter_is_user": false,
    "bounce_xy_ft": [
-    2.5,
-    48.5
+    11.1,
+    49.1
    ],
    "outcome": "hitter_loses",
    "trusted": false
@@ -81,14 +81,14 @@
    "trusted": true
   },
   {
-   "t_sec": 74.73,
+   "t_sec": 73.28,
    "reason": "not-returned",
-   "by_shot_t": 74.5,
-   "hitter_side": "near",
-   "hitter_is_user": true,
+   "by_shot_t": 72.33,
+   "hitter_side": "far",
+   "hitter_is_user": false,
    "bounce_xy_ft": [
-    6.9,
-    4.0
+    9.5,
+    8.7
    ],
    "outcome": "hitter_wins",
    "trusted": false
@@ -122,8 +122,8 @@
   {
    "t_sec": 105.18,
    "reason": "out",
-   "by_shot_t": 104.6,
-   "hitter_side": "near",
+   "by_shot_t": 104.15,
+   "hitter_side": "far",
    "hitter_is_user": false,
    "bounce_xy_ft": [
     8.3,
@@ -136,6 +136,15 @@
    "t_sec": 111.02,
    "reason": "net",
    "by_shot_t": 110.18,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "outcome": "hitter_loses",
+   "trusted": true
+  },
+  {
+   "t_sec": 116.7,
+   "reason": "net",
+   "by_shot_t": 114.27,
    "hitter_side": "far",
    "hitter_is_user": false,
    "outcome": "hitter_loses",
@@ -170,30 +179,52 @@
   {
    "t_sec": 139.23,
    "reason": "net",
-   "by_shot_t": 138.22,
-   "hitter_side": "far",
-   "hitter_is_user": false,
+   "by_shot_t": 137.35,
+   "hitter_side": "near",
+   "hitter_is_user": true,
    "outcome": "hitter_loses",
    "trusted": true
+  },
+  {
+   "t_sec": 142.68,
+   "reason": "net",
+   "by_shot_t": 142.45,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "outcome": "hitter_loses",
+   "trusted": true
+  },
+  {
+   "t_sec": 147.2,
+   "reason": "not-returned",
+   "by_shot_t": 146.5,
+   "hitter_side": "far",
+   "hitter_is_user": false,
+   "bounce_xy_ft": [
+    6.4,
+    9.4
+   ],
+   "outcome": "hitter_wins",
+   "trusted": false
   },
   {
    "t_sec": 155.82,
    "reason": "net",
-   "by_shot_t": 153.68,
+   "by_shot_t": 153.92,
    "hitter_side": "far",
    "hitter_is_user": false,
    "outcome": "hitter_loses",
    "trusted": true
   },
   {
-   "t_sec": 160.53,
+   "t_sec": 168.32,
    "reason": "out",
-   "by_shot_t": 159.05,
+   "by_shot_t": 166.58,
    "hitter_side": "near",
    "hitter_is_user": true,
    "bounce_xy_ft": [
-    -3.1,
-    42.6
+    -5.4,
+    45.7
    ],
    "outcome": "hitter_loses",
    "trusted": false
@@ -223,15 +254,6 @@
    ],
    "outcome": "hitter_loses",
    "trusted": false
-  },
-  {
-   "t_sec": 180.13,
-   "reason": "net",
-   "by_shot_t": 180.13,
-   "hitter_side": "near",
-   "hitter_is_user": false,
-   "outcome": "hitter_loses",
-   "trusted": true
   },
   {
    "t_sec": 200.73,
@@ -269,27 +291,14 @@
    "trusted": true
   },
   {
-   "t_sec": 211.78,
+   "t_sec": 221.25,
    "reason": "out",
-   "by_shot_t": 209.4,
-   "hitter_side": "far",
-   "hitter_is_user": false,
+   "by_shot_t": 219.77,
+   "hitter_side": "near",
+   "hitter_is_user": true,
    "bounce_xy_ft": [
-    5.7,
-    46.4
-   ],
-   "outcome": "hitter_loses",
-   "trusted": false
-  },
-  {
-   "t_sec": 222.27,
-   "reason": "out",
-   "by_shot_t": 221.83,
-   "hitter_side": "far",
-   "hitter_is_user": false,
-   "bounce_xy_ft": [
-    44.8,
-    -50.7
+    4.7,
+    45.6
    ],
    "outcome": "hitter_loses",
    "trusted": false
@@ -317,9 +326,22 @@
    "trusted": true
   },
   {
+   "t_sec": 234.03,
+   "reason": "out",
+   "by_shot_t": 233.05,
+   "hitter_side": "near",
+   "hitter_is_user": true,
+   "bounce_xy_ft": [
+    -1.0,
+    47.4
+   ],
+   "outcome": "hitter_loses",
+   "trusted": false
+  },
+  {
    "t_sec": 252.8,
    "reason": "net",
-   "by_shot_t": 251.17,
+   "by_shot_t": 251.72,
    "hitter_side": "near",
    "hitter_is_user": true,
    "outcome": "hitter_loses",

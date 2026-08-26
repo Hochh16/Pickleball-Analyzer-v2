@@ -173,6 +173,66 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## THE SERVE WAS BEING DELETED BY THE HANDLING FILTER — FIXED (2026-08-26)
+
+Two compounding faults, not one. The inert serve detector (below) was the second.
+
+**The first: `reject_same_side_runs` was discarding the serve itself.** A serve is preceded
+by the server's own bouncing, so those contacts form one same-side run and only one survives.
+The rule branched on the run's DURATION -- keep the last if the run spans >= 8 s, else keep
+the strongest impact. Real pre-serve runs are 2-6 s, so the "keep the last" branch **never
+fired**, and the strongest impact in a handling run is a BOUNCE, whose direction reversal is
+far sharper than a serve's. The serve was the one shot reliably thrown away:
+
+    RUN span=4.32s rule=strongest kept=3.80 of [3.8, 4.23, 4.6, 5.22, 5.47, 5.74, 5.99,
+                                                6.45, 7.55, 7.77, 8.12]
+                                                       the operator's serve at 8.25 is here
+
+Confirmed by disabling the filter: **11 of the 12 missing serve contacts reappeared.** The
+filter still has to run -- it removes ~200 junk detections per clip -- so the question is
+which shot it keeps.
+
+**The fix asks what the run is actually about: which contact SENT THE BALL AWAY.** That is
+the shot; everything else is handling. It settles both cases the duration rule was straining
+to separate, without caring how long the run happened to be: in bounce-bounce-SERVE the ball
+leaves on the LAST contact, in STRIKE-then-wobble it leaves on the FIRST.
+
+| | before | after |
+|---|---|---|
+| serve contacts detected | 13/25 | **19/25** |
+| serves FLAGGED as serves | 10/25 | **17/25** |
+| shot types correct | 95/191 | **104/191** |
+| volleys correct | 83/114 | **93/114** |
+| servers named | 10/20 | **12/20** |
+| previously-missed real shots recovered | | **+8** |
+| false positives (acceptance bar) | 23 | 24 |
+
+### Two things that were tried first and did NOT work
+
+* **"The ball is at rest before a serve."** It is not. Pre-contact ball motion is 83 px for
+  serves against 118 px for every other shot -- the best split reaches 87% accuracy only by
+  calling almost nothing a serve (0% serve recall). Measured before building on it.
+* **Lowering the invisible-gap threshold** (0.7 s -> 0.15 s): no serves gained, more false
+  ones. The condition is wrong, not mistuned.
+
+### Residuals, honestly
+
+* Four shots on the acceptance clip now sit 0.24-0.65 s BEFORE the rally that should contain
+  them -- the run's chosen contact shifted by one. `real_outside_rallies` 0 -> 4.
+* Court C over-emits dinks badly: 17 against the operator's 5. Outdoor is close (34 vs 32).
+* Court B moved slightly the wrong way on several counts.
+
+### A stale truth that cost me an hour of wrong conclusions
+
+`dinks_truth = 18` in the regression is the 2026-07-22 acceptance figure for
+`pb_5_minute_outdoor-2`. The operator's own shot-by-shot review of `outdoor-7` counts **32**.
+Reading our 34 against the stale 18 looks like a threefold over-count; against the real 32 it
+is nearly exact, and the change that produced it was an improvement. The review now
+supersedes those constants wherever it covers the same video -- **but only when it covers the
+WHOLE clip**: court B's typed shots are every one of them a shot we MISSED, so its "2 dinks"
+is two among the misses, and printing that beside our 20 invents a tenfold error out of
+nothing.
+
 ## THE SERVE DETECTOR HAS GONE INERT (2026-08-26)
 
 Operator asked how we know who hits each shot, given they identified themselves at setup.
