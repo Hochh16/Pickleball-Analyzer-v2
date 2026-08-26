@@ -263,3 +263,44 @@ def test_a_volley_the_operator_judged_outranks_one_read_from_the_type():
     ts.add_shot(doc2, 1.0, type_="drive/volley", kind="review", source="sheet")
     assert doc2["shots"][0]["volley"] is True
     assert doc2["shots"][0]["volley_explicit"] is True
+
+
+def test_a_correction_given_outside_a_sheet_lands_and_wins(tmp_path):
+    """The operator corrects things in conversation -- "reset at 1:11.24 is my mistake, it's
+    a drop". Editing their own xlsx is wrong twice over (their file, and Excel holds a lock
+    on it half the time), and editing the store directly is worse: it is rebuilt from sources
+    on every import, so the correction would vanish at the next --import-all."""
+    clip = tmp_path / "clip"
+    (clip / "_labeling").mkdir(parents=True)
+    (clip / "_labeling" / "corrections.csv").write_text(
+        "time,type,hitter,volley,not_a_shot,note\n"
+        "0:05.00,drop,user,no,,it is a drop\n"
+        "0:09.00,,,,y,a feed\n", encoding="utf-8")
+    doc = ts.empty("v.mp4")
+    ts.add_shot(doc, 5.0, type_="reset", kind="review", source="sheet", seq=1)
+    ts.add_shot(doc, 9.0, type_="drive", kind="review", source="sheet", seq=1)
+    ts.import_corrections_csv(doc, clip)
+    at5 = next(s for s in doc["shots"] if abs(s["t_sec"] - 5.0) < 0.1)
+    assert at5["type"] == "drop", "a later correction must overrule the sheet"
+    at9 = next(s for s in doc["shots"] if abs(s["t_sec"] - 9.0) < 0.1)
+    assert at9.get("not_a_shot") is True
+    assert doc["false_positives"] and doc["false_positives"][0]["t_sec"] == 9.0
+
+
+def test_both_rally_end_facts_are_kept_but_counted_once():
+    """Operator, 2026-08-26: "rally ending last shot and rally ending time should be
+    compatible info but should not double the count of rally ends." They are two
+    measurements of one point, so neither is discarded -- only the count is deduplicated."""
+    doc = ts.empty("v.mp4")
+    doc["rally_ends"] = [
+        {"t_sec": 12.36, "source": "shot_review.xlsx / c", "notes": "winning shot"},
+        {"t_sec": 13.86, "source": "legacy / c", "notes": "not-returned"},
+        {"t_sec": 40.00, "source": "legacy / c", "notes": "a point with no shot mark"},
+    ]
+    ts._fold_shadowed_ends(doc)
+    assert len(doc["rally_ends"]) == 2, "one point must count once"
+    shot_end = next(e for e in doc["rally_ends"] if e["t_sec"] == 12.36)
+    assert shot_end["rally_over_t_sec"] == 13.86, "the rally-level time must be kept"
+    assert "not-returned" in shot_end["notes"]
+    # a rally-level end with no shot mark near it still stands on its own
+    assert any(e["t_sec"] == 40.00 for e in doc["rally_ends"])

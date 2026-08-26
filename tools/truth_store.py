@@ -421,12 +421,16 @@ def _fold_shadowed_fps(doc: dict) -> int:
 
 
 def _fold_shadowed_ends(doc: dict) -> int:
-    """A rally END the operator marked on the SHOT supersedes the rally-level one.
+    """A rally END marked on the SHOT and the rally-level end TIME are one point, not two.
 
     The review sheet's RALLY_END marks the shot that ended the point; truth.json's
     `end_t_sec` marks when the rally was over, which trails the ending strike by 0.9-1.9s
     (measured across court C's ten points). They are the same event, so keeping both doubles
     the rally-end count -- court C reported 20 ends for 10 points.
+
+    Both facts are kept -- the shot-level end carries `rally_over_t_sec` -- because they
+    answer different questions: which shot ended the point, and when the ball was finally
+    done. Only the COUNT is deduplicated.
 
     Matched ACROSS SOURCES only, never within one. Two ends 1.08s apart from the same review
     are two real points on the acceptance clip, and a window alone would merge them.
@@ -440,18 +444,25 @@ def _fold_shadowed_ends(doc: dict) -> int:
         if e in review:
             keep.append(e)
             continue
-        if any(abs(float(r["t_sec"]) - float(e["t_sec"])) <= END_SHADOW_S for r in review):
+        near = [r for r in review
+                if abs(float(r["t_sec"]) - float(e["t_sec"])) <= END_SHADOW_S]
+        if near:
+            # KEEP BOTH FACTS, COUNT ONE END. Operator, 2026-08-26: "rally ending last shot
+            # and rally ending time should be compatible info but should not double the count
+            # of rally ends." They are two measurements of one point -- the shot that ended it
+            # and the moment the ball was done -- and each answers a different question, so
+            # neither is discarded. The rally-level time rides along on the shot-level end.
+            r = min(near, key=lambda x: abs(float(x["t_sec"]) - float(e["t_sec"])))
+            r["rally_over_t_sec"] = round(float(e["t_sec"]), 2)
+            r["rally_over_source"] = e.get("source")
+            if e.get("notes") and e["notes"] not in (r.get("notes") or ""):
+                r["notes"] = ((r.get("notes") or "") + " | " + e["notes"]).strip(" |")
             moved.append(e)
         else:
             keep.append(e)
     if not moved:
         return 0
     doc["rally_ends"] = keep
-    prior = doc.setdefault("superseded_rally_ends", [])
-    for e in moved:
-        if not any(abs(float(x["t_sec"]) - float(e["t_sec"])) < 0.01
-                   and x.get("source") == e.get("source") for x in prior):
-            prior.append(e)
     return len(moved)
 
 
@@ -692,6 +703,51 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
     return dict(c)
 
 
+def import_corrections_csv(doc: dict, clip: Path) -> Dict[str, int]:
+    """`_labeling/corrections.csv` — corrections the operator gave OUTSIDE a review sheet.
+
+    They correct things in conversation ("reset at 1:11.24 is my mistake, it's a drop"), and
+    those have to land somewhere durable. Editing their own xlsx is wrong twice over: it is
+    their file, and Excel holds a lock on it half the time. A direct edit to the store is
+    worse -- it is rebuilt from sources on every import, so the correction would silently
+    vanish at the next `--import-all`.
+
+    Columns: time, type, hitter, volley, not_a_shot, note. Review authority, and a seq above
+    any sheet's mtime so a correction given after a review wins over it.
+    """
+    p = clip / "_labeling" / "corrections.csv"
+    if not p.exists():
+        return {}
+    from tools.shot_review_sheet import parse_clock
+    c = Counter()
+    src = f"corrections.csv / {clip.name}"
+    seq = int(p.stat().st_mtime) + 10 ** 9      # always newer than a sheet
+    with p.open(encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            t = parse_clock(row.get("time"))
+            if t is None:
+                continue
+            note = (row.get("note") or "").strip()
+            if str(row.get("not_a_shot") or "").strip().lower().startswith("y"):
+                if _find(doc["false_positives"], t) is None:
+                    doc["false_positives"].append({"t_sec": round(t, 2), "source": src,
+                                                   "notes": note})
+                    c["false_positive"] += 1
+                prior = _find(doc["shots"], t)
+                if prior is not None:
+                    prior["not_a_shot"] = True
+                    prior["type"] = None
+                    c["retracted"] += 1
+                continue
+            vol = {"yes": True, "no": False}.get(
+                str(row.get("volley") or "").strip().lower())
+            c[add_shot(doc, t, type_=(row.get("type") or "").strip().lower() or None,
+                       hitter=(row.get("hitter") or "").strip() or None, volley=vol,
+                       source=src, notes=note, kind="review",
+                       volley_explicit=vol is not None, seq=seq)] += 1
+    return dict(c)
+
+
 def import_legacy(doc: dict, clip: Path) -> Dict[str, int]:
     """Everything the project already knew about this video, in its scattered forms."""
     c = Counter()
@@ -890,6 +946,7 @@ def main(argv=None) -> int:
             # weakest source first, so the strongest one supersedes rather than colliding
             got = Counter(import_legacy(doc, clip))
             got.update(import_review_xlsx(doc, clip))
+            got.update(import_corrections_csv(doc, clip))
             if got:
                 note_provenance(doc, f"import from {clip.name}", dict(got))
                 print(f"  {clip.name:<34} -> {v:<28} {dict(got)}")
