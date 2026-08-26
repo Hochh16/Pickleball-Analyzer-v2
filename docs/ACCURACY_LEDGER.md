@@ -206,17 +206,45 @@ a window, the kind this reconstruction handles. It does not separate them:
 The apparent "77% at an 11 ft split" on the no-landing subset is **the majority class**: 30 of
 those 39 shots are drives, so predicting "drive" for everything scores 77%. Not a signal.
 
-### The lead worth taking next
+### Four ways to replace the missing landing, all measured, none sufficient
 
-`bounces_height.json` holds **131 floor contacts on court C and 175 on the acceptance clip**,
-against 43 and 76 in `bounces.json` -- and `tools/detect_rally_ends.py` already prefers it
-("~1.8x more in-play bounces"). Stage 6 reads only `bounces.json`, so it is guessing at
-landings that may already be measured next door.
+The operator proposed three of these (2026-08-26); the fourth was the standing lead.
 
-Caution before using it wholesale: 175 floor contacts against the operator's bounce count of
-**81** means it is over-detecting, so it cannot be swapped in directly -- it would have to
-supply a landing only for shots that currently have none, bounded to the interval before the
-next contact, and be measured against the operator's drive/dink labels.
+**1. "The shots with no landing are volleys."** They are not, and this is worth knowing: of
+the landing-less shots only **2 of 29** (court C) and **8 of 50** (acceptance clip) are
+volleys. The rest DID land -- we failed to detect or attribute the bounce.
+
+**2. Extrapolate where a volleyed ball would have landed.** Validated on shots that DID bounce
+(so the answer is checkable): **median error 25.6 ft on a 44 ft court**, and the landing ZONE
+-- kitchen / transition / baseline, the split that decides the type -- correct **50%** of the
+time against 33% for a coin. Extrapolating the reconstructed position instead gives 13.9 ft
+median but a p90 of 138.7 ft. Not usable.
+
+**3. Contact height against the waist.** Half of it is true. A contact ABOVE THE SHOULDER is
+almost never a dink (0 of 9 on the landing-less shots, 3 of 18 overall) -- a real one-way
+signal. But BELOW the waist says nothing: 20 dinks against 18 drives. As a classifier the
+whole rule scores 69% on the landing-less shots where **always guessing "drive" scores 77%**.
+Applying only the half that holds moves 7 shots overall and 2 on the landing-less subset --
+inside the noise.
+
+**4. Height-derived floor contacts as landings.** `bounces_height.json` has 131 and 175 floor
+contacts against 43 and 76 in `bounces.json`, and their `court_xy_ft` is the reconstructed
+position (it reads `[-5.7, 180.5]` on a 44 ft court) -- but at a floor contact the ball is at
+z = 0, exactly where the ground homography is EXACT, so the PIXEL projects correctly.
+Validated against known landings: **median 1.3 ft outdoor, 5.9 ft on court C**. The problem is
+coverage, not accuracy: a height contact exists before the next shot for only **9 of 29** and
+**10 of 50** landing-less shots. The "3x more floor contacts" are mostly between points and in
+intervals that already have a bounce, so they do not become landings.
+
+### What this means
+
+Drive-vs-dink WITHOUT a landing is at or near the limit of this camera position. Four
+independent substitutes -- speed, ball travel, extrapolation, contact height -- all fail, and
+the one that works (a real bounce) is available for 60% of shots and cannot be raised much.
+
+**The productive half of the dink gap is the junk**, and that is a serve/return problem: about
+half the over-count is between-point balls typed as dinks, which the rally gate removes once
+the serves are right. Fixing serve detection pays twice.
 
 ## SERVE / RETURN — where it stands, and one fix REJECTED after measuring (2026-08-26)
 
