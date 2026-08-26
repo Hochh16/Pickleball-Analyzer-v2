@@ -173,6 +173,54 @@ plus hitter zone, which is why **both lobs were called drives**.
 - **Multiple shots fall inside one segment**; make the labelled contact unmistakable.
 - Some shots have **no hard rule** — record them as genuinely ambiguous rather than forcing.
 
+## SERVE / RETURN — where it stands, and one fix REJECTED after measuring (2026-08-26)
+
+    serves FLAGGED as serves      10/25 -> 17/25
+    serve/return confusions       27 -> 15 across the three reviewed clips
+    "return called a serve"       6 -> 0 outdoor, 4 -> 2 court C
+    shot types correct            95/191 -> 107/191
+
+Two fixes landed: the same-side run now keeps the contact the BALL LEAVES ON (above), and a
+"serve" the ball demonstrably reached from the OTHER SIDE is retyped as the return it is.
+
+### The residual is one thing, named
+
+Of the 8 serves still not flagged, **7 are the same shape**: the shot we call the serve is the
+one the operator labelled the RETURN, 1.0-1.4s later -- the serve-to-return interval. Every
+remaining `return -> drive` error is that same missing serve one step downstream, because
+Stage 6 derives the return structurally (previous shot is_serve, opposite side), so a missed
+serve costs the return too.
+
+**7 of those 8 contacts still exist with the handling filter switched off.** They are being
+discarded, not missed.
+
+### REJECTED: bounding the excursion window at the next contact
+
+The excursion rule measures how far the ball gets in the second after a contact, and that
+window BLEEDS: in a tight cluster an earlier contact inherits the travel of the real shot
+that follows it and then outscores it. The serve at 1:34.22 lost to a wobble 0.7 s earlier
+credited with 909 px of travel, all of it the serve's own flight:
+
+    run [(93.20, 268), (93.53, 909), (93.75, 806), (94.00, 646), (94.22, 619)]
+                                                       the operator's serve is 94.22
+
+The diagnosis is right and the fix is obvious -- stop the window at the next contact, so only
+a shot the ball actually leaves on scores. **Measured, it is net negative:**
+
+| | change |
+|---|---|
+| serves flagged | 17 -> 18 |
+| shot types correct | +6 |
+| volleys correct | **-2** |
+| rally ends within 2s | **-3** |
+| serving side correct | **-2** |
+| wrong_player | **1 -> 2** (trips a hard acceptance bar) |
+| false positives | 24 -> 25 |
+
+Reverted. Bounding the window makes every contact in a tight cluster score near zero, so the
+choice among them becomes arbitrary. A version that falls back to impact strength when all
+excursions collapse is the obvious next thing to try, and has not been tried.
+
 ## THE SERVE WAS BEING DELETED BY THE HANDLING FILTER — FIXED (2026-08-26)
 
 Two compounding faults, not one. The inert serve detector (below) was the second.
