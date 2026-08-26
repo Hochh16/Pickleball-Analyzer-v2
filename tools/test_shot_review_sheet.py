@@ -132,3 +132,54 @@ def test_not_a_shot_column_is_read(tmp_path):
     with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
     assert rows[0]["true_type"] == "not a shot"
+
+
+def test_every_control_lands_on_the_column_its_header_names(tmp_path):
+    """The layout has gained a column three times (ALREADY KNOWN, NOT_A_SHOT/RALLY_END, the
+    rally). Each time a hard-coded letter put a dropdown or a read on the wrong column --
+    silently, because a dropdown on the wrong column still looks like a working sheet."""
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+    c = _clip(tmp_path)
+    out = c / "_labeling" / srs.OUT_NAME
+    srs.build(c, out)
+    ws = load_workbook(out).active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    want = {"CORRECT_TYPE": "drive", "CORRECT_VOLLEY": "yes",
+            "NOT_A_SHOT": "y", "RALLY_END": "y"}
+    ranges = {}
+    for dv in ws.data_validations.dataValidation:
+        for rng in str(dv.sqref).split():
+            ranges[rng.split(str(hdr + 2))[0].rstrip("0123456789:")] = dv.formula1
+    for name, sample in want.items():
+        letter = get_column_letter(col[name])
+        assert letter in ranges, f"no dropdown on {name} (column {letter})"
+        assert sample in ranges[letter], f"{name}'s dropdown does not offer {sample!r}"
+
+
+def test_the_operators_own_rally_windows_are_shown_as_context(tmp_path):
+    """Their objection to the first labelling tool: "you can't determine a shot at the point
+    of contact without seeing it in context of where it is coming from and where it is
+    going." The rally column is that context, and it is THEIR window, never our inference."""
+    from openpyxl import load_workbook
+    import tools.truth_store as ts
+    c = _clip(tmp_path)
+    # the store is keyed by SOURCE VIDEO, so the clip has to say which one it came from
+    (c / "ball.meta.json").write_text(json.dumps({"video_path": "V.mp4"}), encoding="utf-8")
+    doc = ts.empty("V.mp4")
+    doc["rally_truth"] = [{"start_t_sec": 0.5, "end_t_sec": 2.0, "server": "user",
+                           "n_shots": 4, "source": "t"}]
+    ts.save(doc)
+    try:
+        srs.build(c, c / "_labeling" / srs.OUT_NAME)
+        ws = load_workbook(c / "_labeling" / srs.OUT_NAME).active
+        hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+        col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+               for i in range(1, ws.max_column + 1)}
+        got = [str(ws.cell(row=hdr + 1 + i, column=col["your rally"]).value or "")
+               for i in (1, 2)]
+        assert got == ["1", "between points"]
+    finally:
+        ts.store_path("V.mp4").unlink(missing_ok=True)

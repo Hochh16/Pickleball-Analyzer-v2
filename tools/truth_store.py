@@ -490,7 +490,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         taken.add(sid)
 
     for r, n, t in parsed:
-        ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
+        ours = str(ws.cell(row=r, column=col.get("our_type", 5)).value or "").strip().lower()
         corr = str(ws.cell(row=r, column=col["CORRECT_TYPE"]).value or "").strip().lower()
         known_prev = (str(ws.cell(row=r, column=col["ALREADY KNOWN"]).value or "").strip().lower()
                       if "ALREADY KNOWN" in col else "")
@@ -534,8 +534,9 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         # This holds only while a review covers every row. A PARTIAL review must say so, or
         # its untouched rows would be recorded as confirmations of things nobody looked at.
         vol_explicit = True
-        if vol is None and not corr and str(ws.cell(row=r, column=6).value or "").strip():
-            vol = str(ws.cell(row=r, column=6).value).strip().lower() == "yes"
+        c_ov = col.get("our_volley", 6)
+        if vol is None and not corr and str(ws.cell(row=r, column=c_ov).value or "").strip():
+            vol = str(ws.cell(row=r, column=c_ov).value).strip().lower() == "yes"
         detected = n not in (None, "")
         if flags["rally_end"]:
             if not any(abs(x["t_sec"] - t) < 0.5 for x in doc.setdefault("rally_ends", [])):
@@ -567,8 +568,10 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
             continue
         c["confirmed"] += 1 if not corr else 0
         row_key = f"{src}#{str(n).strip()}" if detected else f"{src}@{t:.2f}"
-        c[add_shot(doc, t, key=row_key, type_=ty, hitter=str(ws.cell(row=r, column=3).value or "") or None,
-                   side=str(ws.cell(row=r, column=4).value or "") or None, volley=vol,
+        c[add_shot(doc, t, key=row_key, type_=ty,
+                   hitter=str(ws.cell(row=r, column=col.get("hitter", 3)).value or "") or None,
+                   side=str(ws.cell(row=r, column=col.get("side", 4)).value or "") or None,
+                   volley=vol,
                    detected=detected, source=src, notes=notes,
                    kind="review", claimed=claimed, existing=assign.get(r), assigned=True,
                    volley_explicit=vol_explicit, seq=seq)] += 1

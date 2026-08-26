@@ -176,10 +176,45 @@ def build(clip: Path, out_path: Path) -> Path:
     # partner" -- because the sheet only asked for a corrected TYPE. Sixteen false positives
     # and sixteen rally ends were sitting in the notes, and a regex bug meant the first pass
     # read none of them. A column cannot be silently mis-parsed.
-    hr = 9
-    headers = ["#", "time", "hitter", "side", "our_type", "our_volley",
+    # The operator's own rally windows, where they have described them. Their objection to
+    # the first labelling tool was exactly this: "you can't determine a shot at the point of
+    # contact without seeing it in context of where it is coming from and where it is going."
+    # A rally number per row is that context, and it comes from what they already told us --
+    # it is never our inference, so it cannot mislead them with our own error.
+    rally_truth = sorted((store.get("rally_truth") or []),
+                         key=lambda r: float(r["start_t_sec"]))
+
+    def rally_of(t_sec):
+        for i, r in enumerate(rally_truth, start=1):
+            if float(r["start_t_sec"]) - 0.5 <= t_sec <= float(r["end_t_sec"]) + 0.5:
+                return str(i)
+        return "between points" if rally_truth else ""
+
+    hr = 9 if not rally_truth else 11
+    headers = ["#", "time", "your rally", "hitter", "side", "our_type", "our_volley",
                "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "CORRECT_TYPE",
                "CORRECT_VOLLEY", "notes"]
+    if rally_truth:
+        # The operator counted the shots in each rally. Showing their count against ours says
+        # exactly which rally to hunt in for a shot we missed -- the alternative is watching
+        # three minutes hoping to notice an absence.
+        short = []
+        for i, r in enumerate(rally_truth, start=1):
+            theirs = r.get("n_shots")
+            ours = sum(1 for x in rows
+                       if float(r["start_t_sec"]) - 0.5 <= x["t"]
+                       <= float(r["end_t_sec"]) + 0.5)
+            if theirs and int(theirs) != ours:
+                short.append(f"rally {i} (you counted {theirs}, we have {ours})")
+        ws["A8"] = ("You already told us the shot count per rally. We disagree on: "
+                    + ("; ".join(short) if short else "none — the counts all match")
+                    + ".")
+        ws["A8"].font = note
+        ws["A9"] = ("The 'your rally' column is YOUR rally windows, not our guess. A row "
+                    "marked 'between points' falls outside every rally you described — those "
+                    "are the likeliest NOT_A_SHOT rows.")
+        ws["A9"].font = note
+
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=hr, column=c, value=h)
         cell.font = head
@@ -189,7 +224,7 @@ def build(clip: Path, out_path: Path) -> Path:
 
     # one worked example, so the expected format is unambiguous
     ex = hr + 1
-    for c, v in enumerate([" e.g. 12", "1:03.82", "user", "near", "drive", "no",
+    for c, v in enumerate([" e.g. 12", "1:03.82", "3", "user", "near", "drive", "no",
                            "", "", "", "drop", "",
                            "was a soft third shot, not a drive"], start=1):
         cell = ws.cell(row=ex, column=c, value=v)
@@ -207,17 +242,19 @@ def build(clip: Path, out_path: Path) -> Path:
             n_known += 1
             kn = prev["type"] + ("  (agrees)" if prev["type"] == r["our_type"]
                                  else f"  (you said {prev['type']})")
-        vals = [r["n"], clock(r["t"]), r["hitter"], r["side"], r["our_type"],
-                r["our_volley"], kn, "", "", "", "", ""]
+        vals = [r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
+                r["our_type"], r["our_volley"], kn, "", "", "", "", ""]
         for c, v in enumerate(vals, start=1):
             cell = ws.cell(row=rr, column=c, value=v)
             cell.font = body
             cell.border = box
-            if c in (5, 6):
+            if c in (6, 7):
                 cell.fill = fill_ours
-            if c == 7 and prev:
+            if c == 3 and v == "between points":
+                cell.font = note          # outside every rally they described: junk candidate
+            if c == 8 and prev:
                 cell.fill = fill_known
-            if c in (8, 9, 10, 11, 12) and not prev:
+            if c in (9, 10, 11, 12, 13) and not prev:
                 cell.fill = fill_edit
     last = first + len(rows) - 1
 
@@ -230,26 +267,29 @@ def build(clip: Path, out_path: Path) -> Path:
             cell = ws.cell(row=rr, column=c, value="")
             cell.font = body
             cell.border = box
-            if c in (2, 8, 9, 10, 11, 12):
+            if c in (2, 9, 10, 11, 12, 13):
                 cell.fill = fill_edit
     last_blank = blank_hdr + N_BLANK_ROWS
 
-    dv = DataValidation(type="list", formula1='"' + ",".join(VALID) + '"', allow_blank=True)
-    ws.add_data_validation(dv)
-    dv.add(f"J{first}:J{last_blank}")
-    dv2 = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
-    ws.add_data_validation(dv2)
-    dv2.add(f"K{first}:K{last_blank}")
-    dv3 = DataValidation(type="list", formula1='"y"', allow_blank=True)
-    ws.add_data_validation(dv3)
-    dv3.add(f"H{first}:H{last_blank}")
-    dv4 = DataValidation(type="list", formula1='"y"', allow_blank=True)
-    ws.add_data_validation(dv4)
-    dv4.add(f"I{first}:I{last_blank}")
+    # Dropdowns and widths BY HEADER, never by letter. The layout has gained a column three
+    # times now (ALREADY KNOWN, then NOT_A_SHOT / RALLY_END, now the rally), and each time a
+    # hard-coded letter put a control on the wrong column -- silently, because a dropdown on
+    # the wrong column still looks like a working sheet.
+    from openpyxl.utils import get_column_letter
+    letter = {h: get_column_letter(i) for i, h in enumerate(headers, start=1)}
+    for name, choices in (("CORRECT_TYPE", VALID), ("CORRECT_VOLLEY", ("yes", "no")),
+                          ("NOT_A_SHOT", ("y",)), ("RALLY_END", ("y",))):
+        d = DataValidation(type="list", formula1='"' + ",".join(choices) + '"',
+                           allow_blank=True)
+        ws.add_data_validation(d)
+        d.add(f"{letter[name]}{first}:{letter[name]}{last_blank}")
 
-    for col, w in zip("ABCDEFGHIJKL",
-                      (7, 10, 10, 7, 12, 12, 20, 12, 11, 15, 15, 46)):
-        ws.column_dimensions[col].width = w
+    for h, w in (("#", 7), ("time", 10), ("your rally", 13), ("hitter", 10), ("side", 7),
+                 ("our_type", 12), ("our_volley", 12), ("ALREADY KNOWN", 20),
+                 ("NOT_A_SHOT", 12), ("RALLY_END", 11), ("CORRECT_TYPE", 15),
+                 ("CORRECT_VOLLEY", 15), ("notes", 46)):
+        if h in letter:
+            ws.column_dimensions[letter[h]].width = w
     ws.freeze_panes = ws[f"A{first}"]
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,13 +324,16 @@ def score(clip: Path, xlsx: Path) -> int:
     C_NOTE = col.get("notes", 10)
     C_KNOWN = col.get("ALREADY KNOWN")
     C_NAS = col.get("NOT_A_SHOT")
+    C_OURS = col.get("our_type", 5)
+    C_HIT = col.get("hitter", 3)
+    C_SIDE = col.get("side", 4)
 
     out, n_corr, n_agree, n_missed = [], 0, 0, 0
     unparsed: List[tuple] = []
     for r in range(hdr_row + 1, ws.max_row + 1):
         n = ws.cell(row=r, column=1).value
         tstr = ws.cell(row=r, column=2).value
-        ours = str(ws.cell(row=r, column=5).value or "").strip().lower()
+        ours = str(ws.cell(row=r, column=C_OURS).value or "").strip().lower()
         known_prev = (str(ws.cell(row=r, column=C_KNOWN).value or "").strip().lower()
                       if C_KNOWN else "")
         corr = str(ws.cell(row=r, column=C_TYPE).value or "").strip().lower()
@@ -301,7 +344,7 @@ def score(clip: Path, xlsx: Path) -> int:
         t = parse_clock(tstr)
         if t is None:
             if any(str(ws.cell(row=r, column=c).value or "").strip()
-                   for c in (3, 4, 5, C_TYPE, C_NOTE)):
+                   for c in (C_HIT, C_SIDE, C_OURS, C_TYPE, C_NOTE)):
                 unparsed.append((r, tstr))
             continue
         if isinstance(n, str) and not str(n).strip().isdigit():
@@ -318,8 +361,8 @@ def score(clip: Path, xlsx: Path) -> int:
             n_agree += 1
         out.append({"shot_no": n or "", "frame": int(round(t * fps)),
                     "shot_id": n or "", "time": clock(t),
-                    "hitter_role": str(ws.cell(row=r, column=3).value or ""),
-                    "hitter_side": str(ws.cell(row=r, column=4).value or ""),
+                    "hitter_role": str(ws.cell(row=r, column=C_HIT).value or ""),
+                    "hitter_side": str(ws.cell(row=r, column=C_SIDE).value or ""),
                     "true_type": true_type,
                     "true_volley": {"yes": "y", "no": "n"}.get(vol, ""),
                     "true_in": "", "notes": notes})
