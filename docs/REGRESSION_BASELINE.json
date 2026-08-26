@@ -37,7 +37,7 @@
    "rally_end_truth": 16,
    "rally_end_within_2s": 12,
    "rally_end_median_err_s": 1.3,
-   "shot_type_correct": 56,
+   "shot_type_correct": 59,
    "shot_type_labelled": 111,
    "shot_type_sample_was_missed": 21
   },

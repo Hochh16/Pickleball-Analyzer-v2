@@ -312,3 +312,35 @@ def test_a_reset_must_answer_the_OTHER_side_and_the_same_exchange():
 
     long_gap = [_s(0, "drive", "far"), _s(60 * 5, "drop", "near")]   # 5s later
     assert mark_resets(long_gap, fps=60.0) == 0
+
+
+def test_a_serve_the_ball_reached_from_the_other_side_is_a_return():
+    """When a serve goes undetected we promote its RETURN to the serve slot. The ball says
+    which is which: before a return it has just come over the net, before a serve it has not.
+
+    Measured over the 22 shots we call serves that the operator also labelled: the ball came
+    from the other side for 3 of the 5 they call returns and 0 of the 16 they call serves.
+    Partial recall, but it never misfires on a real serve -- the property a retype rule needs.
+    The pre-contact ball SPAN was tried here first and is NOT safe: real serves span 5-52 ft
+    and returns 27-106 ft, so retyping on span would fix 5 and break 6.
+    """
+    from stages.classify_shots.classify_shots import retype_returns, came_from_other_side
+    fps, net = 60.0, 22.0
+    # ball crosses from far (y>22) to near (y<22) in the second before frame 600
+    crossing = {f: 40.0 - (f - 540) * 0.6 for f in range(540, 600)}
+    assert came_from_other_side(crossing, 600, "near", fps, net) is True
+    # a near-side hitter whose ball never left their own side: a real serve
+    own_side = {f: 4.0 + (f % 3) * 0.2 for f in range(540, 600)}
+    assert came_from_other_side(own_side, 600, "near", fps, net) is False
+    # and the same crossing seen from the FAR hitter is not a return for them
+    assert came_from_other_side(crossing, 600, "far", fps, net) is False
+    assert came_from_other_side({}, 600, "near", fps, net) is False
+
+    shots = [{"frame": 600, "shot_type": "serve", "hitter_side": "near", "is_serve": True},
+             {"frame": 600, "shot_type": "drive", "hitter_side": "near"}]
+    assert retype_returns(shots, crossing, fps, net) == 1
+    assert shots[0]["shot_type"] == "return" and shots[0]["retyped_from_serve"] is True
+    # is_serve is LEFT ALONE: Stage 7 segments rallies on it and a new point really does
+    # begin here -- clearing it would merge this point into the previous one.
+    assert shots[0]["is_serve"] is True
+    assert shots[1]["shot_type"] == "drive", "only serve-flagged shots are retyped"

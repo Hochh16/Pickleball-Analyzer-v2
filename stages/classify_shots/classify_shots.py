@@ -479,6 +479,60 @@ RESET_TYPES = ("drop", "dink")
 RESET_MAX_GAP_S = 3.0
 
 
+# A shot flagged as the SERVE whose ball demonstrably came over the net just before it is a
+# RETURN: the serve happened ~1s earlier on the other side and we did not detect the contact.
+# This is a physical statement, not a threshold, and it behaves like one -- measured over the
+# 22 shots we call serves that the operator also labelled, the ball came from the other side
+# for 3 of the 5 they call returns and 0 of the 16 they call serves. Partial recall, but it
+# never misfires on a real serve, which is what a retype rule needs.
+#
+# The pre-contact ball SPAN was tried here first and is not safe: real serves span 5-52 ft and
+# returns 27-106 ft, so retyping on span would fix 5 and break 6.
+RETURN_LOOK_S = (1.0, 1.4)
+
+
+def came_from_other_side(court_y_by_frame, frame: int, side: str, fps: float,
+                         net_y_ft: float) -> bool:
+    """Did the ball start beyond the net and end on the hitter's side, just before contact?"""
+    if not court_y_by_frame or side not in ("near", "far"):
+        return False
+    for look in RETURN_LOOK_S:
+        lo = int(frame - look * fps)
+        ys = [court_y_by_frame[f] for f in range(lo, int(frame - 0.05 * fps))
+              if f in court_y_by_frame]
+        if len(ys) < 5:
+            continue
+        near = [y < net_y_ft for y in ys]
+        k = max(2, len(near) // 3)
+        head = sum(near[:k]) / k
+        tail = sum(near[-k:]) / k
+        if side == "near" and head < 0.35 and tail > 0.65:
+            return True
+        if side == "far" and head > 0.65 and tail < 0.35:
+            return True
+    return False
+
+
+def retype_returns(shots: list, court_y_by_frame, fps: float, net_y_ft: float) -> int:
+    """Relabel a "serve" the ball reached from the other side as the RETURN it is.
+
+    `is_serve` is deliberately LEFT ALONE. It is what Stage 7 segments rallies on, and a new
+    point really does begin around here -- the serve we missed is a second earlier. Clearing
+    it would merge this point into the previous one, which is worse than a wrong type. Stage
+    7's `opened_on_return` already records that the SERVER is the other side.
+    """
+    n = 0
+    for s in shots:
+        if s.get("shot_type") != "serve":
+            continue
+        if came_from_other_side(court_y_by_frame, int(s["frame"]),
+                                s.get("hitter_side"), fps, net_y_ft):
+            s["shot_type"] = "return"
+            s["retyped_from_serve"] = True
+            n += 1
+    return n
+
+
 def mark_resets(shots: list, fps: float) -> int:
     """A drop or a dink that ANSWERS A DRIVE is also a reset.
 
@@ -780,8 +834,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # Ball height per frame, when tools/build_ball_3d.py has run. Optional input: without it
     # the volley test falls back to the pixel scan exactly as before.
     z_by_frame: Dict[int, float] = {}
+    court_y_by_frame: Dict[int, float] = {}
     b3p = folder / "ball_3d.parquet"
     if b3p.exists():
+        _b3full = pd.read_parquet(b3p, columns=["frame", "z_ft", "court_y_ft"])
+        court_y_by_frame = {int(f): float(y) for f, y in
+                            zip(_b3full["frame"], _b3full["court_y_ft"]) if y == y}
         b3 = pd.read_parquet(b3p, columns=["frame", "z_ft"])
         z_by_frame = {int(f): float(z) for f, z in zip(b3["frame"], b3["z_ft"])
                       if z == z}
@@ -973,6 +1031,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         prev_shot_id = shot_id
 
     # stats
+    n_retyped = retype_returns(out_shots, court_y_by_frame, float(fps), NET_Y_FT)
     n_reset = mark_resets(out_shots, float(fps))
 
     from collections import Counter
@@ -989,6 +1048,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         # a QUALIFIER on drops and dinks, not a type -- these shots are already counted
         # once under by_shot_type, so this must never be added to the shot total
         "n_reset": n_reset,
+        "n_retyped_serve_to_return": n_retyped,
         "n_unknown_type": by_type.get("unknown", 0),
         "n_unknown_side": by_side.get("unknown", 0),
     }
