@@ -125,7 +125,12 @@ BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
 LANDMARK_VIS_FLOOR = 0.5
 NET_Y_FT = 22.0
 
-SHOT_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "reset", "unknown"}
+# A RESET is not a type. Operator, 2026-08-26: "All resets are either drops or dinks and
+# should be labeled as drops and dinks. In addition, can count drops and dinks as resets as
+# well IF the previous shot was a drive. So resets don't add to overall shot total but are a
+# qualifier on some of the drops and dinks." So `is_reset` is DERIVED below, and the shot
+# total stays serve + return + drive + drop + dink + lob.
+SHOT_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "unknown"}
 # 'overhead' is a STROKE (above-the-head contact), recorded on stroke_side, not a
 # tactical shot type. Stroke axis: forehand / backhand / overhead / unknown.
 STROKE_SIDES = {"forehand", "backhand", "overhead", "unknown"}
@@ -467,6 +472,42 @@ def turn_deg(x, y, f) -> Optional[float]:
     return float(np.degrees(np.arccos(np.clip(a @ b / (na * nb), -1.0, 1.0))))
 
 
+RESET_TYPES = ("drop", "dink")
+# How far back the shot being answered may sit. Contacts in a rally are 0.5-2s apart; beyond
+# this the previous shot belongs to a different exchange, and after a point ends the dead
+# time is far longer than this.
+RESET_MAX_GAP_S = 3.0
+
+
+def mark_resets(shots: list, fps: float) -> int:
+    """A drop or a dink that ANSWERS A DRIVE is also a reset.
+
+    Operator, 2026-08-26: "All resets are either drops or dinks and should be labeled as
+    drops and dinks. In addition, can count drops and dinks as resets as well IF the previous
+    shot was a drive. So resets don't add to overall shot total but are a qualifier on some
+    of the drops and dinks."
+
+    So `is_reset` is a QUALIFIER, never a type: every reset is already counted once as its
+    drop or dink, and the shot total is unchanged. The previous shot must be the OPPONENT'S
+    -- a reset answers the other side -- and recent enough to be the same exchange, so a
+    drive that ended the last point is not something the next drop is resetting.
+    """
+    n = 0
+    ss = sorted(shots, key=lambda s: int(s["frame"]))
+    for i, s in enumerate(ss):
+        s["is_reset"] = False
+        if s.get("shot_type") not in RESET_TYPES or i == 0:
+            continue
+        prev = ss[i - 1]
+        if (prev.get("shot_type") == "drive"
+                and (int(s["frame"]) - int(prev["frame"])) / float(fps) <= RESET_MAX_GAP_S
+                and prev.get("hitter_side") and s.get("hitter_side")
+                and prev["hitter_side"] != s["hitter_side"]):
+            s["is_reset"] = True
+            n += 1
+    return n
+
+
 def build_bounces_between_index(bounces_doc: dict) -> Dict[Tuple[int, int], int]:
     """Map (prev_shot_id, next_shot_id) -> count of bounces sitting between them.
     Used by the volley check: is_volley = (count == 0)."""
@@ -664,10 +705,11 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
     if post_ftps is not None and post_ftps >= drive_min:
         return "drive", FB_DRIVE
-    if (pre_ftps is not None and pre_ftps >= RESET_MIN_INCOMING_FTPS
-            and post_ftps is not None and post_ftps <= dink_max
-            and zone != "baseline"):
-        return "reset", FB_RESET
+    # (The old "reset" branch lived here: fast ball in, slow ball out, not from the
+    # baseline. That is a real pattern, but it is a DROP or a DINK -- which one depends on
+    # where it was struck, exactly as the rules below already decide. Whether it is also a
+    # reset is answered by the previous shot, not by ball speed, so it is derived after
+    # every type is known rather than competing with them here.)
     if post_ftps is not None and post_ftps <= dink_max and zone in ("kitchen", "transition"):
         return "dink", FB_DINK   # slow ball hit from at/near the net = dink
     if post_ftps is not None and post_ftps <= dink_max and zone == "baseline":
@@ -931,6 +973,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         prev_shot_id = shot_id
 
     # stats
+    n_reset = mark_resets(out_shots, float(fps))
+
     from collections import Counter
     by_type = Counter(s["shot_type"] for s in out_shots)
     by_side = Counter(s["stroke_side"] for s in out_shots)
@@ -942,6 +986,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "n_volley_fallback": sum(1 for s in out_shots if s["is_volley_confidence"] == 0.5),
         "n_volley_from_height": sum(1 for s in out_shots
                                     if s["is_volley_confidence"] == VOL_CONF_HEIGHT),
+        # a QUALIFIER on drops and dinks, not a type -- these shots are already counted
+        # once under by_shot_type, so this must never be added to the shot total
+        "n_reset": n_reset,
         "n_unknown_type": by_type.get("unknown", 0),
         "n_unknown_side": by_side.get("unknown", 0),
     }

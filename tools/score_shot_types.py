@@ -31,7 +31,13 @@ from pathlib import Path
 # stopwatch rather than our detection: at 0.33s only 22/32 labels matched, at 1s it is
 # 26/32. Tightening this manufactured a "41% of shots are missed" result that was not real.
 TOL_FRAMES = 60
-REAL_TYPES = {"drive", "drop", "dink", "lob", "serve", "return", "reset"}
+REAL_TYPES = {"drive", "drop", "dink", "lob", "serve", "return"}
+# A real shot we cannot yet score. "reset" stopped being a type on 2026-08-26 -- every reset
+# is a drop or a dink -- but an older label saying "reset" does not say WHICH, and only the
+# operator can. Excluded from BOTH buckets: scoring it guarantees a miss, and dropping it
+# into the non-shot bucket would report a real shot as a false positive, which is exactly the
+# bug that lost six of court B's shots to a wording difference.
+UNRESOLVED_TYPES = {"reset"}
 # The operator's full type-label set. It lives in one analysed folder but describes the
 # SOURCE VIDEO, so any clip of the same video can be scored against it -- and must be, or a
 # thin clip-local file silently takes its place. Keyed to that video's timeline, so it is
@@ -139,7 +145,10 @@ def score(clip: Path, labels: list[dict]) -> dict:
         return best
 
     real = [l for l in labels if l["true_type"] in REAL_TYPES]
-    nonshot = [l for l in labels if l["true_type"] not in REAL_TYPES]
+    nonshot = [l for l in labels
+               if l["true_type"] not in REAL_TYPES
+               and l["true_type"] not in UNRESOLVED_TYPES]
+    unresolved = [l for l in labels if l["true_type"] in UNRESOLVED_TYPES]
     hit = miss = unmatched = 0
     confusion: Counter = Counter()
     for l in real:
@@ -156,6 +165,7 @@ def score(clip: Path, labels: list[dict]) -> dict:
     # a non-shot label that we still emit as a shot is a false positive
     fp = sum(1 for l in nonshot if nearest(l["frame"]) is not None)
     return {"n_real": len(real), "hit": hit, "miss": miss, "unmatched": unmatched,
+            "unresolved": len(unresolved),
             "acc": hit / len(real) if real else 0.0,
             "n_nonshot": len(nonshot), "nonshot_kept": fp, "confusion": confusion}
 

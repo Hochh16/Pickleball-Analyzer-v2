@@ -279,3 +279,36 @@ def test_height_declines_to_guess_rather_than_guessing_wrong():
     assert bounced_between_3d({10: 3.0, 11: 1.8, 12: 0.8, 13: 0.5}, 9, 14) is None
     # between the ground band and the airborne band: no call either way
     assert bounced_between_3d({10: 1.3, 11: 1.2, 12: 1.25, 13: 1.3}, 9, 14) is None
+
+
+def _s(frame, kind, side):
+    return {"frame": frame, "shot_type": kind, "hitter_side": side}
+
+
+def test_a_reset_is_a_qualifier_on_drops_and_dinks_not_a_type():
+    """Operator, 2026-08-26: "All resets are either drops or dinks and should be labeled as
+    drops and dinks. In addition, can count drops and dinks as resets as well IF the previous
+    shot was a drive. So resets don't add to overall shot total but are a qualifier."
+    """
+    from stages.classify_shots.classify_shots import mark_resets, SHOT_TYPES
+    assert "reset" not in SHOT_TYPES
+
+    shots = [_s(0, "drive", "far"), _s(60, "drop", "near"),      # answers a drive -> reset
+             _s(120, "dink", "far"),                             # answers a drop  -> not
+             _s(180, "drive", "near"), _s(240, "dink", "far"),   # answers a drive -> reset
+             _s(300, "drive", "near"), _s(360, "drive", "far")]  # a drive is never a reset
+    n = mark_resets(shots, fps=60.0)
+    assert n == 2
+    assert [s["is_reset"] for s in shots] == [False, True, False, False, True, False, False]
+    # the shot TOTAL is untouched: every reset is already counted as its drop or dink
+    assert len(shots) == 7
+
+
+def test_a_reset_must_answer_the_OTHER_side_and_the_same_exchange():
+    """A drive that ended the last point is not something the next drop is resetting."""
+    from stages.classify_shots.classify_shots import mark_resets
+    same_side = [_s(0, "drive", "near"), _s(60, "drop", "near")]
+    assert mark_resets(same_side, fps=60.0) == 0
+
+    long_gap = [_s(0, "drive", "far"), _s(60 * 5, "drop", "near")]   # 5s later
+    assert mark_resets(long_gap, fps=60.0) == 0

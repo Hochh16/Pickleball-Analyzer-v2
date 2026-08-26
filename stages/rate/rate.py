@@ -61,8 +61,11 @@ COUNT_ONLY_DIMS = {"forehand", "backhand"}
 COUNT_DRIVER = {"forehand": "forehand_count", "backhand": "backhand_count",
                 "dink": "dink_count", "volley": "n_volley",
                 "serve_return": "n_serves"}
-SOFT_SHOT_TYPES = {"dink", "drop", "reset"}
-VARIETY_SHOT_TYPES = {"dink", "drop", "reset", "drive", "lob", "overhead"}
+# No "reset": it is a qualifier on drops and dinks now, not a type, so both sets already
+# contain every reset exactly once. Listing it again would double-count nothing today and
+# silently double-count later if it ever came back as a type.
+SOFT_SHOT_TYPES = {"dink", "drop"}
+VARIETY_SHOT_TYPES = {"dink", "drop", "drive", "lob", "overhead"}
 
 EPS = 1e-9
 

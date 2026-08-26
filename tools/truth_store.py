@@ -51,6 +51,10 @@ REAL_TYPES = {"serve", "return", "drive", "dink", "drop", "lob", "reset"}
 # import won, which meant a 2026-08-17 spreadsheet overruled a review done today -- exactly
 # backwards, and it produced 117 "conflicts" that were nothing of the kind.
 AUTHORITY = {"review": 3, "operator_json": 2, "labels_csv": 1, "unknown": 0}
+# How far a rally-level end may trail the ending SHOT and still be the same point. Measured
+# 0.93-1.87s across court C's ten points; 2.5 covers that without reaching the 1.08s gap
+# between two genuinely distinct ends on the acceptance clip (which are same-source anyway).
+END_SHADOW_S = 2.5
 # Between two sources of EQUAL authority the LATER one wins, per the operator: "use the last
 # one I built as the truth if there is a conflict between any reviews." Passed as `seq`, which
 # the caller increments per import.
@@ -99,7 +103,11 @@ THIRD_DROP_RE = _re.compile(r"3rd shot drop", _re.I)
 # twice produced a literal backspace character instead of a boundary, and the pattern then
 # matches nothing while looking correct -- it silently discarded 30 of the operator's notes
 # once already.
-CANON_TYPES = ("serve", "return", "drive", "drop", "dink", "lob", "reset")
+# "reset" is deliberately NOT here. Operator, 2026-08-26: every reset is a drop or a dink,
+# and a drop/dink IS a reset when it answers a drive -- a qualifier, derived in Stage 6, not
+# a type. Left out of the canonical set, an older "reset" label passes through unchanged and
+# stays visible for the operator to resolve as drop or dink.
+CANON_TYPES = ("serve", "return", "drive", "drop", "dink", "lob")
 STROKE_WORDS = ("backhand", "forehand", "bh", "fh", "handed", "two")
 
 
@@ -339,7 +347,8 @@ def fold_shadowed_legacy(doc: dict) -> int:
         total += n
         if not n:
             break
-    return total + _demote_stale_legacy(doc)
+    return (total + _demote_stale_legacy(doc) + _fold_shadowed_ends(doc)
+            + _fold_shadowed_fps(doc))
 
 
 def _demote_stale_legacy(doc: dict) -> int:
@@ -377,6 +386,72 @@ def _demote_stale_legacy(doc: dict) -> int:
         if not any(abs(float(x.get("t_sec", -999)) - float(s["t_sec"])) < 0.01
                    and x.get("source") == s.get("source") for x in prior):
             prior.append({**s, "superseded_by": "the review sheet covering this span"})
+    return len(moved)
+
+
+def _fold_shadowed_fps(doc: dict) -> int:
+    """A junk mark from an older file that a REVIEW row already covers is the same detection.
+
+    Once review rows got their own keyed entries they stopped merging with the legacy ones,
+    which is right for two distinct detections 0.27s apart -- and wrong for the same
+    detection recorded twice. Seven junk moments on the acceptance clip were being counted
+    twice, at identical timestamps, which inflates the junk total and every rate built on it.
+    """
+    fps = doc.get("false_positives") or []
+    review = [f for f in fps if f.get("key")]
+    if not review:
+        return 0
+    keep, moved = [], []
+    for f in fps:
+        if f.get("key"):
+            keep.append(f)
+        elif any(abs(float(r["t_sec"]) - float(f["t_sec"])) <= MATCH_TOL_S for r in review):
+            moved.append(f)
+        else:
+            keep.append(f)
+    if not moved:
+        return 0
+    doc["false_positives"] = keep
+    prior = doc.setdefault("superseded_false_positives", [])
+    for f in moved:
+        if not any(abs(float(x["t_sec"]) - float(f["t_sec"])) < 0.01
+                   and x.get("source") == f.get("source") for x in prior):
+            prior.append(f)
+    return len(moved)
+
+
+def _fold_shadowed_ends(doc: dict) -> int:
+    """A rally END the operator marked on the SHOT supersedes the rally-level one.
+
+    The review sheet's RALLY_END marks the shot that ended the point; truth.json's
+    `end_t_sec` marks when the rally was over, which trails the ending strike by 0.9-1.9s
+    (measured across court C's ten points). They are the same event, so keeping both doubles
+    the rally-end count -- court C reported 20 ends for 10 points.
+
+    Matched ACROSS SOURCES only, never within one. Two ends 1.08s apart from the same review
+    are two real points on the acceptance clip, and a window alone would merge them.
+    """
+    ends = doc.get("rally_ends") or []
+    review = [e for e in ends if "shot_review" in str(e.get("source", ""))]
+    if not review:
+        return 0
+    keep, moved = [], []
+    for e in ends:
+        if e in review:
+            keep.append(e)
+            continue
+        if any(abs(float(r["t_sec"]) - float(e["t_sec"])) <= END_SHADOW_S for r in review):
+            moved.append(e)
+        else:
+            keep.append(e)
+    if not moved:
+        return 0
+    doc["rally_ends"] = keep
+    prior = doc.setdefault("superseded_rally_ends", [])
+    for e in moved:
+        if not any(abs(float(x["t_sec"]) - float(e["t_sec"])) < 0.01
+                   and x.get("source") == e.get("source") for x in prior):
+            prior.append(e)
     return len(moved)
 
 
@@ -516,6 +591,8 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         if "RALLY_END" in col and str(ws.cell(row=r, column=col["RALLY_END"]).value
                                       or "").strip().lower().startswith("y"):
             flags["rally_end"] = True
+        detected_row = n not in (None, "")
+        row_key = (f"{src}#{str(n).strip()}" if detected_row else f"{src}@{t:.2f}")
         ty = corr or (known_prev.split("  ")[0] if known_prev else "") or ours
         if flags["not_a_shot"]:
             # The operator recorded these in the notes because the sheet had nowhere else to
@@ -549,11 +626,21 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 doc["third_shot_drops"].append(round(t, 2))
                 c["third_shot_drop"] += 1
         if ty == "not a shot":
-            ex = _find(doc["false_positives"], t)
+            # Keyed and one-to-one, exactly like the shots list. Proximity alone swallowed 4
+            # of the operator's 21 NOT_A_SHOT marks on court C: two junk detections 0.27s
+            # apart are two detections, and collapsing them under-counts the junk we emit --
+            # which flatters every false-positive figure computed from it.
+            ex = next((f for f in doc["false_positives"] if f.get("key") == row_key), None)
+            if ex is None and not row_key:
+                ex = _find(doc["false_positives"], t)
             if ex is None:
                 doc["false_positives"].append({"t_sec": round(t, 2), "source": src,
-                                               "notes": notes})
+                                               "notes": notes, "key": row_key})
                 c["false_positive"] += 1
+            else:
+                ex["t_sec"] = round(t, 2)
+                if notes and notes not in (ex.get("notes") or ""):
+                    ex["notes"] = ((ex.get("notes") or "") + " | " + notes).strip(" |")
             # ...and retract it from the shots list. An earlier, weaker source may already
             # have recorded this moment as a typed shot; leaving that behind means the same
             # detection counts as BOTH a real shot and a false positive, which inflates the
@@ -567,7 +654,6 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 c["retracted"] += 1
             continue
         c["confirmed"] += 1 if not corr else 0
-        row_key = f"{src}#{str(n).strip()}" if detected else f"{src}@{t:.2f}"
         c[add_shot(doc, t, key=row_key, type_=ty,
                    hitter=str(ws.cell(row=r, column=col.get("hitter", 3)).value or "") or None,
                    side=str(ws.cell(row=r, column=col.get("side", 4)).value or "") or None,

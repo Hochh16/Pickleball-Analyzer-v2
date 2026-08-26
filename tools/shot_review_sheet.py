@@ -40,7 +40,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 FONT = "Arial"
-VALID = ["serve", "return", "drive", "dink", "drop", "lob", "reset", "not a shot"]
+VALID = ["serve", "return", "drive", "dink", "drop", "lob", "not a shot"]
 N_BLANK_ROWS = 30          # for shots we missed entirely
 OUT_NAME = "shot_review.xlsx"
 CSV_NAME = "labels_from_review.csv"
@@ -149,7 +149,9 @@ def build(clip: Path, out_path: Path) -> Path:
     ws["A7"] = ("Put 'y' in NOT_A_SHOT for a detection that is not a shot (a feed, a "
                 "pick-up, an adjacent court), and 'y' in RALLY_END for the shot that ENDED "
                 "the point (into the net, hit out, a winner).")
-    ws["A5"] = "Valid types: " + ", ".join(VALID)
+    ws["A5"] = ("Valid types: " + ", ".join(VALID)
+                + "   —   a RESET is not a type: label it drop or dink, and we mark it a "
+                  "reset automatically when it answers a drive.")
     for r in (2, 3, 4, 5, 6, 7):
         ws[f"A{r}"].font = note
 

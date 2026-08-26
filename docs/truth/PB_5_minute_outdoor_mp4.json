@@ -1960,7 +1960,8 @@
   {
    "t_sec": 27.88,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "between points - not a shot"
+   "notes": "between points - not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#12"
   },
   {
    "t_sec": 41.67,
@@ -1971,7 +1972,20 @@
   {
    "t_sec": 43.25,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Between rallies. Opponent feeding ball to their partner"
+   "notes": "not a shot. Between rallies. Opponent feeding ball to their partner",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#15"
+  },
+  {
+   "t_sec": 44.12,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Looks like it picked up something from court behind this one.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#16"
+  },
+  {
+   "t_sec": 47.68,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Looks like opponent shot pass near partner on way to user.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#18"
   },
   {
    "t_sec": 51.97,
@@ -1981,9 +1995,9 @@
   },
   {
    "t_sec": 55.08,
-   "cause": "feed or throw between points",
-   "notes": "#20 is mislabeled. No shot. Ball was being thrown by opponent back to near side between points.",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Feed between shots",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#20"
   },
   {
    "t_sec": 72.33,
@@ -1994,22 +2008,26 @@
   {
    "t_sec": 74.5,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. User doesn't have ball"
+   "notes": "not a shot. User doesn't have ball",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#24"
   },
   {
    "t_sec": 80.88,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side"
+   "notes": "not a shot. Ball passed by opponent's partner near the net on its way to near side",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#26"
   },
   {
    "t_sec": 84.33,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot."
+   "notes": "no shot. user missed the shot that bounced near him. Opponent hit winning shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#31"
   },
   {
    "t_sec": 103.02,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Looks like red circle around wrong opponent."
+   "notes": "not a shot. Looks like red circle around wrong opponent.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#37"
   },
   {
    "t_sec": 114.27,
@@ -2018,15 +2036,16 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
-   "t_sec": 120.47,
-   "cause": "feed or throw between points",
-   "notes": "#45 is mislabeled. Not a shot. Was being thrown by partner to user.",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "t_sec": 120.5,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Partner feeding to user.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#44"
   },
   {
    "t_sec": 143.45,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Looks like ball was picked up on adjacent court. Other than one opponent, noone else is in position for a serve."
+   "notes": "not a shot. Looks like ball was picked up on adjacent court. Other than one opponent, noone else is in position for a serve.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#55"
   },
   {
    "t_sec": 146.5,
@@ -2035,25 +2054,28 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
-   "t_sec": 159.43,
-   "cause": "feed or throw between points",
-   "notes": "#58 is mislabeled. Not a shot. Was being fed by partner to far side",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "t_sec": 159.05,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Ball being fed to opponent side",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#57"
   },
   {
    "t_sec": 162.22,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Opponent picking up ball"
+   "notes": "not a shot. Opponent picking up ball",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#58"
   },
   {
    "t_sec": 170.53,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "NOT a shot. Ball was not hit by anyone yet and heading to opp_b"
+   "notes": "NOT a shot. Ball was not hit by anyone yet and heading to opp_b",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#62"
   },
   {
    "t_sec": 180.13,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Between serves"
+   "notes": "not a shot. Between serves",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#68"
   },
   {
    "t_sec": 181.92,
@@ -2063,9 +2085,9 @@
   },
   {
    "t_sec": 186.43,
-   "cause": "feed or throw between points",
-   "notes": "#69 is mislabeled. Was not a shot. Ball was being thrown by one opponent to the other to get ready for a serve",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Between serves",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#69"
   },
   {
    "t_sec": 195.9,
@@ -2074,15 +2096,22 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
+   "t_sec": 205.02,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#79"
+  },
+  {
    "t_sec": 209.4,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot."
+   "notes": "not a shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#80"
   },
   {
    "t_sec": 211.1,
-   "cause": "feed or throw between points",
-   "notes": "#82 is mislabeled. Was not a shot. Ball was being passed from one opponent to the other for a serve",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#81"
   },
   {
    "t_sec": 212.97,
@@ -2091,15 +2120,16 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
-   "t_sec": 215.3,
-   "cause": "pick up / carry / no swing",
-   "notes": "#84 is mislabeled. Not a shot. User was walking back to get in position. Did not hit a ball",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "t_sec": 215.42,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#82"
   },
   {
    "t_sec": 216.57,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot."
+   "notes": "not a shot.",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#83"
   },
   {
    "t_sec": 233.05,
@@ -2108,48 +2138,64 @@
    "source": "legacy / pb_5_minute_outdoor-7"
   },
   {
-   "t_sec": 236.35,
-   "cause": "adjacent court",
-   "notes": "#95 is mislabeled.  Not a shot. Looks like ball is tagged on adjacent court",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "t_sec": 235.55,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#93"
+  },
+  {
+   "t_sec": 244.63,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#95"
   },
   {
    "t_sec": 251.17,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Ball on opposite side of net from user"
+   "notes": "not a shot. Ball on opposite side of net from user",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#100"
   },
   {
    "t_sec": 260.53,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Was player from adjacent court picking up his ball on our court"
+   "notes": "not a shot. Was player from adjacent court picking up his ball on our court",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#101"
   },
   {
    "t_sec": 262.07,
-   "cause": "adjacent court",
-   "notes": "#103 is mislabeled. Not a shot. It was ball landing on adjacent court",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Adjacent court ball",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#102"
   },
   {
    "t_sec": 266.68,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shirt. Partner feeding ball"
+   "notes": "not a shirt. Partner feeding ball",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#103"
   },
   {
    "t_sec": 274.7,
-   "cause": "feed or throw between points",
-   "notes": "#104 is mislabeled. Not a shot. Opponent was throwing it to other opponent to get ready for a serve.",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Feeding ball",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#104"
   },
   {
    "t_sec": 280.93,
-   "cause": "duplicate detection",
-   "notes": "#105, #106, #107 are all one shot. It is a serve by the opponent.",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot. Server getting ready",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#105"
+  },
+  {
+   "t_sec": 281.6,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#106"
   },
   {
    "t_sec": 286.95,
    "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
-   "notes": "not a shot. Confusing opp_a with ball moving towards opp_b before shot is taken"
+   "notes": "not a shot. Confusing opp_a with ball moving towards opp_b before shot is taken",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#111"
   },
   {
    "t_sec": 290.53,
@@ -2159,9 +2205,21 @@
   },
   {
    "t_sec": 295.85,
-   "cause": "feed or throw between points",
-   "notes": "#113 is mislabeled. Not a shot. User is carrying ball to get ready for serve. However, serve was missed at 5:01.78",
-   "source": "legacy / pb_5_minute_outdoor-7"
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#112"
+  },
+  {
+   "t_sec": 310.9,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#121"
+  },
+  {
+   "t_sec": 311.77,
+   "source": "shot_review.xlsx / pb_5_minute_outdoor-7",
+   "notes": "not a shot",
+   "key": "shot_review.xlsx / pb_5_minute_outdoor-7#123"
   }
  ],
  "dead_intervals": [],
@@ -2186,14 +2244,14 @@
  "totals": {},
  "provenance": [
   {
-   "at": "2026-08-26T03:42:31.754418+00:00",
+   "at": "2026-08-26T13:27:00.101425+00:00",
    "source": "import from pb_5_minute_outdoor-2",
    "new": 32
   },
   {
-   "at": "2026-08-26T03:42:31.770437+00:00",
+   "at": "2026-08-26T13:27:00.115299+00:00",
    "source": "import from pb_5_minute_outdoor-7",
-   "false_positive": 45,
+   "false_positive": 63,
    "new": 89,
    "missed": 31,
    "enriched": 22,
@@ -2363,6 +2421,72 @@
    "cause": "point already over",
    "notes": "#124, #125 were not shots. Point had ended after #123 shot by user was a winner hit by opponents",
    "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 55.08,
+   "cause": "feed or throw between points",
+   "notes": "#20 is mislabeled. No shot. Ball was being thrown by opponent back to near side between points.",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 120.47,
+   "cause": "feed or throw between points",
+   "notes": "#45 is mislabeled. Not a shot. Was being thrown by partner to user.",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 159.43,
+   "cause": "feed or throw between points",
+   "notes": "#58 is mislabeled. Not a shot. Was being fed by partner to far side",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 186.43,
+   "cause": "feed or throw between points",
+   "notes": "#69 is mislabeled. Was not a shot. Ball was being thrown by one opponent to the other to get ready for a serve",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 211.1,
+   "cause": "feed or throw between points",
+   "notes": "#82 is mislabeled. Was not a shot. Ball was being passed from one opponent to the other for a serve",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 215.3,
+   "cause": "pick up / carry / no swing",
+   "notes": "#84 is mislabeled. Not a shot. User was walking back to get in position. Did not hit a ball",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 236.35,
+   "cause": "adjacent court",
+   "notes": "#95 is mislabeled.  Not a shot. Looks like ball is tagged on adjacent court",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 262.07,
+   "cause": "adjacent court",
+   "notes": "#103 is mislabeled. Not a shot. It was ball landing on adjacent court",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 274.7,
+   "cause": "feed or throw between points",
+   "notes": "#104 is mislabeled. Not a shot. Opponent was throwing it to other opponent to get ready for a serve.",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 280.93,
+   "cause": "duplicate detection",
+   "notes": "#105, #106, #107 are all one shot. It is a serve by the opponent.",
+   "source": "legacy / pb_5_minute_outdoor-7"
+  },
+  {
+   "t_sec": 295.85,
+   "cause": "feed or throw between points",
+   "notes": "#113 is mislabeled. Not a shot. User is carrying ball to get ready for serve. However, serve was missed at 5:01.78",
+   "source": "legacy / pb_5_minute_outdoor-7"
   }
  ],
  "superseded_shots": [
@@ -2423,5 +2547,5 @@
    "superseded_by": "the review sheet covering this span"
   }
  ],
- "updated_at_utc": "2026-08-26T03:42:31.773150+00:00"
+ "updated_at_utc": "2026-08-26T13:27:00.118361+00:00"
 }
