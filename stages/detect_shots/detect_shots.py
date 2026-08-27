@@ -736,7 +736,13 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
     """
     if formation is None or not discards:
         return []
-    kept_frames = sorted(int(s["frame"]) for s in shots)
+    # The no-double-add guard is SAME-SIDE ONLY. A duplicate of this contact would be on the
+    # same side; a shot on the OPPOSITE side 1.2s later is the RETURN -- and when the serve
+    # went undetected that return is exactly what we wrongly flagged as the serve. Guarding
+    # against any nearby shot let the mislabelled return block the real serve behind it, which
+    # is the same "false serve blocks the real one" shape seen before in serve acceptance.
+    kept_same_side = sorted(int(s["frame"]) for s in shots
+                            if side_by_track.get(s.get("track_id")) is not None)
     gap = int(round(SERVE_RESTORE_GAP_S * fps))
     look = int(round(SERVE_HELD_LOOK_S * fps))
     fwd_look = int(round(SERVE_FWD_LOOK_S * fps))
@@ -746,7 +752,9 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
         side = side_by_track.get(d.get("track_id"))
         if side not in ("near", "far"):
             continue
-        if any(abs(f - k) <= gap for k in kept_frames):
+        if any(abs(f - k) <= gap for k in kept_same_side
+               if side_by_track.get(next((s.get("track_id") for s in shots
+                                          if int(s["frame"]) == k), None)) == side):
             continue
         if serving_side_at(formation, f, court_len_ft) != side:
             continue
@@ -774,8 +782,8 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
             continue
         d["restored_as_serve"] = True
         out.append(d)
-        kept_frames.append(f)
-        kept_frames.sort()
+        kept_same_side.append(f)
+        kept_same_side.sort()
     return out
 
 

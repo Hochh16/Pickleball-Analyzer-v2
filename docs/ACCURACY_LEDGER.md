@@ -246,6 +246,55 @@ the one that works (a real bounce) is available for 60% of shots and cannot be r
 half the over-count is between-point balls typed as dinks, which the rally gate removes once
 the serves are right. Fixing serve detection pays twice.
 
+## THE MISLABELLED RETURN WAS BLOCKING THE REAL SERVE (2026-08-27)
+
+Asking WHICH condition blocked each remaining serve, rather than tuning, found a guard doing
+the opposite of its job. The five the acceptance clip still missed:
+
+| serve | what was happening |
+|---|---|
+| 1:34.22 | contact discarded; has-ball 0.57, **and a kept shot at 1:35.50 within 2 s** |
+| 2:32.50 | contact discarded; has-ball 0.80, **kept shot at 2:33.92 within 2 s** |
+| 4:42.30 | contact discarded; has-ball 0.82, **kept shot at 4:41.60 within 2 s** |
+| 3:13.00 | contact KEPT, simply not accepted as a serve |
+| 5:01.90 | no contact at all, even with the handling filter off |
+
+**Those "kept shots within 2 s" are the RETURNS we had mislabelled as serves.** The guard
+exists to stop adding a duplicate of the same contact -- but a duplicate is on the SAME side.
+A shot on the OPPOSITE side 1.2 s later is the return, and the serve legitimately belongs
+before it. Guarding against any nearby shot let the mislabelled return block the real serve
+behind it: the same "a false serve blocks the real one" shape already recorded in serve
+acceptance, in a new place.
+
+Making the guard same-side-only was measured before shipping, against also lowering the
+has-ball threshold to reach the 0.57-0.82 cases:
+
+| change | admitted | serves caught |
+|---|---|---|
+| **guard -> same side only, threshold stays 0.85** | **2** | **2** |
+| ...and threshold 0.70 | 7 | 3 |
+| ...and threshold 0.55 | 11 | 4 |
+
+The guard fix is free -- everything it admits is a real serve. Lowering the threshold to chase
+the rest costs four junk contacts per two serves, so it was not taken.
+
+    serves FLAGGED           18/25 -> 20/25 (80%)     contacts never detected  5 -> 2
+    servers NAMED            12/20 -> 16/20           serving side       19/20 (held)
+    shot types               107/191 -> 110/191       volleys        93/114 -> 96/117
+    missed shots recovered   31/53 -> 34/53           real shots outside rallies  4 -> 3
+    court B serve timing     1.19s -> 0.38s
+
+### What is left, and it is only two things
+
+* **3:13.00** -- the contact is detected and kept; `structure_points` does not accept it as a
+  serve. A rule question, not a detection one.
+* **5:01.90** -- no contact exists even with the filter off. Genuinely invisible to the
+  impulse detector.
+
+Serve detection went 10/25 -> 20/25 across this work. Six routes were rejected on the way and
+are recorded above; what finally worked was the operator's own rule, and the correction that
+made it work was dropping the underhand test from it.
+
 ## THE SERVER HAS THE BALL — the serve restoration that worked (2026-08-27)
 
 Operator, after four failed attempts: *"once I know which side is serving, I can tell which
