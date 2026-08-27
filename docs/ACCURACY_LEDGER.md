@@ -246,6 +246,63 @@ the one that works (a real bounce) is available for 60% of shots and cannot be r
 half the over-count is between-point balls typed as dinks, which the rally gate removes once
 the serves are right. Fixing serve detection pays twice.
 
+## THE SERVER HAS THE BALL — the serve restoration that worked (2026-08-27)
+
+Operator, after four failed attempts: *"once I know which side is serving, I can tell which
+shot is a serve by a) they have the ball and b) ball moves forward toward the net (to
+distinguish hitting it underhand as a feed to their partner). ignore whether underhand or
+not."*
+
+Dropping the underhand test was the correction that made it work.
+
+**"Has the ball" is ball-NEAR-THAT-PLAYER over a window, not ball-at-rest.** That distinction
+is the whole thing. Ball-at-rest was tested and failed (83 px vs 118 px) because a player
+bounces the ball before serving -- it moves plenty. But it stays WITH THEM, and no other shot
+does: in a rally the ball arrives from the opponent and is near the hitter only at the last
+instant.
+
+The radius has to be tight. Measured on the discarded contacts, share of the 1.5 s before
+contact with the ball on that player:
+
+| radius (fraction of player height) | on serves | on everything else |
+|---|---|---|
+| 1.2 | 0.93 | **0.97** -- separates nothing |
+| 0.6 | 0.93 | 0.55 |
+| **0.4** | **0.81-0.93** | **0.28-0.37** |
+| 0.25 | 0.50-0.67 | 0.06-0.17 |
+
+At 1.2 body-heights everything is "near the player", which is why the first attempt read a
+flat 0.97 for serves and junk alike and looked like the operator's rule failing.
+
+### The gate, and why all three parts are needed
+
+| gate applied to the discards | admitted | serves caught |
+|---|---|---|
+| formation + serving side | 16 | 7 |
+| + underhand (ball below the hip) | 56 | 9 |
+| **+ has the ball + moves forward** | **13** | **7** |
+
+Shipped with a fourth condition the offline test did not have: never restore a contact within
+2 s of one already kept. We are recovering a MISSING serve, not adding a second contact beside
+one we have.
+
+### Result
+
+    serves FLAGGED            17/25 -> 18/25        contacts never detected   6 -> 5
+    court C serve recall      0.80 -> 1.00          court C serve precision   0.80 -> 0.91
+    court B serve recall      0.80 -> 0.90          court B servers named      5/10 -> 6/10
+    court C shot types        41 -> 43              court C junk in rallies    12 -> 10
+    court C rally-end error   6.83s -> 3.85s        court B rally-end error   2.87s -> 2.34s
+
+Cost, all on the acceptance clip: one extra shot, junk in rallies 20 -> 21, serve precision
+0.76 -> 0.72. Every acceptance bar still passes, including MAX_FALSE_POSITIVES and
+MAX_WRONG_PLAYER.
+
+Five routes were rejected before this one. What separated it: it asks a SUSTAINED, RELATIVE
+question (was the ball with this player for a second and a half) rather than a per-frame one
+(was the ball below the hip AT the contact frame). That is the same distinction that governs
+everything else built on this footage.
+
 ## REJECTED: identifying the serve by underhand swing + forward ball (2026-08-27)
 
 Operator's rule, and it is correct as a description of the game: once you know which side is

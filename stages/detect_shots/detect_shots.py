@@ -531,6 +531,7 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     fps_local = float(fps) or 60.0
     shots_sorted = sorted(shots, key=lambda x: x["frame"])
     kept: List[dict] = []
+    discarded: List[dict] = []
     n_dropped = 0
     run: List[dict] = []
     prev_side: Optional[str] = None
@@ -572,6 +573,9 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
             span = (run[-1]["frame"] - run[0]["frame"]) / max(fps_local, 1.0)
             choice = run[-1] if span >= HANDLING_SPREAD_S else max(run, key=strength)
         kept.append(choice)
+        for other in run:
+            if other is not choice:
+                discarded.append(other)
         n_dropped += len(run) - 1
 
     def post_excursion(f0: int, look: int = None) -> float:
@@ -637,7 +641,142 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
         prev_side, prev_frame = side, s["frame"]
     flush()
     kept.sort(key=lambda x: x["frame"])
-    return kept, n_dropped
+    discarded.sort(key=lambda x: x["frame"])
+    return kept, n_dropped, discarded
+
+
+def load_formation(folder: Path):
+    """Per-frame court_y of every ROLE-bearing player, for the serve-formation test."""
+    pp, tr = folder / "players.parquet", folder / "track_roles.json"
+    if not pp.exists() or not tr.exists():
+        return None
+    try:
+        roles = json.loads(tr.read_text(encoding="utf-8")).get("roles") or {}
+        real = {int(x) for info in roles.values() for x in (info.get("track_ids") or [])}
+        if not real:
+            return None
+        df = pd.read_parquet(pp, columns=["frame", "track_id", "court_y_ft"])
+        return df[df.track_id.isin(real)]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def load_players_px(folder: Path):
+    """(frame, track_id) -> (centre_x, centre_y, height) in pixels."""
+    pp = folder / "players.parquet"
+    if not pp.exists():
+        return {}
+    try:
+        df = pd.read_parquet(pp, columns=["frame", "track_id", "bbox_x1", "bbox_y1",
+                                          "bbox_x2", "bbox_y2"])
+    except (OSError, ValueError, KeyError):
+        return {}
+    out = {}
+    for r in df.itertuples(index=False):
+        out[(int(r.frame), int(r.track_id))] = (
+            (float(r.bbox_x1) + float(r.bbox_x2)) / 2.0,
+            (float(r.bbox_y1) + float(r.bbox_y2)) / 2.0,
+            max(1.0, float(r.bbox_y2) - float(r.bbox_y1)))
+    return out
+
+
+def serving_side_at(df, frame: int, court_len_ft: float, window: int = 3):
+    """Which side is SERVING, from where the players stand. None when it cannot tell.
+
+    The serving side has two players behind its baseline, the receiving side one. Zero
+    crossovers over the operator's labelled serves and returns; symmetric cases give None.
+    """
+    if df is None:
+        return None
+    w = df[(df.frame >= frame - window) & (df.frame <= frame + window)]
+    if w.empty:
+        return None
+    y = w.groupby("track_id")["court_y_ft"].mean()
+    near, far = int((y < 0.0).sum()), int((y > court_len_ft).sum())
+    if near > far:
+        return "near"
+    if far > near:
+        return "far"
+    return None
+
+
+SERVE_HELD_FRAC = 0.85      # share of the pre-contact window with the ball on that player
+SERVE_HELD_LOOK_S = 1.5     # how far back "has the ball" is measured
+SERVE_HELD_RADIUS = 0.4     # ...within this fraction of the player's height, in pixels
+SERVE_FWD_LOOK_S = 0.8      # how far forward to check the ball actually left
+SERVE_FWD_MIN_FT = 3.0      # ...and by how much, toward the other side
+SERVE_RESTORE_GAP_S = 2.0   # never add a contact this close to one we already kept
+
+
+def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by, known_,
+                   ball_court_y, court_len_ft: float, net_y_ft: float, fps: float):
+    """Put back a serve the handling filter discarded, using the operator's own rule.
+
+    Operator, 2026-08-27: "once I know which side is serving, I can tell which shot is a
+    serve by a) they have the ball and b) ball moves forward toward the net" -- (b) being what
+    separates a serve from an underhand feed to their own partner.
+
+    `reject_same_side_runs` keeps one contact per same-side run. A serve is preceded by the
+    server's own bouncing, so it sits in a run with its own handling and is routinely the one
+    discarded: 7 of the 8 serves the operator says we miss are in there. Loosening the filter
+    is not an option -- it removes ~200 junk detections per clip.
+
+    Three conditions, and all three are needed. Measured on those discards:
+
+        gate                                       admitted   serves caught
+        formation + side only                          16            7
+        + underhand (ball below the hip)               56            9   (rejected)
+        + HAS THE BALL and moves forward               13            7
+
+    "Has the ball" is ball-NEAR-THAT-PLAYER over the window, not ball-at-rest: a player
+    bouncing the ball before serving moves it a lot, but it stays WITH THEM. Measured at a
+    generous radius it separates nothing (every contact has the ball nearby just before it);
+    at 0.4 of the player's height, a serve sits at 0.81-0.93 of the window against 0.28-0.37
+    for everything else.
+    """
+    if formation is None or not discards:
+        return []
+    kept_frames = sorted(int(s["frame"]) for s in shots)
+    gap = int(round(SERVE_RESTORE_GAP_S * fps))
+    look = int(round(SERVE_HELD_LOOK_S * fps))
+    fwd_look = int(round(SERVE_FWD_LOOK_S * fps))
+    out = []
+    for d in discards:
+        f = int(d["frame"])
+        side = side_by_track.get(d.get("track_id"))
+        if side not in ("near", "far"):
+            continue
+        if any(abs(f - k) <= gap for k in kept_frames):
+            continue
+        if serving_side_at(formation, f, court_len_ft) != side:
+            continue
+        # (a) the ball is ON THIS PLAYER through the window before contact
+        tid = int(d.get("track_id", -1))
+        near = tot = 0
+        for g in range(f - look, f):
+            p = players_px.get((g, tid))
+            if p is None or not (0 <= g < len(bx)) or not known_[g]:
+                continue
+            tot += 1
+            if math.hypot(bx[g] - p[0], by[g] - p[1]) <= SERVE_HELD_RADIUS * p[2]:
+                near += 1
+        if tot < 8 or (near / tot) < SERVE_HELD_FRAC:
+            continue
+        # (b) ...and the ball then goes toward the OTHER side
+        if not ball_court_y:
+            continue
+        ys = [ball_court_y[g] for g in range(f + 2, f + fwd_look)
+              if ball_court_y.get(g) is not None]
+        if len(ys) < 4:
+            continue
+        delta = ys[-1] - ys[0]
+        if not (delta > SERVE_FWD_MIN_FT if side == "near" else delta < -SERVE_FWD_MIN_FT):
+            continue
+        d["restored_as_serve"] = True
+        out.append(d)
+        kept_frames.append(f)
+        kept_frames.sort()
+    return out
 
 
 def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: float,
@@ -791,7 +930,8 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
 def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
            log: logging.Logger, params: dict,
            side_by_track: Optional[Dict[int, str]] = None,
-           ball_court_y: Optional[Dict[int, float]] = None
+           ball_court_y: Optional[Dict[int, float]] = None,
+           formation=None, players_px=None
            ) -> Tuple[List[dict], dict, List[str]]:
     n = len(df_ball)
     fx = df_ball["pixel_x"].to_numpy(copy=True)
@@ -1077,7 +1217,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     #     never produces. Gated to real ball because the synthetic generator does
     #     not model strict net-crossing alternation.
     if params.get("handling_filter"):
-        shots, n_handling = reject_same_side_runs(
+        shots, n_handling, handling_discards = reject_same_side_runs(
             shots, side_by_track or {}, params["handling_reset_frames"],
             params["fps"], ball_xy=(fx, fy, known),
             excursion_px=params.get("same_side_excursion_px"),
@@ -1087,7 +1227,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                                        SAME_SIDE_CROSS_MARGIN_FT),
             cross_frames=params.get("same_side_cross_frames", SAME_SIDE_CROSS_FRAMES))
     else:
-        n_handling = 0
+        n_handling, handling_discards = 0, []
     impulse_frames = sorted(s["frame"] for s in shots)
 
     # --- Serves (ball appears near a player after dead time) ----------------
@@ -1212,6 +1352,20 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                 continue
             kept.append(s)
         shots = kept
+    # Put back the serves the handling filter discarded (operator's rule: the server HAS THE
+    # BALL and the ball then moves forward). Before structure_points, so a restored contact
+    # can be accepted as the serve it is.
+    n_restored = 0
+    if params.get("contamination_filter") and handling_discards:
+        _restored = restore_serves(
+            shots, handling_discards, side_by_track or {}, formation,
+            players_px or {}, fx, fy, known, ball_court_y,
+            params["court_len_ft"], params["net_y_ft"], params["fps"])
+        if _restored:
+            shots = sorted(shots + _restored, key=lambda s: int(s["frame"]))
+            n_restored = len(_restored)
+            log.info("restored %d discarded serve(s)", n_restored)
+
     # Unified point-boundary detection (operator method): re-derive is_serve + flag
     # between-point balls from the SERVE->...->POINT-END structure (combines depth,
     # return-timing, dead-time + the one-serve-per-point constraint). Real ball only.
@@ -1244,6 +1398,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_merged_duplicates": suppressed,
         "n_teleport_dropped": n_teleport_dropped,
         "n_rejected_handling": n_handling,
+        "n_serves_restored": n_restored,
         "n_rejected_serve_blip": n_rejected_serve_blip,
         "n_rejected_teleport_in": n_rejected_teleport,
         "n_rejected_latch": n_rejected_latch,
@@ -1367,6 +1522,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                    else 0),
         "ball_3d_frames": len(ball_court_y) if ball_court_y else 0,
         "handling_filter": ball_source == "real",
+        "court_len_ft": float((court.get("court_geometry_feet") or {}).get("length_ft")
+                              or 44.0),
         "contamination_filter": ball_source == "real",
         "min_serve_run_frames": max(2, int(round(MIN_SERVE_RUN_S * float(fps)))),
         "teleport_in_px_per_frame": TELEPORT_IN_PX_PER_FRAME * res_scale,
@@ -1402,7 +1559,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     shots, stats, warnings = detect(df_ball, players_by_frame, poses,
                                     court["image_to_court"], log, params,
-                                    side_by_track, ball_court_y)
+                                    side_by_track, ball_court_y,
+                                    formation=load_formation(folder),
+                                    players_px=load_players_px(folder))
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': shots are derived from "

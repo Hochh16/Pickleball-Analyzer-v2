@@ -151,19 +151,6 @@
    "trusted": true
   },
   {
-   "t_sec": 121.2,
-   "reason": "out",
-   "by_shot_t": 120.5,
-   "hitter_side": "near",
-   "hitter_is_user": false,
-   "bounce_xy_ft": [
-    7.0,
-    -2.5
-   ],
-   "outcome": "hitter_loses",
-   "trusted": false
-  },
-  {
    "t_sec": 132.12,
    "reason": "out",
    "by_shot_t": 131.43,
