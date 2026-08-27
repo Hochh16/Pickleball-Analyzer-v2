@@ -33,6 +33,11 @@ import pandas as pd
 
 SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wrappers
 # Operator knee-BEND bands (bend deg = 180 - knee angle) per shot type: soft/control
+
+# What a third ball can be, per the operator: a drop, a drive or a LOB. The drop rate is
+# measured across all three -- leaving lobs out of the denominator scored a player who lobbed
+# the third ball as if it had not been played.
+THIRD_SHOT_CHOICES = ("drop", "drive", "lob")
 # shots need a deeper, lower stance than power shots. A shot is "good" if its bend is
 # within its type's band. (Shoulder-turn technique was removed: absolute 3-D rotation
 # is not reliably measurable from one corner camera -- dinks read 62 deg vs a true
@@ -867,11 +872,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # per-rally end_reason confidence (source for by_end_reason + serve)
     end_reason_confs = _confs(rallies, "end_reason_confidence")
 
-    # third shot. The real "third-shot decision" is the drop-vs-drive choice made
-    # from DEEP (baseline/transition) on the 3rd ball. So the denominator is only
-    # 3rd shots that are a drop or a drive hit from deep -- excluding a mis-segmented
-    # serve at position 3, and a kitchen dink (not a third-shot-drop situation),
-    # both of which polluted the old count. drop_rate = drops / (drops + drives).
+    # third shot. Operator, 2026-08-27: "the 3rd shot can be a drop, drive or lob. and the
+    # one in USAPA ratings that is important is 3rd shot drops."
+    #
+    # So the denominator is the three shots a third ball actually is -- drop, drive OR LOB --
+    # and the number that matters is the DROP rate among them. The old denominator was
+    # drop-or-drive only, which silently dropped every lob out of the choice and called the
+    # result a "decision"; a player who lobs the third ball instead of dropping it was scored
+    # as if that ball had never been played.
     def _third_index(r: dict) -> Optional[int]:
         """Which shot in this rally is the THIRD SHOT.
 
@@ -943,7 +951,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             if i is not None:
                 s = shot_by_id.get(int(r["shot_ids"][i]))
                 if (s is not None and not s.get("is_serve")
-                        and s.get("shot_type") in ("drop", "drive")
+                        and s.get("shot_type") in THIRD_SHOT_CHOICES
                         and (s.get("features") or {}).get("contact_zone")
                         in ("baseline", "transition")
                         and (not only_user or s.get("is_user"))):
@@ -956,8 +964,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     def _third_block(thirds: List[dict], unmeasurable: int, per_user: bool,
                      all_thirds: Optional[List[dict]] = None) -> dict:
         by = count_by(thirds, lambda s: s.get("shot_type", "unknown"))
-        n_dd = by.get("drop", 0) + by.get("drive", 0)
-        rate = round(by.get("drop", 0) / n_dd, 3) if n_dd else None
+        n_choice = sum(by.get(k, 0) for k in THIRD_SHOT_CHOICES)
+        rate = round(by.get("drop", 0) / n_choice, 3) if n_choice else None
         return mv_sourced({
             # EVERY third shot, whatever its type -- the operator's count. Distinct from
             # n_third_decisions below, which is only the drop-vs-drive choices we could type
@@ -967,7 +975,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "third_shot_all_by_type": (count_by(all_thirds,
                                                 lambda s: s.get("shot_type", "unknown"))
                                        if all_thirds is not None else None),
-            "n_third_decisions": len(thirds),   # deep drop-or-drive 3rd shots we could TYPE
+            # The USAPA-relevant number: how many third shots were DROPS. Counted over EVERY
+            # third shot, not only the ones we could type from a landing -- the operator asks
+            # "how many third-shot drops did I play", and answering it from the typed subset
+            # reported 0 on a clip that contains one. The RATE below stays on the typed
+            # subset, because a rate over shots we could not type would be a guess.
+            "n_third_shot_drops": (
+                count_by(all_thirds, lambda s: s.get("shot_type", "unknown")).get("drop", 0)
+                if all_thirds is not None else by.get("drop", 0)),
+            "n_third_decisions": len(thirds),   # deep 3rd shots we could TYPE from a landing
             # deep third shots we saw but could not type (no bounce -> speed/arc fallback).
             # Reported so the report can say why the denominator is small rather than just
             # showing a small number.

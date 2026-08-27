@@ -530,3 +530,14 @@ def test_third_shots_are_counted_separately_from_third_shot_drops():
     # the serve, which put 8 "returns" into this count
     assert "return" not in (t["third_shot_all_by_type"] or {})
     assert "serve" not in (t["third_shot_all_by_type"] or {})
+
+    # Operator, 2026-08-27: "the 3rd shot can be a drop, drive or lob. and the one in USAPA
+    # ratings that is important is 3rd shot drops." So the drop COUNT is over every third
+    # shot, and the drop RATE is over the three things a third ball can be -- a denominator
+    # of drop-or-drive only scored a player who lobbed the third ball as if it never happened.
+    from stages.compute_metrics.compute_metrics import THIRD_SHOT_CHOICES
+    assert set(THIRD_SHOT_CHOICES) == {"drop", "drive", "lob"}
+    allby = t["third_shot_all_by_type"] or {}
+    assert t["n_third_shot_drops"] == allby.get("drop", 0), (
+        "the drop count must come from ALL third shots, not the typed subset -- counting it "
+        "from the subset reported 0 on a clip that contains one")

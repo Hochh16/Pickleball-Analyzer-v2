@@ -227,21 +227,31 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
     return clamp_level(base + bonus - penalty + mv), drivers
 
 
-MIN_THIRD_DECISIONS = 4   # fewer deep drop-or-drive 3rd shots than this = too few
+MIN_THIRD_DECISIONS = 4   # fewer typed 3rd shots than this = too few to rate on
 
 def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
-    """Third-shot drop-vs-drive from deep, for the RATED USER. The denominator is
-    the user's own 3rd shots that were a drop or a drive hit from deep (a serve at
-    position 3 or a kitchen dink is not a third-shot decision and is excluded).
-    Too few user decisions -> neutral + low confidence (a 5-min clip yields only a
-    handful), so we don't coach off a 1-in-N rate."""
+    """THIRD-SHOT DROPS, for the rated user.
+
+    Operator, 2026-08-27: "the 3rd shot can be a drop, drive or lob. and the one in USAPA
+    ratings that is important is 3rd shot drops." So the rate is drops over the three things
+    a third ball can be -- drop, drive OR LOB. The old denominator was drop-or-drive only,
+    which scored a player who lobbed the third ball as if that ball had never been played.
+
+    Two counts are carried, and they answer different questions: `n_third_shots` is every
+    third shot the player hit, and `n_third_decisions` is the subset we could type from a
+    landing. The rate is computed on the second -- a rate over shots we could not type would
+    be a guess -- while the first tells the report how much third-shot play there was at all.
+    Too few typed -> neutral and low confidence, so we never coach off a 1-in-N rate."""
     ts = user.get("third_shot", {}) or {}
     n = ts.get("n_third_decisions", 0) or 0
     drop = ts.get("drop_rate")
     enough = drop is not None and n >= MIN_THIRD_DECISIONS
     drivers = {  # hide the rate when too few decisions -> it won't render a "100%"
         "third_shot_drop_rate": drop if enough else None,
+        "n_third_shot_drops": ts.get("n_third_shot_drops"),
+        "n_third_shots": ts.get("n_third_shots"),
         "third_shot_by_type": ts.get("by_shot_type") or None,
+        "third_shot_all_by_type": ts.get("third_shot_all_by_type") or None,
         "n_third_decisions": n,
         # Third shots the player DID hit from deep that Stage 6 could not type, because no
         # bounce was detected and the speed/arc fallback is a coin flip. Carried through so
