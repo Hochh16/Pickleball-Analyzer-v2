@@ -246,6 +246,40 @@ the one that works (a real bounce) is available for 60% of shots and cannot be r
 half the over-count is between-point balls typed as dinks, which the rally gate removes once
 the serves are right. Fixing serve detection pays twice.
 
+## REJECTED: restoring discarded serves where the formation agrees (2026-08-27)
+
+The plan looked sound and the arithmetic killed it. `reject_same_side_runs` keeps one contact
+per same-side run, and 7 of the 8 serves we miss still exist among its discards. The serve
+formation independently says a point begins at all 8. So: make the filter record what it
+drops, and put a discard back only where the formation agrees.
+
+Built and measured, tightening three times:
+
+| gate | restored on the acceptance clip | serves FLAGGED | serve precision |
+|---|---|---|---|
+| (before) | -- | 17/25 | 0.76 |
+| formation + serving side + no kept shot within 2 s | 18 | **15/25** | **0.62** |
+| ...and struck from behind the baseline | 18 | -- | -- |
+| ...and at most ONE per formation window | 16 | -- | -- |
+
+**Seven serves were wanted and the tightest gate still admitted sixteen.** The depth test
+barely filters, because pre-serve handling IS deep -- that is where serving happens. The
+one-per-window rule barely filters either, because the formation has **32 windows for 14
+serves**.
+
+That is the whole problem in one line: the formation's RECALL is excellent (every serve falls
+in a window) and its PRECISION is not (it holds 26-36% of the clip). A high-recall,
+low-precision cue cannot authorise putting shots back -- it says "a point begins somewhere
+around here", which is not the same as "this contact is the serve".
+
+Reverted. Shots went 125 -> 143 on the acceptance clip and serves flagged went DOWN, which is
+the signature of adding junk that then competes for the serve slot.
+
+**What would actually help**: something that narrows a formation window to the MOMENT of the
+serve. The formation cannot do it (identical at the serve and its return), and neither can
+the ball (every ball route has now failed). A serve-specific pose signature -- the toss, the
+underhand swing -- is the obvious untried candidate, and pose is already computed.
+
 ## THE SERVE FORMATION — a rally-start cue that needs no ball (2026-08-26)
 
 Operator, reviewing the eight serves we miss: *"serve starts by the players hitting hit behind
