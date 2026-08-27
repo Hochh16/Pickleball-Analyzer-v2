@@ -246,6 +246,47 @@ the one that works (a real bounce) is available for 60% of shots and cannot be r
 half the over-count is between-point balls typed as dinks, which the rally gate removes once
 the serves are right. Fixing serve detection pays twice.
 
+## THE SERVE FORMATION — a rally-start cue that needs no ball (2026-08-26)
+
+Operator, reviewing the eight serves we miss: *"serve starts by the players hitting hit behind
+the baseline along with their partner, and one of the opposing players are behind the baseline
+as well"*. Measured, and it is the strongest signal found today -- and the only one that does
+not touch the ball, which matters because every ball-based route to these serves has failed.
+
+| | players behind a baseline | someone behind BOTH baselines |
+|---|---|---|
+| **serves** (acceptance clip) | median 3 | **93%** |
+| **serves** (court C) | median 2 | 60% |
+| any other shot | median 1 | **15-16%** |
+
+**As a rally-START detector it has near-perfect recall**: every operator serve falls inside a
+formation window -- 14/14 on the acceptance clip, 9/10 on court C. Precision is the weak side:
+32 windows for 14 serves, and the formation holds 26-36% of the clip.
+
+**It CANNOT separate a serve from its return.** The formation is identical 1.2s later (93% vs
+100%, 60% vs 78%) because nobody has moved. So it does not fix the serve/return confusion
+directly -- but it says, independently of the ball, *a point begins about here*.
+
+### How to use it, and why it matters now
+
+The eight missing serves all sit inside a formation window, and 7 of the 8 contacts still
+EXIST but are discarded by `reject_same_side_runs` (which keeps one contact per run). Two
+independent cues therefore agree at those moments: the formation says a serve happened, and a
+discarded candidate says a contact happened. Promoting a discarded contact ONLY where the
+formation agrees is far safer than loosening the filter for everyone -- the filter removes
+~200 junk detections per clip and must keep doing so.
+
+That needs the filter to expose what it drops, which it currently does not. That plumbing is
+the next piece of work.
+
+### A process note
+
+The list of missing serves sent for review was keyed to the CURRENT pipeline while the
+annotated video the operator watched was rendered 2026-08-24, before that day's changes. Shot
+numbers had shifted, so "#32 is annotated correctly" describes a different shot. **Re-render
+the video whenever a review list is produced from it** -- the numbers are the only link
+between the two, and they are not stable across a detection change.
+
 ## SERVE / RETURN — where it stands, and one fix REJECTED after measuring (2026-08-26)
 
     serves FLAGGED as serves      10/25 -> 17/25
