@@ -513,8 +513,74 @@ def came_from_other_side(court_y_by_frame, frame: int, side: str, fps: float,
     return False
 
 
-def retype_returns(shots: list, court_y_by_frame, fps: float, net_y_ft: float) -> int:
-    """Relabel a "serve" the ball reached from the other side as the RETURN it is.
+def behind_baseline_counts(players, roles_by_tid, frame: int,
+                           court_len_ft: float, window: int = 3):
+    """(behind the NEAR baseline, behind the FAR baseline) around `frame`.
+
+    `players` is the (frame, track_id) -> {court_y, ...} index. Only tracks with a ROLE are
+    counted: the tracker also produces noise tracks, and a stray detection behind a baseline
+    would invent a server out of nothing.
+    """
+    seen = {}
+    for (f, tid), p in players.items():
+        if not (frame - window <= f <= frame + window):
+            continue
+        if roles_by_tid.get(int(tid)) in (None, "noise"):
+            continue
+        y = p.get("court_y")
+        if y is not None and y == y:
+            seen.setdefault(int(tid), []).append(float(y))
+    near = far = 0
+    for tid, ys in seen.items():
+        m = sum(ys) / len(ys)
+        if m < 0.0:
+            near += 1
+        elif m > court_len_ft:
+            far += 1
+    return near, far
+
+
+def serve_side_from_formation(players, roles_by_tid, frame: int, court_len_ft: float):
+    """Which side is SERVING, from where the players stand. None when it cannot tell.
+
+    Operator, 2026-08-26: "not only are 2 players behind the baseline as well as an opposing
+    player, but the ball should be seen and hit by the side with the 2 players behind the
+    baseline. The return would always occur after the serve plus having the person hitting
+    the ball be on the side with only 1 person behind the baseline."
+
+    The COUNT alone cannot separate a serve from its return -- 1.2s later nobody has moved,
+    and the formation reads the same. The ASYMMETRY can: server and partner are both back,
+    the receiver is back alone. Measured against their labelled serves and returns on two
+    clips, with ZERO crossovers:
+
+        hitter's side has MORE behind    19 serves,  0 returns
+        hitter's side has FEWER behind    0 serves, 20 returns
+        equal                             5 serves,  3 returns
+
+    So "more" means serve, "fewer" means return, and equal means we do not know.
+    """
+    near, far = behind_baseline_counts(players, roles_by_tid, frame, court_len_ft)
+    if near > far:
+        return "near"
+    if far > near:
+        return "far"
+    return None
+
+
+def retype_returns(shots: list, court_y_by_frame, fps: float, net_y_ft: float,
+                  players=None, roles_by_tid=None,
+                  court_len_ft: float = 44.0) -> int:
+    """Relabel a "serve" that is really the RETURN.
+
+    Two independent tests, tried in order of how well they measured:
+
+    1. WHERE THE PLAYERS STAND. The serving side has two players behind its baseline, the
+       receiving side one. Zero crossovers over the operator's labelled serves and returns
+       (see serve_side_from_formation) -- a shot struck from the side with FEWER players back
+       is not a serve.
+    2. WHERE THE BALL CAME FROM. If it came over the net just before the contact, the shot
+       answers something. 3 of 5 returns, 0 of 16 serves -- precise but partial, so it is the
+       fallback for when the formation is symmetric and says nothing.
 
     `is_serve` is deliberately LEFT ALONE. It is what Stage 7 segments rallies on, and a new
     point really does begin around here -- the serve we missed is a second earlier. Clearing
@@ -525,8 +591,17 @@ def retype_returns(shots: list, court_y_by_frame, fps: float, net_y_ft: float) -
     for s in shots:
         if s.get("shot_type") != "serve":
             continue
-        if came_from_other_side(court_y_by_frame, int(s["frame"]),
-                                s.get("hitter_side"), fps, net_y_ft):
+        side = s.get("hitter_side")
+        verdict = None
+        if players is not None and side in ("near", "far"):
+            serving = serve_side_from_formation(players, roles_by_tid or {},
+                                                int(s["frame"]), court_len_ft)
+            if serving is not None:
+                verdict = (serving != side)      # struck from the side that is NOT serving
+        if verdict is None:
+            verdict = came_from_other_side(court_y_by_frame, int(s["frame"]),
+                                           side, fps, net_y_ft)
+        if verdict:
             s["shot_type"] = "return"
             s["retyped_from_serve"] = True
             n += 1
@@ -1031,7 +1106,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         prev_shot_id = shot_id
 
     # stats
-    n_retyped = retype_returns(out_shots, court_y_by_frame, float(fps), NET_Y_FT)
+    n_retyped = retype_returns(out_shots, court_y_by_frame, float(fps), NET_Y_FT,
+                               players=players,
+                               roles_by_tid=roles_by_tid,
+                               court_len_ft=float(court["court_geometry_feet"]["length_ft"])
+                               if court.get("court_geometry_feet") else 44.0)
     n_reset = mark_resets(out_shots, float(fps))
 
     from collections import Counter

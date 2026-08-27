@@ -411,3 +411,38 @@ def test_opening_on_a_return_flips_the_serving_SIDE_only():
     for side, want in (("near", "far"), ("far", "near")):
         got = "far" if side == "near" else "near"
         assert got == want
+
+
+def _formation(near_ys, far_ys, frame=100):
+    import pandas as pd
+    rows = []
+    tid = 0
+    for y in near_ys + far_ys:
+        tid += 1
+        for f in range(frame - 3, frame + 4):
+            rows.append({"frame": f, "track_id": tid, "court_y_ft": y})
+    return pd.DataFrame(rows)
+
+
+def test_the_serving_side_is_the_one_with_two_players_behind_the_baseline():
+    """Operator, 2026-08-26: the serve is struck by the side with TWO players behind its
+    baseline; the return by the side with only ONE.
+
+    The COUNT alone cannot separate a serve from its return -- 1.2s later nobody has moved.
+    The ASYMMETRY can, and it did so with ZERO crossovers over their labelled shots: 19
+    serves from the side with more players back and none from the side with fewer, 20 returns
+    the other way and none from the side with more.
+    """
+    L = 44.0
+    # server + partner behind the NEAR baseline (y < 0), receiver behind the FAR one
+    serving_near = _formation(near_ys=[-3.0, -5.0], far_ys=[47.0, 30.0])
+    assert sr.serving_side_from_formation(serving_near, 100, L) == "near"
+    serving_far = _formation(near_ys=[-4.0, 20.0], far_ys=[48.0, 46.0])
+    assert sr.serving_side_from_formation(serving_far, 100, L) == "far"
+    # symmetric: it must DECLINE rather than guess -- 5 of the operator's shots look like this
+    symmetric = _formation(near_ys=[-3.0, 20.0], far_ys=[47.0, 30.0])
+    assert sr.serving_side_from_formation(symmetric, 100, L) is None
+    assert sr.serving_side_from_formation(None, 100, L) is None
+    # nobody behind either baseline: mid-rally, not a serve
+    assert sr.serving_side_from_formation(_formation([10.0, 20.0], [30.0, 35.0]),
+                                          100, L) is None

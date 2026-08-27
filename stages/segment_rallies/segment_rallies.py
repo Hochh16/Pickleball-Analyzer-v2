@@ -366,6 +366,54 @@ def apply_rally_ends(shots: List[dict], ends: List[dict], log=None,
     return n
 
 
+def load_formation(folder: Path):
+    """Per-frame court_y of every ROLE-bearing player, for the serve-formation test."""
+    pp, tr = folder / "players.parquet", folder / "track_roles.json"
+    if not pp.exists() or not tr.exists():
+        return None
+    try:
+        import pandas as pd
+        roles = json.loads(tr.read_text(encoding="utf-8")).get("roles") or {}
+        real = {int(x) for info in roles.values() for x in (info.get("track_ids") or [])}
+        if not real:
+            return None
+        df = pd.read_parquet(pp, columns=["frame", "track_id", "court_y_ft"])
+        return df[df.track_id.isin(real)]
+    except (OSError, ValueError, KeyError, ImportError):
+        return None
+
+
+def serving_side_from_formation(df, frame: int, court_len_ft: float,
+                                window: int = 3) -> Optional[str]:
+    """Which side is SERVING, from where the players stand. None when it cannot tell.
+
+    Operator, 2026-08-26: "not only are 2 players behind the baseline as well as an opposing
+    player, but the ball should be seen and hit by the side with the 2 players behind the
+    baseline. The return would always occur after the serve plus having the person hitting
+    the ball be on the side with only 1 person behind the baseline."
+
+    The COUNT of players behind a baseline cannot separate a serve from its return -- 1.2s
+    later nobody has moved and it reads the same. The ASYMMETRY can: server and partner are
+    both back, the receiver is back alone. Measured against their labelled serves and returns
+    on two clips, with ZERO crossovers: 19 serves struck from the side with MORE players back
+    and none from the side with fewer; 20 returns the other way and none from the side with
+    more. Five shots were symmetric, which this reports as None rather than guessing.
+    """
+    if df is None:
+        return None
+    w = df[(df.frame >= frame - window) & (df.frame <= frame + window)]
+    if w.empty:
+        return None
+    y = w.groupby("track_id")["court_y_ft"].mean()
+    near = int((y < 0.0).sum())
+    far = int((y > court_len_ft).sum())
+    if near > far:
+        return "near"
+    if far > near:
+        return "far"
+    return None
+
+
 def ball_span_before(b3, t_sec: float, look_s: float = SERVE_SPAN_LOOK_S):
     """How far the ball ranged in the window before `t_sec`, in feet. None if too few samples.
 
@@ -615,6 +663,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # only when the ball goes out of play (sustained not-in-play run).
     ball_known = load_ball_known(folder / "ball.parquet") if gap_split else None
     ball_3d = load_ball_3d(folder / "ball_3d.parquet") if gap_split else None
+    formation = load_formation(folder) if gap_split else None
+    court_len_ft = float((json.loads((folder / "court.json").read_text(encoding="utf-8"))
+                          .get("court_geometry_feet") or {}).get("length_ft") or 44.0)
 
     shots = sorted(classified.get("shots", []), key=lambda s: int(s["frame"]))
     bounces = sorted(bounces_doc.get("bounces", []),
@@ -674,10 +725,21 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         serve = rally_shots[0]
         start_frame = int(serve["frame"])
         # Did this rally open on the serve, or on the shot that ANSWERED a serve we missed?
+        # WHERE THE PLAYERS STAND decides first, and the ball only when they are symmetric.
+        # Measured against the operator's 20 labelled rally servers: the ball-span test alone
+        # gets the side 16/20, the formation alone 14/20 (it declines to answer when
+        # symmetric), and the formation with the ball as fallback 19/20.
         opened_on_return = opening_shot_is_return(ball_3d, start_frame / fps)
-        server_side = serve.get("hitter_side")
-        if opened_on_return and server_side in ("near", "far"):
-            server_side = "far" if server_side == "near" else "near"
+        hit_side = serve.get("hitter_side")
+        server_side = serving_side_from_formation(formation, start_frame, court_len_ft)
+        side_basis = "formation"
+        if server_side is None:
+            side_basis = "ball_travel" if opened_on_return else "opening_shot"
+            server_side = hit_side
+            if opened_on_return and server_side in ("near", "far"):
+                server_side = "far" if server_side == "near" else "near"
+        elif hit_side in ("near", "far") and server_side != hit_side:
+            opened_on_return = True     # struck from the receiving side: it is the return
         # End frame is max(last shot frame, ending bounce frame).
         if ending_bid is not None:
             ebf = next((int(b["frame"]) for b in bounces
@@ -709,6 +771,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # possible from this evidence -- knowing the serve came from the near end does not
             # say whether it was the user or their partner.
             "server_side": server_side,
+            "server_side_basis": side_basis,
             "opened_on_return": bool(opened_on_return),
             "server_track_id_uncertain": bool(opened_on_return),
             "opening_ball_span_ft": (round(ball_span_before(ball_3d, start_frame / fps), 1)
