@@ -246,6 +246,53 @@ the one that works (a real bounce) is available for 60% of shots and cannot be r
 half the over-count is between-point balls typed as dinks, which the rally gate removes once
 the serves are right. Fixing serve detection pays twice.
 
+## REJECTED: identifying the serve by underhand swing + forward ball (2026-08-27)
+
+Operator's rule, and it is correct as a description of the game: once you know which side is
+serving, the serve is the contact where **(a)** they have the ball, **(b)** the swing is
+**underhand**, and **(c)** the ball then moves **forward** -- (c) separating a serve from an
+underhand feed to their own partner.
+
+Measured on the 231 and 125 contacts the handling filter discards, which is where 7 of the 8
+missing serves live:
+
+| test | on the operator's serves | on everything else |
+|---|---|---|
+| **(b)** ball below the hip line at contact | 6/15 and 10/18 (**~50%**) | 83/216 and 40/107 (**~38%**) |
+| **(c)** ball moves toward the other side | 12/15 and 10/18 (**~70%**) | 99/216 and 42/107 (**~45%**) |
+| **(b) AND (c)** | 4 and 5 serves caught | **56 and 23 contacts admitted** |
+
+Fifteen and eighteen serves wanted; the combined rule admits fifty-six and twenty-three, and
+catches fewer than a third of them. It does not work.
+
+**Why, and it is the same reason as everything else today.** The rule is about the MOMENT of
+contact, and our measurements at that moment are too coarse. The detected impulse frame is
+approximate and the ball moves fast, so by the frame we call "contact" the ball has often
+risen above the hip -- a real serve reads "below the hip" only about half the time, barely
+above the 38% of everything else.
+
+One implementation note worth keeping: contact height must be measured from the BALL against
+the hip line, not from a wrist. The wrist version picks whichever hand is higher -- often the
+tossing arm -- and read False for **every** real serve, which looks like the rule failing when
+it is the code failing.
+
+### Serve DETECTION: the routes tried and closed
+
+| route | outcome |
+|---|---|
+| relax the invisible-gap threshold | no serves gained, more false ones |
+| ball at rest before the serve | 83 px vs 118 px -- not separable |
+| bound the excursion window at the next contact | +1 serve, and 5 other metrics worse |
+| restore discards where the formation agrees | 16 admitted for 7 wanted |
+| underhand swing + forward ball | 56 admitted for 15 wanted |
+
+Serve detection stands at **17/25 flagged**. Every route through the BALL has failed because
+the ball cannot see the serve; every route through PLAYER POSITION has failed because it
+cannot pin down the MOMENT. What is still untried is a serve-specific motion signature over a
+WINDOW rather than at a frame -- the toss-and-strike as a trajectory, not a single contact
+height. That is a different kind of measurement from anything attempted, and it should not be
+started without deciding it is worth the build.
+
 ## REJECTED: restoring discarded serves where the formation agrees (2026-08-27)
 
 The plan looked sound and the arithmetic killed it. `reject_same_side_runs` keeps one contact
