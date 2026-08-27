@@ -929,6 +929,25 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         log.info(f"loaded Stage 5.7 trajectory speeds for {len(traj_index)} shots")
 
     shots = sorted(shots_doc.get("shots", []), key=lambda s: s["frame"])
+    # Which serve-flagged shots are really RETURNS. Decided before typing so the shot that
+    # FOLLOWS one is not typed "return" as well -- see is_return below.
+    _court_len = float((court.get("court_geometry_feet") or {}).get("length_ft") or 44.0)
+    really_returns = set()
+    for _s in shots:
+        if not _s.get("is_serve"):
+            continue
+        _side = _s.get("hitter_side")
+        _verdict = None
+        if _side in ("near", "far"):
+            _serving = serve_side_from_formation(players, roles_by_tid,
+                                                 int(_s["frame"]), _court_len)
+            if _serving is not None:
+                _verdict = (_serving != _side)
+        if _verdict is None:
+            _verdict = came_from_other_side(court_y_by_frame, int(_s["frame"]),
+                                            _side, float(fps), NET_Y_FT)
+        if _verdict:
+            really_returns.add(int(_s.get("shot_id", -1)))
     out_shots = []
     warnings = list(shots_doc.get("warnings", []))
     prev_frame = None
@@ -1041,8 +1060,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
         # a return answers the serve: previous shot was the serve AND this contact is
         # on the opposite side of the net (the receiving team plays it back).
+        #
+        # ...unless that "serve" is itself a return we mislabelled, which happens whenever
+        # Stage 5 missed the real serve. Then the shot after it is the THIRD shot, not a
+        # second return -- and calling it a return put 8 "returns" into the third-shot count
+        # on the acceptance clip, where a third shot can never be one.
         prev = shots[i - 1] if i > 0 else None
         is_return = bool(prev is not None and prev.get("is_serve")
+                         and int(prev.get("shot_id", -1)) not in really_returns
                          and prev.get("hitter_side") and s.get("hitter_side")
                          and prev["hitter_side"] != s["hitter_side"])
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,

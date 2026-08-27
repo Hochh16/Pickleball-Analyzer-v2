@@ -500,3 +500,33 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+def test_third_shots_are_counted_separately_from_third_shot_drops():
+    """Operator, 2026-08-27: "count third shots separate from 3rd shot drops. any shot after
+    a return that the user hits is a 3rd shot regardless of whether the user or their partner
+    served."
+
+    n_third_decisions is deliberately narrow -- deep drop-or-drive choices we could type from
+    the LANDING -- and it read 1 on the acceptance clip while looking like a third-shot count.
+    n_third_shots is the operator's count: the shot after the return, any type, either
+    partner.
+    """
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+    clip = Path("data/pb_5_minute_outdoor-7")
+    if not (clip / "metrics.json").exists():
+        import pytest
+        pytest.skip("acceptance clip not analysed here")
+    m = json.loads((clip / "metrics.json").read_text(encoding="utf-8"))
+    unw = lambda x: x.get("value") if isinstance(x, dict) and "value" in x else x
+    t = unw(m["match"]["third_shot"])
+    assert t["n_third_shots"] is not None
+    assert t["n_third_shots"] >= t["n_third_decisions"], (
+        "every drop/drive decision is also a third shot, so the count cannot be smaller")
+    # a third shot is never a RETURN -- that was the cascade from mislabelling a return as
+    # the serve, which put 8 "returns" into this count
+    assert "return" not in (t["third_shot_all_by_type"] or {})
+    assert "serve" not in (t["third_shot_all_by_type"] or {})

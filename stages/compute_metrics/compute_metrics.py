@@ -872,6 +872,55 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # 3rd shots that are a drop or a drive hit from deep -- excluding a mis-segmented
     # serve at position 3, and a kitchen dink (not a third-shot-drop situation),
     # both of which polluted the old count. drop_rate = drops / (drops + drives).
+    def _third_index(r: dict) -> Optional[int]:
+        """Which shot in this rally is the THIRD SHOT.
+
+        Operator's definition, taken literally: "any shot after a return that the user hits is
+        a 3rd shot". So find the RETURN and take the next shot -- not a fixed rally position.
+
+        Position 3 is wrong whenever the rally does not run serve-return-third: if Stage 5
+        missed the serve the rally opens on the return and position 3 is the fourth ball, and
+        if a stray contact survives at the front everything shifts the other way. Stage 7's
+        `opened_on_return` flag is not a safe substitute either -- it is tuned for naming the
+        serving SIDE (19/20 there) and over-fires as a shot index, marking rallies whose
+        position 0 is plainly a real serve.
+
+        Falls back to position 3 when no shot in the rally is typed as a return.
+        """
+        ids = r.get("shot_ids") or []
+        for k, sid in enumerate(ids[:-1]):
+            s = shot_by_id.get(int(sid))
+            if s is not None and s.get("shot_type") == "return":
+                return k + 1
+        return 2 if len(ids) > 2 else None
+
+    def _third_shots(only_user: bool) -> List[dict]:
+        """EVERY third shot, whatever its type.
+
+        Operator, 2026-08-27: "count third shots separate from 3rd shot drops. any shot after
+        a return that the user hits is a 3rd shot regardless of whether the user or their
+        partner served."
+
+        So this is a plain count of the shot after the return, with no filter on type, zone,
+        or how confidently we typed it -- and no requirement that the user served. It is a
+        DIFFERENT question from the drop-vs-drive decision below, which deliberately narrows
+        to shots we could type from the landing, and the two were being reported as one
+        number: `n_third_decisions` read 1 on the acceptance clip and looked like a third-shot
+        count.
+        """
+        out = []
+        for r in rallies:
+            i = _third_index(r)
+            if i is None:
+                continue
+            s = shot_by_id.get(int(r["shot_ids"][i]))
+            if s is None or s.get("is_serve"):
+                continue
+            if only_user and not s.get("is_user"):
+                continue
+            out.append(s)
+        return out
+
     def _clean_thirds(only_user: bool) -> Tuple[List[dict], int]:
         """(decisions we can actually type, how many we had to discard as untypeable).
 
@@ -890,8 +939,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         """
         out, unmeasurable = [], 0
         for r in rallies:
-            if int(r["n_shots"]) >= 3 and len(r["shot_ids"]) >= 3:
-                s = shot_by_id.get(int(r["shot_ids"][2]))
+            i = _third_index(r)
+            if i is not None:
+                s = shot_by_id.get(int(r["shot_ids"][i]))
                 if (s is not None and not s.get("is_serve")
                         and s.get("shot_type") in ("drop", "drive")
                         and (s.get("features") or {}).get("contact_zone")
@@ -903,11 +953,20 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                         unmeasurable += 1
         return out, unmeasurable
 
-    def _third_block(thirds: List[dict], unmeasurable: int, per_user: bool) -> dict:
+    def _third_block(thirds: List[dict], unmeasurable: int, per_user: bool,
+                     all_thirds: Optional[List[dict]] = None) -> dict:
         by = count_by(thirds, lambda s: s.get("shot_type", "unknown"))
         n_dd = by.get("drop", 0) + by.get("drive", 0)
         rate = round(by.get("drop", 0) / n_dd, 3) if n_dd else None
         return mv_sourced({
+            # EVERY third shot, whatever its type -- the operator's count. Distinct from
+            # n_third_decisions below, which is only the drop-vs-drive choices we could type
+            # from the landing. Reporting one as the other made a 1-decision clip look like a
+            # 1-third-shot clip.
+            "n_third_shots": len(all_thirds) if all_thirds is not None else None,
+            "third_shot_all_by_type": (count_by(all_thirds,
+                                                lambda s: s.get("shot_type", "unknown"))
+                                       if all_thirds is not None else None),
             "n_third_decisions": len(thirds),   # deep drop-or-drive 3rd shots we could TYPE
             # deep third shots we saw but could not type (no bounce -> speed/arc fallback).
             # Reported so the report can say why the denominator is small rather than just
@@ -919,6 +978,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         }, _confs(thirds, "shot_type_confidence"), len(thirds))
 
     third_shots, third_unmeasurable = _clean_thirds(only_user=False)
+    all_third_shots = _third_shots(only_user=False)
 
     def _role_third_unmeasurable(tids) -> int:
         """Deep third shots hit by THIS role that we could not type. Counted the same way
@@ -975,7 +1035,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
         }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
-        "third_shot": _third_block(third_shots, third_unmeasurable, per_user=False),
+        "third_shot": _third_block(third_shots, third_unmeasurable, per_user=False,
+                                   all_thirds=all_third_shots),
         "returns": mv_structural(n_returns, n_returns),
         "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
@@ -1136,7 +1197,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # ball) and return-of-serve count, for a per-user (not match) read.
             "third_shot": _third_block(
                 [s for s in third_shots if int(s["track_id"]) in tids],
-                _role_third_unmeasurable(tids), per_user=True),
+                _role_third_unmeasurable(tids), per_user=True,
+                all_thirds=[s for s in all_third_shots
+                            if int(s["track_id"]) in tids]),
             "n_returns": mv_structural(
                 sum(1 for s in returns if int(s["track_id"]) in tids),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
