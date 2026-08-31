@@ -686,7 +686,26 @@ def get_collection_file(cid: str, file_path: str) -> FileResponse:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    # Same reason as the static mount: a cached index.html keeps a stale UI alive after the
+    # app has been restarted with a fix in it.
+    return FileResponse(STATIC_DIR / "index.html",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+class _NoCacheStatic(StaticFiles):
+    """Serve the UI with revalidation, not from the browser's cache.
+
+    Without this the browser keeps app.js until it decides otherwise, so a fix to the UI is
+    invisible after restarting the app -- the server hands out the new file and the page
+    runs the old one. That cost the operator a round of "the reports list isn't showing"
+    when the list was in fact deployed. `no-cache` still allows a 304, so the file is not
+    re-downloaded when unchanged; it just cannot be used without asking.
+    """
+
+    async def get_response(self, path: str, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
+app.mount("/static", _NoCacheStatic(directory=str(STATIC_DIR)), name="static")

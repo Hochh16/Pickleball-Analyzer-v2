@@ -58,3 +58,15 @@ def test_every_finished_report_is_listable_from_one_place():
             assert not any((server.store.folder(str(o["id"])) / "report.html").exists()
                            for o in same), f"{s['id']}: a report exists but is not listed"
     assert listable, "no per-video reports listed"
+
+
+def test_the_ui_is_not_served_from_a_stale_browser_cache():
+    """A fix to the UI was deployed, the app restarted, and the operator still saw the old
+    screen -- the browser was holding app.js. Static assets and index.html must revalidate,
+    or every UI change needs the operator to know about hard-refresh."""
+    from app import server
+    resp = server.index()
+    assert "no-cache" in resp.headers.get("cache-control", "")
+    mounted = [r for r in server.app.routes if getattr(r, "name", "") == "static"]
+    assert mounted, "static mount missing"
+    assert isinstance(mounted[0].app, server._NoCacheStatic)
