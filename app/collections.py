@@ -67,6 +67,20 @@ class CollectionError(RuntimeError):
     """User-facing problem (unknown collection, duplicate video, unsupported venue)."""
 
 
+class DuplicateVideoError(CollectionError):
+    """The same footage is already a member, under a different session id.
+
+    Carries WHICH member it duplicates, because the useful answer is almost always
+    "replace that one" -- a re-run exists precisely because the first analysis was wrong.
+    A plain refusal left the operator with a finished report they could not get in.
+    """
+
+    def __init__(self, message: str, session_id: str, replaces: str):
+        super().__init__(message)
+        self.session_id = session_id
+        self.replaces = replaces
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -251,9 +265,10 @@ class CollectionStore:
             if m["session_id"] == session_folder.name:
                 raise CollectionError(f"{session_folder.name} is already in {cid}")
             if sha and m.get("video_sha256") == sha:
-                raise CollectionError(
+                raise DuplicateVideoError(
                     f"{session_folder.name} is the same video as {m['session_id']}, "
-                    f"already in {cid} — adding it twice would double-count everything")
+                    f"already in {cid} — adding it twice would double-count everything",
+                    session_id=session_folder.name, replaces=m["session_id"])
 
         doc["members"].append({
             "session_id": session_folder.name,
@@ -264,6 +279,60 @@ class CollectionStore:
             "pipeline": self._fingerprint(session_folder)})
         # Chronological, so ids and time offsets are deterministic across rebuilds.
         doc["members"].sort(key=lambda m: (m.get("captured_at") or "", m["session_id"]))
+        self._write(doc)
+        return self.rebuild(cid) if rebuild else doc
+
+    def replace(self, cid: str, session_folder: Path, captured_at: Optional[str] = None,
+                venue_ok: Optional[bool] = None, rebuild: bool = True) -> Dict:
+        """Swap in a re-analysed version of a video the collection already holds.
+
+        Re-running a video -- for a better calibration, a corrected player click -- leaves
+        a NEW session id for the SAME footage. add() rightly refuses it as a duplicate,
+        but until now that was the end of the road: the collection was stuck with the old
+        analysis and the only way out was to know the API by hand.
+
+        The old member is identified by the video's checksum, not its name, because a
+        re-run has a different session id and that is the whole point. Everything is
+        decided and written in one pass so a failure cannot leave the collection short a
+        member, and only one rebuild runs.
+        """
+        doc = self._read(cid)
+        if doc.get("closed_at"):
+            raise CollectionError(f"{cid} is closed; reopen or start a new collection")
+        session_folder = Path(session_folder)
+        if not (session_folder / "classified.json").exists():
+            raise CollectionError(f"{session_folder.name} has not been analysed yet")
+        if venue_ok is False:
+            raise CollectionError(
+                f"{session_folder.name}: this venue is not supported yet, so it is not "
+                f"added to the collection.")
+
+        video = session_folder / "video.mp4"
+        sha = file_sha256(video) if video.exists() else None
+        if not sha:
+            raise CollectionError(
+                f"{session_folder.name} has no video file, so there is no way to tell "
+                f"which member it replaces")
+
+        superseded = [m for m in doc["members"] if m.get("video_sha256") == sha]
+        if not superseded:
+            raise CollectionError(
+                f"{session_folder.name} is not a re-run of anything in {cid} — "
+                f"use add for a new video")
+        if any(m["session_id"] == session_folder.name for m in superseded):
+            raise CollectionError(f"{session_folder.name} is already in {cid}")
+
+        kept = [m for m in doc["members"] if m.get("video_sha256") != sha]
+        kept.append({
+            "session_id": session_folder.name,
+            "path": str(session_folder),
+            "captured_at": captured_at or self._captured_at(session_folder),
+            "video_sha256": sha,
+            "added_at": _now(),
+            "replaced": [m["session_id"] for m in superseded],
+            "pipeline": self._fingerprint(session_folder)})
+        kept.sort(key=lambda m: (m.get("captured_at") or "", m["session_id"]))
+        doc["members"] = kept
         self._write(doc)
         return self.rebuild(cid) if rebuild else doc
 

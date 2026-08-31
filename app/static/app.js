@@ -50,9 +50,20 @@ function toast(msg, isErr) {
 async function api(path, opts) {
   const res = await fetch(path, opts);
   if (!res.ok) {
-    let detail = res.statusText;
-    try { const j = await res.json(); detail = j.detail || detail; } catch (e) {}
-    throw new Error(detail);
+    let detail = res.statusText, structured = null;
+    try {
+      const j = await res.json();
+      if (j.detail && typeof j.detail === 'object') {
+        // A refusal the UI can act on carries fields, not just a sentence -- keep them,
+        // or the message renders as "[object Object]".
+        structured = j.detail;
+        detail = j.detail.message || detail;
+      } else { detail = j.detail || detail; }
+    } catch (e) {}
+    const err = new Error(detail);
+    err.status = res.status;
+    err.detail = structured;
+    throw err;
   }
   const ct = res.headers.get('content-type') || '';
   return ct.includes('application/json') ? res.json() : res;
@@ -1118,6 +1129,30 @@ async function addToCollection(cid, name) {
     // The most likely refusals are meaningful to the operator: an unsupported venue
     // (D4) or the same video twice. Show the server's reason rather than a generic error.
     wrap.innerHTML = `<p class="small err">${escapeHtml(e.message || 'Could not add.')}</p>`;
+    // Re-running a video to fix its analysis is the NORMAL reason to hit the duplicate
+    // guard, and the right answer is to supersede the old one. Offer it here; refusing
+    // and stopping left a finished report with no way in.
+    if (e.detail && e.detail.can_replace) {
+      const btn = document.createElement('button');
+      btn.className = 'btn primary';
+      btn.textContent = `Replace "${e.detail.replaces}" with this run`;
+      btn.onclick = async () => {
+        wrap.innerHTML = '<p class="small muted">Replacing and rebuilding…</p>';
+        try {
+          await jsonPost(`/api/collections/${cid}/members`,
+                         { session_id: S.session.id, replace: true });
+          finishCollect(cid, `Replaced "${e.detail.replaces}" in "${name}".`);
+        } catch (e2) {
+          wrap.innerHTML = `<p class="small err">${escapeHtml(e2.message || 'Could not replace.')}</p>`;
+          toast(e2.message || 'Could not replace', true);
+        }
+      };
+      const note = document.createElement('p');
+      note.className = 'small muted';
+      note.textContent = 'This is the same footage re-analysed, so it replaces the old '
+                       + 'run rather than adding to it — the totals stay right.';
+      wrap.appendChild(note); wrap.appendChild(btn);
+    }
     toast(e.message || 'Could not add to the cumulative report', true);
   }
 }

@@ -26,7 +26,8 @@ from . import browse as browse_mod
 from . import video as video_mod
 from .drivesync import DriveSync, detect_drive_dir
 from .pipeline import PipelineRunner, has_vision_outputs
-from .collections import SAME_PERSON_REMINDER, CollectionError, CollectionStore
+from .collections import (SAME_PERSON_REMINDER, CollectionError, CollectionStore,
+                          DuplicateVideoError)
 from .sessions import SessionError, SessionStore
 
 # Only these (known pipeline outputs from the vision GPU pass) may be written via
@@ -550,6 +551,9 @@ class CreateCollectionRequest(BaseModel):
 
 class AddMemberRequest(BaseModel):
     session_id: str
+    # A re-run of a video already in the collection: swap it in for the old analysis
+    # instead of refusing. Off by default so a plain add can never silently drop a member.
+    replace: bool = False
 
 
 def _venue_ok(session_id: str) -> Optional[bool]:
@@ -640,10 +644,24 @@ def reopen_collection(cid: str) -> dict:
 @app.post("/api/collections/{cid}/members")
 def add_collection_member(cid: str, req: AddMemberRequest) -> dict:
     try:
+        if req.replace:
+            return collections.replace(cid, store.folder(req.session_id),
+                                       venue_ok=_venue_ok(req.session_id))
         return collections.add(cid, store.folder(req.session_id),
                                venue_ok=_venue_ok(req.session_id))
+    except DuplicateVideoError as e:
+        # 409, not 400: the request is well formed and there IS an answer -- replace the
+        # member it duplicates. Said in a shape the UI can offer as a button, because the
+        # operator re-ran the video precisely to supersede the old analysis.
+        raise HTTPException(status_code=409, detail={
+            "message": str(e), "can_replace": True,
+            "session_id": e.session_id, "replaces": e.replaces})
     except CollectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500,
+                            detail=f"Adding {req.session_id} to {cid} failed: "
+                                   f"{type(e).__name__}: {e}")
 
 
 @app.delete("/api/collections/{cid}/members/{session_id}")
