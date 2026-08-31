@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -684,12 +684,28 @@ def get_collection_file(cid: str, file_path: str) -> FileResponse:
 # Static SPA (mounted last so /api/* wins)
 # --------------------------------------------------------------------------
 
-@app.get("/")
-def index() -> FileResponse:
-    # Same reason as the static mount: a cached index.html keeps a stale UI alive after the
-    # app has been restarted with a fix in it.
-    return FileResponse(STATIC_DIR / "index.html",
-                        headers={"Cache-Control": "no-cache, must-revalidate"})
+def _asset_stamp(name: str) -> str:
+    """A short token that changes whenever the file changes."""
+    try:
+        return str(int((STATIC_DIR / name).stat().st_mtime))
+    except OSError:
+        return "0"
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    """Serve the shell with the current asset stamps baked into the URLs.
+
+    `Cache-Control: no-cache` only governs copies fetched AFTER it was added; a copy
+    already in the browser from before is still used without asking, which is exactly how
+    a deployed fix stayed invisible twice. Stamping the URL means a changed file is a
+    DIFFERENT url, so a stale copy can never be the one that answers -- no hard-refresh,
+    no "did you restart the app". Unchanged files keep their stamp and stay cached.
+    """
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for name in ("app.js", "styles.css"):
+        html = html.replace(f"/static/{name}", f"/static/{name}?v={_asset_stamp(name)}")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 class _NoCacheStatic(StaticFiles):

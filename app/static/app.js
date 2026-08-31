@@ -26,7 +26,8 @@ const S = {
   driveSync: false,         // Google Drive for Desktop auto-sync available (from /api/config)
   session: null,
   startingCorner: 'left',   // set visually on the "You" step; default until then
-  court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1 },
+  court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1,
+           selected: null },
   calib: null,
   courtConfirmed: false,
   you: { frameIdx: 0, img: null, imgFrame: -1, click: null },
@@ -293,6 +294,7 @@ function initCourtStep() {
   courtCanvas.addEventListener('click', onCourtClick);
   courtCanvas.addEventListener('mousemove', onCourtMove);
   courtCanvas.addEventListener('mouseleave', () => { loupeCanvas.hidden = true; });
+  window.addEventListener('keydown', onCourtKey);
 
   el('undoBtn').addEventListener('click', () => { undoLastPoint(); });
   el('clearBtn').addEventListener('click', () => { clearPoints(); });
@@ -464,6 +466,11 @@ function drawCourt() {
     ctx.fillStyle = POINTS[i].color;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (i === S.court.selected) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(p[0], p[1], 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
     ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
     ctx.strokeText(String(i + 1), p[0] + 9, p[1] - 8);
@@ -485,12 +492,48 @@ function nextPointIdx() {
 
 function onCourtClick(e) {
   const idx = nextPointIdx();
-  if (idx === -1) { toast('All 8 points are placed — use Undo to change one.'); return; }
+  if (idx === -1) {
+    // With all 8 down, a click retargets the NEAREST point instead of refusing. Undo can
+    // only take the last one back, so fixing point 2 meant undoing six good clicks.
+    const [sx, sy] = canvasToSource(e);
+    let best = -1, bestD = Infinity;
+    S.court.points.forEach((p, i) => {
+      const d = Math.hypot(p[0] - sx, p[1] - sy);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    S.court.points[best] = [sx, sy];
+    S.court.selected = best;
+    hideCalibResult();
+    drawCourt(); renderPointList(); updateCalibButton();
+    return;
+  }
   const [sx, sy] = canvasToSource(e);
   S.court.points[idx] = [sx, sy];
+  S.court.selected = idx;
   if (idx === 0) S.court.markFrame = S.court.frameIdx;
   hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();
+}
+
+/** Arrow keys nudge the last-placed point by one SOURCE pixel.
+ *
+ *  The frame is 3840px wide but is displayed a few hundred CSS pixels across, so one pixel
+ *  of mouse movement is worth several source pixels -- more than the 10px the kitchen fit
+ *  is judged against. The magnifier makes the corner VISIBLE at that scale but cannot make
+ *  the click finer than one screen pixel, which is why lining the court up by clicking
+ *  alone is a fight. Nudging closes the loop: the fit bar rescores on every press. */
+function onCourtKey(e) {
+  if (S.step !== 'court') return;
+  const D = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[e.key];
+  if (!D) return;
+  const i = S.court.selected;
+  if (i === null || i === undefined || !S.court.points[i]) return;
+  e.preventDefault();
+  const step = e.shiftKey ? 10 : 1;   // Shift for a coarse move
+  S.court.points[i] = [S.court.points[i][0] + D[0] * step,
+                       S.court.points[i][1] + D[1] * step];
+  hideCalibResult();
+  drawCourt(); renderPointList();
 }
 
 function onCourtMove(e) {
@@ -521,12 +564,14 @@ function undoLastPoint() {
   for (let i = S.court.points.length - 1; i >= 0; i--) {
     if (S.court.points[i] !== null) { S.court.points[i] = null; break; }
   }
+  S.court.selected = null;
   if (nextPointIdx() === 0) S.court.markFrame = null;
   hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();
 }
 function clearPoints() {
   S.court.points = new Array(8).fill(null);
+  S.court.selected = null;
   S.court.markFrame = null;
   hideCalibResult();
   drawCourt(); renderPointList(); updateCalibButton();

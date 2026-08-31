@@ -71,6 +71,16 @@ def test_the_ui_is_not_served_from_a_stale_browser_cache():
     assert mounted, "static mount missing"
     assert isinstance(mounted[0].app, server._NoCacheStatic)
 
+    # no-cache only governs copies fetched after it existed -- a copy already in the
+    # browser from before is used without asking, which is how a deployed fix stayed
+    # invisible twice. The asset URL must therefore change when the asset does.
+    body = resp.body.decode("utf-8")
+    for name in ("app.js", "styles.css"):
+        stamp = server._asset_stamp(name)
+        assert stamp != "0", f"no stamp for {name}"
+        assert f"/static/{name}?v={stamp}" in body, f"{name} is not cache-busted"
+    assert '"/static/app.js"' not in body, "an unstamped app.js url survives"
+
 
 def test_the_live_calibration_fit_matches_what_the_server_will_report():
     """The court screen now scores the fit while the corners are being clicked, so the
