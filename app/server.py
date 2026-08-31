@@ -186,47 +186,62 @@ def list_sessions(all: bool = False) -> dict:
     raw = [s for s in store.list() if _is_real(s)]
     if all:
         return {"sessions": raw}
-    def _progress(s: dict) -> tuple:
-        """How far a setup got. Newest is the tie-break, NOT the rule.
+    # ONE ROW PER VIDEO, but the row and its report can be DIFFERENT setups -- collapsing
+    # them onto one session cannot satisfy both things the operator does here:
+    #
+    #   * they finish a video, re-run court setup a few times, and then want the REPORT --
+    #     ranking by "newest" hid the finished session behind empty attempts;
+    #   * they deliberately re-do setup to fix the player identity and want to RUN THAT --
+    #     ranking by "has a report" hid the new setup behind the old finished one.
+    #
+    # So the row is the newest setup (what "continue a previous setup" means), and the
+    # report link points at the newest setup that actually has a report.
+    def _rank(s: dict) -> tuple:
+        """Which setup of a video the row should be: configured beats newest.
 
-        Keeping the most recent setup per video hid finished work: the operator re-ran the
-        court setup for "PB 3 minute outdoor" three times after the analysis had completed,
-        so the row offered was an empty attempt and the finished session -- the one in their
-        cumulative report, with a report of its own -- was unreachable from the UI.
-
-        A session that is RUNNING RIGHT NOW outranks everything, including a finished one.
-        Preferring the report alone hid the opposite case: after re-doing setup to fix the
-        player identity, the row offered was the OLD finished session and the analysis
-        actually in progress could not be opened to see its status.
+        A live job outranks everything -- after re-doing setup to fix the player identity,
+        the operator needs to open the run that is actually in progress.
         """
         sid = str(s.get("id", ""))
-        f = store.folder(sid)
         steps = s.get("steps") or {}
         job = runner.jobs.get(sid)
         running = bool(job and getattr(job, "phase", "idle") not in ("idle", "done", "error"))
-        return (running,
-                (f / "report.html").exists(),
-                (f / "classified.json").exists(),
-                sum(1 for v in steps.values() if v),
-                str(s.get("created_at", "")))
+        configured = bool(steps.get("calibration") and steps.get("roster"))
+        return (running, configured, str(s.get("created_at", "")))
 
     best: dict = {}
+    reports: dict = {}
     for s in raw:
         key = str(s.get("video_path") or s.get("id"))
+        created = str(s.get("created_at", ""))
+        if (store.folder(str(s.get("id", ""))) / "report.html").exists():
+            prev_rep = reports.get(key)
+            if prev_rep is None or created > str(prev_rep.get("created_at", "")):
+                reports[key] = s
         prev = best.get(key)
-        if prev is None or _progress(s) > _progress(prev):
+        # NEWEST CONFIGURED setup, not merely newest. Opening the wizard and backing out
+        # leaves an empty stub, and those are common -- the operator has four setups of one
+        # video, of which the newest has no calibration, no roster and no click. Offering
+        # that row means "continue a previous setup" continues nothing.
+        if prev is None or _rank(s) > _rank(prev):
             s = dict(s)
             s["duplicate_setups"] = (prev or {}).get("duplicate_setups", 0) + 1
             best[key] = s
         else:
             prev["duplicate_setups"] = prev.get("duplicate_setups", 0) + 1
+
     out = sorted(best.values(), key=lambda s: str(s.get("created_at", "")), reverse=True)
     # Does a finished report exist for this video? The UI's only "View report" link was
     # bound to the session currently loaded, so once the operator moved on there was no way
     # back to an earlier video's report -- the file was there, with no route to it.
     for s in out:
         sid = str(s["id"])
-        s["has_report"] = (store.folder(sid) / "report.html").exists()
+        key = str(s.get("video_path") or sid)
+        rep = reports.get(key)
+        # Which session's report to link to -- possibly an EARLIER setup of the same video.
+        s["report_session_id"] = str(rep["id"]) if rep else None
+        s["has_report"] = rep is not None
+        s["report_is_older_setup"] = bool(rep and str(rep["id"]) != sid)
         _job = runner.jobs.get(sid)
         s["phase"] = getattr(_job, "phase", None) if _job else None
     return {"sessions": out}

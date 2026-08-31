@@ -177,9 +177,14 @@ async function loadExistingSessions() {
       // A finished video gets a direct link to its own report. Without it the only way in
       // was the button bound to the session currently loaded, so an earlier video's report
       // existed on disk with no route to it from the UI.
+      // The report may belong to an EARLIER setup of the same video: the row is the newest
+      // setup (what "continue a previous setup" means), while the report link follows
+      // whichever setup actually produced one.
       const reportLink = s.has_report
-        ? `<a class="sc-report" href="/api/sessions/${s.id}/files/report.html"
-              target="_blank" rel="noopener">Report →</a>`
+        ? `<a class="sc-report" href="/api/sessions/${s.report_session_id}/files/report.html"
+              target="_blank" rel="noopener"
+              title="${s.report_is_older_setup ? 'From an earlier setup of this video' : ''}"
+              >Report${s.report_is_older_setup ? ' (earlier run)' : ''} →</a>`
         : '';
       card.innerHTML =
         `<div class="sc-name"></div>
