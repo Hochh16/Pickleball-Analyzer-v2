@@ -193,10 +193,19 @@ def list_sessions(all: bool = False) -> dict:
         court setup for "PB 3 minute outdoor" three times after the analysis had completed,
         so the row offered was an empty attempt and the finished session -- the one in their
         cumulative report, with a report of its own -- was unreachable from the UI.
+
+        A session that is RUNNING RIGHT NOW outranks everything, including a finished one.
+        Preferring the report alone hid the opposite case: after re-doing setup to fix the
+        player identity, the row offered was the OLD finished session and the analysis
+        actually in progress could not be opened to see its status.
         """
-        f = store.folder(str(s.get("id", "")))
+        sid = str(s.get("id", ""))
+        f = store.folder(sid)
         steps = s.get("steps") or {}
-        return ((f / "report.html").exists(),
+        job = runner.jobs.get(sid)
+        running = bool(job and getattr(job, "phase", "idle") not in ("idle", "done", "error"))
+        return (running,
+                (f / "report.html").exists(),
                 (f / "classified.json").exists(),
                 sum(1 for v in steps.values() if v),
                 str(s.get("created_at", "")))
@@ -216,7 +225,10 @@ def list_sessions(all: bool = False) -> dict:
     # bound to the session currently loaded, so once the operator moved on there was no way
     # back to an earlier video's report -- the file was there, with no route to it.
     for s in out:
-        s["has_report"] = (store.folder(str(s["id"])) / "report.html").exists()
+        sid = str(s["id"])
+        s["has_report"] = (store.folder(sid) / "report.html").exists()
+        _job = runner.jobs.get(sid)
+        s["phase"] = getattr(_job, "phase", None) if _job else None
     return {"sessions": out}
 
 
