@@ -529,10 +529,22 @@ def user_seed_basis(track_roles: dict) -> tuple:
     looking wrong -- which is exactly what makes it worth a banner. Returns (None, None)
     when no user role is present at all.
     """
+    # The user is usually MANY tracks -- the tracker fragments them -- and only one carries
+    # the click; the rest are linked to it by appearance+height. Reading whichever came
+    # first in the file therefore reported a guess for a video that WAS clicked: court B-2
+    # has 11 user tracks and no click among them (a real problem), while indoor-2-court-B
+    # has 8 of which track 40 is the click (not a problem), and both read as guesses.
+    # So: a click anywhere in the user's tracks means the identity was clicked.
+    best = (None, None)
     for info in (track_roles.get("track_roles", {}) or {}).values():
-        if (info or {}).get("role") == "user":
-            return info.get("basis"), info.get("confidence")
-    return None, None
+        if (info or {}).get("role") != "user":
+            continue
+        basis, conf = info.get("basis"), info.get("confidence")
+        if basis == "click":
+            return basis, conf
+        if best == (None, None):
+            best = (basis, conf)
+    return best
 
 
 def build_html(folder: Path) -> str:
