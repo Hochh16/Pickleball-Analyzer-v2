@@ -76,6 +76,23 @@ class DriveSync:
         assert self.drive_dir is not None
         return self.drive_dir / f"{session_id}_outputs"
 
+    def _clear_other_bundles(self, keep: str) -> None:
+        """Leave exactly one bundle on Drive, so the notebook can auto-detect the clip.
+
+        Called only AFTER the new one is safely in place. Clearing first meant a failed copy
+        destroyed a bundle that was already working: the operator had a verified 2.24 GB
+        bundle on Drive, a later session's push deleted it, that push then failed
+        verification, and Drive was left with nothing at all -- turning a retryable copy
+        problem into a lost hand-off.
+        """
+        assert self.drive_dir is not None
+        for stale in self.drive_dir.glob(f"*{INPUT_SUFFIX}"):
+            if stale.name != keep:
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+
     def push_bundle(self, session_id: str, bundle_path: Path) -> Path:
         """Copy the clip bundle into the synced folder (Drive uploads it), removing
         any other `*_vision_input.zip` so the notebook auto-detects exactly one.
@@ -86,17 +103,12 @@ class DriveSync:
         copy. A crashed or failed copy can never appear under the real name."""
         assert self.enabled() and self.drive_dir is not None
         keep = f"{session_id}{INPUT_SUFFIX}"
-        for stale in self.drive_dir.glob(f"*{INPUT_SUFFIX}"):
-            if stale.name != keep:
-                try:
-                    stale.unlink()
-                except OSError:
-                    pass
         dest = self.drive_dir / keep
         src_size = Path(bundle_path).stat().st_size
         # Same complete bundle already synced (e.g. a restarted run): skip the copy
         # so Drive doesn't re-upload multi-GB for nothing.
-        if dest.exists() and dest.stat().st_size == src_size and zipfile.is_zipfile(str(dest)):
+        if dest.exists() and dest.stat().st_size == src_size and _readable_zip(dest):
+            self._clear_other_bundles(keep)
             return dest
         part = self.drive_dir / (keep + ".part")
         last = "unknown"
@@ -116,6 +128,7 @@ class DriveSync:
                 zip_ok = size_ok and _readable_zip(part)
                 if size_ok and zip_ok:
                     os.replace(part, dest)
+                    self._clear_other_bundles(keep)
                     return dest
                 last = (f"copy is {part.stat().st_size} of {src_size} bytes -- truncated"
                         if not size_ok else

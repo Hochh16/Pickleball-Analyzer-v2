@@ -159,3 +159,20 @@ def test_readable_zip_swallows_a_read_error(tmp_path):
     """A read error on a Drive virtual filesystem means the upload is in flight, not damage."""
     assert _readable_zip(_zip(tmp_path / "ok.zip")) is True
     assert _readable_zip(tmp_path / "does_not_exist.zip") is False
+
+
+def test_a_failed_push_does_not_destroy_the_bundle_already_on_drive(tmp_path, monkeypatch):
+    """Clearing the other bundles used to happen FIRST. So a later session's failed copy
+    deleted a bundle that was already working and left Drive with nothing -- turning a
+    retryable copy problem into a lost hand-off. Observed exactly that in the wild."""
+    drive = tmp_path / "My Drive"
+    drive.mkdir()
+    good = _zip(drive / "good_vision_input.zip")
+    monkeypatch.setattr("app.drivesync._readable_zip", lambda p: False)
+    monkeypatch.setattr("app.drivesync.VERIFY_BACKOFF_S", (0.0, 0.0))
+    ds = DriveSync(drive)
+    try:
+        ds.push_bundle("new", _zip(tmp_path / "new_vision_input.zip"))
+    except RuntimeError:
+        pass
+    assert good.exists(), "a failed push must leave the working bundle alone"
