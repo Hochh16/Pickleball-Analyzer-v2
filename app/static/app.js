@@ -356,7 +356,10 @@ const COURT_W_FT = 20.0, COURT_L_FT = 44.0, NET_FT = 22.0, KITCHEN_FT = 7.0;
 const USER_KITCHEN_FT = NET_FT - KITCHEN_FT;      // 15
 const OPP_KITCHEN_FT  = NET_FT + KITCHEN_FT;      // 29
 const CORNERS_FT = [[0, 0], [COURT_W_FT, 0], [COURT_W_FT, COURT_L_FT], [0, COURT_L_FT]];
-const KITCHEN_WARN_PX = 10.0;                      // KITCHEN_PROJECTION_WARNING_PX
+// Judged in FEET, not pixels -- see KITCHEN_PROJECTION_WARNING_FT in stages/calibrate.
+// A pixel means whatever the video's resolution makes it mean, so a pixel bar failed
+// well-marked 4K clips and passed worse 1080p ones.
+const KITCHEN_WARN_FT = 0.5;
 
 /** Court feet -> image pixels, from the 4 clicked corners. Four points determine the
  *  homography exactly (8 equations, 8 unknowns), so this is a plain linear solve --
@@ -402,25 +405,40 @@ function kitchenErrorPx(H, clicked, yFt) {
   return (d[0] + d[1]) / 2;
 }
 
+/** Image pixels per court foot along the court at yFt -- mirrors pixels_per_foot_at. */
+function pixelsPerFootAt(H, yFt) {
+  const a = projectFt(H, COURT_W_FT / 2, yFt - 0.5), b = projectFt(H, COURT_W_FT / 2, yFt + 0.5);
+  if (!a || !b) return null;
+  return Math.hypot(b[0] - a[0], b[1] - a[1]);
+}
+
+function kitchenErrorFt(H, clicked, yFt) {
+  const px = kitchenErrorPx(H, clicked, yFt), ppf = pixelsPerFootAt(H, yFt);
+  return (px === null || !ppf) ? null : px / ppf;
+}
+
 function updateFitBar(H) {
   const bar = el('fitBar'); if (!bar) return;
   if (!H) { bar.hidden = true; return; }
   bar.hidden = false;
   const pts = S.court.points;
-  const eu = kitchenErrorPx(H, [pts[4], pts[5]], USER_KITCHEN_FT);
-  const eo = kitchenErrorPx(H, [pts[6], pts[7]], OPP_KITCHEN_FT);
+  const eu = kitchenErrorFt(H, [pts[4], pts[5]], USER_KITCHEN_FT);
+  const eo = kitchenErrorFt(H, [pts[6], pts[7]], OPP_KITCHEN_FT);
   const done = [eu, eo].filter((e) => e !== null);
   let cls, msg;
   if (!done.length) {
     cls = 'pending';
     msg = 'Corners set. The dashed lines are where the kitchen, net and centre line '
-        + 'should be — if they miss the paint, fix a corner before going on.';
+        + 'should be — if they miss the paint, fix a corner before going on. '
+        + 'The ○ shows where the next point goes.';
   } else {
     const worst = Math.max(...done);
-    cls = worst <= KITCHEN_WARN_PX ? 'good' : 'bad';
-    const part = (lbl, e) => e === null ? '' : `${lbl} ${e.toFixed(1)}px off`;
+    cls = worst <= KITCHEN_WARN_FT ? 'good' : 'bad';
+    const part = (lbl, e) => e === null ? '' : `${lbl} ${(e * 12).toFixed(0)}in off`;
     msg = [part('Your kitchen line', eu), part('opponent', eo)].filter(Boolean).join(' · ')
-        + (worst <= KITCHEN_WARN_PX ? '  — good fit' : `  — over ${KITCHEN_WARN_PX}px, adjust`);
+        + (worst <= KITCHEN_WARN_FT
+             ? '  — good enough, move on'
+             : `  — over ${(KITCHEN_WARN_FT * 12).toFixed(0)}in, adjust`);
   }
   el('fitDot').className = 'fit-dot ' + cls;
   el('fitText').textContent = msg;
@@ -449,6 +467,21 @@ function drawCourt() {
     // Service centre line -- painted on every court, and it stops at the kitchen.
     seg([COURT_W_FT / 2, 0], [COURT_W_FT / 2, USER_KITCHEN_FT], '#ffffff');
     seg([COURT_W_FT / 2, OPP_KITCHEN_FT], [COURT_W_FT / 2, COURT_L_FT], '#ffffff');
+
+    // "No idea where to click" -- so say where. Once the corners are down, each remaining
+    // point has a predicted position; ring it.
+    const NEXT_FT = {4: [0, USER_KITCHEN_FT], 5: [COURT_W_FT, USER_KITCHEN_FT],
+                     6: [0, OPP_KITCHEN_FT],  7: [COURT_W_FT, OPP_KITCHEN_FT]};
+    const target = NEXT_FT[nextPointIdx()];
+    if (target) {
+      const q = projectFt(H, target[0], target[1]);
+      if (q) {
+        ctx.strokeStyle = POINTS[nextPointIdx()].color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(q[0] * sc, q[1] * sc, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(q[0] * sc, q[1] * sc, 14, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
   }
   updateFitBar(H);
 
@@ -640,10 +673,12 @@ function showCalibResult(res) {
   const v = res.validation;
   const meta = el('previewMeta');
   const cls = (val, warn) => val <= warn ? 'good' : 'bad';
+  const inches = (ft, px) => ft === undefined || ft === null
+    ? `${px.toFixed(1)} px off` : `${(ft * 12).toFixed(0)} in off`;
   meta.innerHTML =
     `<div class="metric"><span class="k">Corner fit (RMSE)</span><span class="v ${cls(v.homography_rmse_pixels, 5)}">${v.homography_rmse_pixels.toFixed(1)} px</span></div>
-     <div class="metric"><span class="k">Your kitchen line</span><span class="v ${cls(v.kitchen_projection_error_user_px, 10)}">${v.kitchen_projection_error_user_px.toFixed(1)} px off</span></div>
-     <div class="metric"><span class="k">Opponent kitchen line</span><span class="v ${cls(v.kitchen_projection_error_opponent_px, 10)}">${v.kitchen_projection_error_opponent_px.toFixed(1)} px off</span></div>`;
+     <div class="metric"><span class="k">Your kitchen line</span><span class="v ${cls(v.kitchen_projection_error_user_ft, KITCHEN_WARN_FT)}">${inches(v.kitchen_projection_error_user_ft, v.kitchen_projection_error_user_px)}</span></div>
+     <div class="metric"><span class="k">Opponent kitchen line</span><span class="v ${cls(v.kitchen_projection_error_opponent_ft, KITCHEN_WARN_FT)}">${inches(v.kitchen_projection_error_opponent_ft, v.kitchen_projection_error_opponent_px)}</span></div>`;
   if (v.warnings && v.warnings.length) {
     const w = document.createElement('div'); w.className = 'warns';
     v.warnings.forEach((msg) => {

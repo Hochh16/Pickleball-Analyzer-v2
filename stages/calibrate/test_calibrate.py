@@ -119,3 +119,46 @@ def test_round_trip_calibration() -> None:
 
 if __name__ == "__main__":
     test_round_trip_calibration()
+
+def test_the_kitchen_verdict_does_not_depend_on_video_resolution():
+    """The same court, filmed at 1080p and 4K, must get the same verdict.
+
+    Judged in pixels it did not: a 1920-wide clip 0.41ft out passed at 2.6px while a
+    3840-wide clip 0.43ft out failed at 12.9px -- the same real accuracy, opposite
+    answers. The operator re-marked courts that were already fine, repeatedly.
+
+    Doubling every image coordinate is exactly a resolution change: the court is
+    unmoved, so the error in FEET must not move either, while the pixel figure doubles.
+    """
+    import json
+    from pathlib import Path
+
+    import numpy as np
+
+    from stages.calibrate.calibrate import (
+        KITCHEN_PROJECTION_WARNING_FT,
+        compute_homography,
+        compute_kitchen_projection_error,
+        pixels_per_foot_at,
+    )
+
+    court = json.loads(
+        Path("data/pb_3_min_indoor_1_court_b-3/court.json").read_text(encoding="utf-8"))
+    ui = court["user_inputs"]
+
+    def error_ft(scale):
+        corners = [[x * scale, y * scale] for x, y in ui["court_corners_image"]]
+        kitchen = [[x * scale, y * scale] for x, y in ui["kitchen_line_user_image"]]
+        _image_to_court, c2i = compute_homography(corners)
+        px = compute_kitchen_projection_error(kitchen, "near", c2i)
+        return px, px / pixels_per_foot_at(c2i, 15.0)
+
+    px_1x, ft_1x = error_ft(1.0)
+    px_2x, ft_2x = error_ft(2.0)
+
+    assert abs(ft_2x - ft_1x) < 1e-6, (
+        f"feet must be resolution-independent: {ft_1x:.4f} vs {ft_2x:.4f}")
+    assert abs(px_2x - 2 * px_1x) < 1e-6, "pixels should scale with resolution"
+    # ...and the pixel figure crossing a fixed pixel bar is precisely the old bug.
+    assert (px_1x > 10.0) != (px_2x > 10.0) or px_1x > 10.0, "expected the px bar to be scale-bound"
+    assert (ft_1x > KITCHEN_PROJECTION_WARNING_FT) == (ft_2x > KITCHEN_PROJECTION_WARNING_FT)

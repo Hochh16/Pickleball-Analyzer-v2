@@ -55,8 +55,24 @@ KITCHEN_DEPTH_FT = 7.0  # depth of the non-volley zone, measured from the NET
 NET_LINE_FT = COURT_LENGTH_FT / 2.0  # = 22.0
 
 HOMOGRAPHY_RMSE_WARNING_PX = 5.0
-KITCHEN_PROJECTION_WARNING_PX = 10.0
 KITCHEN_LINE_TOO_SHORT_PX = 50.0
+
+# The kitchen fit is judged in FEET, not pixels.
+#
+# A pixel is not a unit of court accuracy: it means whatever the video's resolution and
+# the camera's distance make it mean. Judged at 10px, a 1920-wide clip 0.41 ft out passed
+# while a 3840-wide clip 0.43 ft out failed -- the same real-world accuracy, opposite
+# verdicts, decided by resolution. That sent the operator back to re-mark courts that were
+# already fine.
+#
+# Half a foot is the bar because that is small against everything downstream that uses the
+# court: the kitchen is 7 ft deep, so it is a 7% error on the shallowest zone, and the 3-D
+# ball's own absolute position is far less certain than that. Well-marked clips land
+# between 0.16 and 0.45 ft, so the bar separates a real mis-click from ordinary aim.
+KITCHEN_PROJECTION_WARNING_FT = 0.5
+
+# Kept so the pixel figure can still be reported; nothing is judged against it.
+KITCHEN_PROJECTION_WARNING_PX = 10.0
 
 
 class MarkersError(ValueError):
@@ -210,6 +226,16 @@ def _opponent_kitchen_y_ft(user_baseline: str) -> float:
         return NET_LINE_FT + KITCHEN_DEPTH_FT  # 22 + 7 = 29
     else:
         return NET_LINE_FT - KITCHEN_DEPTH_FT  # 22 - 7 = 15
+
+
+def pixels_per_foot_at(court_to_image: np.ndarray, y_ft: float) -> float:
+    """Image pixels per court foot, measured ALONG the court at y_ft.
+
+    Perspective makes this vary a lot between the near and far kitchen lines, which is
+    exactly why a pixel tolerance cannot be a court tolerance."""
+    a = project_point(court_to_image, (COURT_WIDTH_FT / 2.0, y_ft - 0.5))
+    b = project_point(court_to_image, (COURT_WIDTH_FT / 2.0, y_ft + 0.5))
+    return float(np.hypot(b[0] - a[0], b[1] - a[1]))
 
 
 def compute_kitchen_projection_error(
@@ -398,15 +424,20 @@ def calibrate(
             f"Homography RMSE is {rmse:.1f}px (>{HOMOGRAPHY_RMSE_WARNING_PX}px) - "
             f"corners may have been clicked imprecisely"
         )
-    if kitchen_user_err > KITCHEN_PROJECTION_WARNING_PX:
+    kitchen_user_ft = kitchen_user_err / pixels_per_foot_at(
+        court_to_image, _user_kitchen_y_ft(markers["user_baseline"]))
+    kitchen_opp_ft = kitchen_opp_err / pixels_per_foot_at(
+        court_to_image, _opponent_kitchen_y_ft(markers["user_baseline"]))
+
+    if kitchen_user_ft > KITCHEN_PROJECTION_WARNING_FT:
         warnings.append(
-            f"User kitchen line projection error is {kitchen_user_err:.1f}px "
-            f"(>{KITCHEN_PROJECTION_WARNING_PX}px) - kitchen line and corners disagree"
+            f"User kitchen line is {kitchen_user_ft:.2f}ft out of place "
+            f"(>{KITCHEN_PROJECTION_WARNING_FT}ft) - kitchen line and corners disagree"
         )
-    if kitchen_opp_err > KITCHEN_PROJECTION_WARNING_PX:
+    if kitchen_opp_ft > KITCHEN_PROJECTION_WARNING_FT:
         warnings.append(
-            f"Opponent kitchen line projection error is {kitchen_opp_err:.1f}px "
-            f"(>{KITCHEN_PROJECTION_WARNING_PX}px)"
+            f"Opponent kitchen line is {kitchen_opp_ft:.2f}ft out of place "
+            f"(>{KITCHEN_PROJECTION_WARNING_FT}ft)"
         )
 
     user_kitchen_left  = markers["kitchen_line_user_image"][0]
@@ -461,6 +492,8 @@ def calibrate(
             "homography_rmse_pixels":              float(rmse),
             "kitchen_projection_error_user_px":    float(kitchen_user_err),
             "kitchen_projection_error_opponent_px": float(kitchen_opp_err),
+            "kitchen_projection_error_user_ft":     float(kitchen_user_ft),
+            "kitchen_projection_error_opponent_ft": float(kitchen_opp_ft),
             "warnings": warnings,
         },
         "created_at": now_iso,
