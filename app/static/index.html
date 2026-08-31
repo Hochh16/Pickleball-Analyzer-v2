@@ -132,6 +132,15 @@
             <span class="prompt-count" id="promptCount"></span>
           </div>
 
+          <!-- Live fit. The 4 corners alone fix the homography, so the kitchen lines, net
+               and centre line are PREDICTED from them: if the dashed overlay misses the
+               paint, the corners are wrong and you can see it before clicking anything
+               else. Without this the only feedback came after submitting all 8 points. -->
+          <div class="fit-bar" id="fitBar" hidden>
+            <span class="fit-dot" id="fitDot"></span>
+            <span class="fit-text" id="fitText"></span>
+          </div>
+
           <div class="canvas-wrap" id="canvasWrap">
             <canvas id="courtCanvas"></canvas>
             <canvas id="loupe" class="loupe" hidden></canvas>

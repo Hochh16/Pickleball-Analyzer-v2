@@ -70,3 +70,73 @@ def test_the_ui_is_not_served_from_a_stale_browser_cache():
     mounted = [r for r in server.app.routes if getattr(r, "name", "") == "static"]
     assert mounted, "static mount missing"
     assert isinstance(mounted[0].app, server._NoCacheStatic)
+
+
+def test_the_live_calibration_fit_matches_what_the_server_will_report():
+    """The court screen now scores the fit while the corners are being clicked, so the
+    operator can see a bad corner instead of submitting 8 points and reading a number.
+    That is only useful if the browser's arithmetic is the server's: a live "8px" that
+    becomes "20px" on submit is worse than no number at all. So run the REAL app.js
+    helpers under node against every stored calibration and require agreement.
+
+    Three fixtures from 2026-07-15 (pb_5_minute_outdoor-2 and its two copies) carry a
+    validation block that disagrees with their own homography, so they are compared
+    against the formula recomputed from that homography rather than the stale record."""
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    import numpy as np
+    import pytest
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+
+    from stages.calibrate.calibrate import (
+        compute_kitchen_projection_error,
+        compute_opponent_kitchen_projection_error,
+    )
+
+    src = Path("app/static/app.js").read_text(encoding="utf-8")
+    start, end = src.index("const COURT_W_FT"), src.index("function updateFitBar")
+    cases = []
+    for court in sorted(Path("data").glob("*/court.json")):
+        c = json.loads(court.read_text(encoding="utf-8"))
+        ui = c.get("user_inputs")
+        if not ui or ui.get("user_baseline") != "near":
+            continue
+        H = np.asarray(c["homography"]["court_to_image"], dtype=np.float64)
+        cases.append({
+            "name": court.parent.name,
+            "corners": ui["court_corners_image"],
+            "user": ui["kitchen_line_user_image"],
+            "opp": ui["kitchen_line_opponent_image"],
+            "want_user": compute_kitchen_projection_error(
+                ui["kitchen_line_user_image"], "near", H),
+            "want_opp": compute_opponent_kitchen_projection_error(
+                ui["kitchen_line_opponent_image"], "near", H),
+        })
+    assert cases, "no calibrations to compare against"
+
+    script = (
+        src[start:end]
+        + "\nconst CASES = " + json.dumps(cases) + ";\n"
+        + "const out = CASES.map((c) => {\n"
+        + "  const H = homographyFromCorners(c.corners);\n"
+        + "  return {name: c.name, ok: !!H,\n"
+        + "          user: H ? kitchenErrorPx(H, c.user, USER_KITCHEN_FT) : null,\n"
+        + "          opp:  H ? kitchenErrorPx(H, c.opp, OPP_KITCHEN_FT) : null};\n"
+        + "});\nconsole.log(JSON.stringify(out));\n"
+    )
+    got = json.loads(subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        capture_output=True, text=True, check=True).stdout)
+
+    for want, mine in zip(cases, got):
+        assert mine["ok"], f"{want['name']}: browser could not solve the homography"
+        for k in ("user", "opp"):
+            assert abs(mine[k] - want["want_" + k]) < 0.01, (
+                f"{want['name']} {k}: browser says {mine[k]:.2f}px, "
+                f"server says {want['want_' + k]:.2f}px")

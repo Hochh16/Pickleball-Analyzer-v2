@@ -179,6 +179,18 @@ body {
 .prompt-text { flex: 1; }
 .prompt-count { color: var(--muted); font-size: 13px; font-weight: 600; }
 
+/* Live calibration fit, shown while the corners are being clicked. */
+.fit-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.45;
+}
+.fit-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.fit-dot.pending { background: var(--muted); }
+.fit-dot.good { background: var(--ok); }
+.fit-dot.bad { background: var(--danger); }
+.fit-text { flex: 1; color: var(--muted); }
+
 .canvas-wrap { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #000; line-height: 0; }
 #courtCanvas, #youCanvas { width: 100%; height: auto; display: block; cursor: crosshair; touch-action: none; }
 .loupe { position: absolute; width: 150px; height: 150px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 3px 12px rgba(0,0,0,.5); pointer-events: none; z-index: 5; }

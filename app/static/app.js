@@ -347,11 +347,108 @@ function servedScale() {
   return S.court.img ? (S.court.img.naturalWidth / S.session.video.frame_width) : 1;
 }
 
+// -------------------------------------------------- live fit (mirrors stages/calibrate)
+// Court model, in feet, matching stages/calibrate/calibrate.py: the user is on the near
+// baseline, so their kitchen line is at y=15 and the opponent's at y=29.
+const COURT_W_FT = 20.0, COURT_L_FT = 44.0, NET_FT = 22.0, KITCHEN_FT = 7.0;
+const USER_KITCHEN_FT = NET_FT - KITCHEN_FT;      // 15
+const OPP_KITCHEN_FT  = NET_FT + KITCHEN_FT;      // 29
+const CORNERS_FT = [[0, 0], [COURT_W_FT, 0], [COURT_W_FT, COURT_L_FT], [0, COURT_L_FT]];
+const KITCHEN_WARN_PX = 10.0;                      // KITCHEN_PROJECTION_WARNING_PX
+
+/** Court feet -> image pixels, from the 4 clicked corners. Four points determine the
+ *  homography exactly (8 equations, 8 unknowns), so this is a plain linear solve --
+ *  the same map the server builds, computed here so the fit is visible while clicking. */
+function homographyFromCorners(corners) {
+  if (!corners || corners.length !== 4 || corners.some((c) => !c)) return null;
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [X, Y] = CORNERS_FT[i], [x, y] = corners[i];
+    A.push([X, Y, 1, 0, 0, 0, -X * x, -Y * x]); b.push(x);
+    A.push([0, 0, 0, X, Y, 1, -X * y, -Y * y]); b.push(y);
+  }
+  for (let c = 0; c < 8; c++) {                    // Gaussian elimination, partial pivot
+    let piv = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+    if (Math.abs(A[piv][c]) < 1e-9) return null;   // degenerate clicks (collinear/coincident)
+    [A[c], A[piv]] = [A[piv], A[c]]; [b[c], b[piv]] = [b[piv], b[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      if (!f) continue;
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const h = b.map((v, i) => v / A[i][i]);
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function projectFt(H, X, Y) {
+  const w = H[6] * X + H[7] * Y + H[8];
+  if (!w || !isFinite(w)) return null;
+  return [(H[0] * X + H[1] * Y + H[2]) / w, (H[3] * X + H[4] * Y + H[5]) / w];
+}
+
+/** Mean of the two endpoint distances -- identical to compute_kitchen_projection_error,
+ *  so the number shown here is the number "Check calibration" will report. */
+function kitchenErrorPx(H, clicked, yFt) {
+  if (!H || !clicked[0] || !clicked[1]) return null;
+  const ends = [projectFt(H, 0, yFt), projectFt(H, COURT_W_FT, yFt)];
+  if (ends.some((e) => !e)) return null;
+  const d = ends.map((e, i) => Math.hypot(e[0] - clicked[i][0], e[1] - clicked[i][1]));
+  return (d[0] + d[1]) / 2;
+}
+
+function updateFitBar(H) {
+  const bar = el('fitBar'); if (!bar) return;
+  if (!H) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const pts = S.court.points;
+  const eu = kitchenErrorPx(H, [pts[4], pts[5]], USER_KITCHEN_FT);
+  const eo = kitchenErrorPx(H, [pts[6], pts[7]], OPP_KITCHEN_FT);
+  const done = [eu, eo].filter((e) => e !== null);
+  let cls, msg;
+  if (!done.length) {
+    cls = 'pending';
+    msg = 'Corners set. The dashed lines are where the kitchen, net and centre line '
+        + 'should be — if they miss the paint, fix a corner before going on.';
+  } else {
+    const worst = Math.max(...done);
+    cls = worst <= KITCHEN_WARN_PX ? 'good' : 'bad';
+    const part = (lbl, e) => e === null ? '' : `${lbl} ${e.toFixed(1)}px off`;
+    msg = [part('Your kitchen line', eu), part('opponent', eo)].filter(Boolean).join(' · ')
+        + (worst <= KITCHEN_WARN_PX ? '  — good fit' : `  — over ${KITCHEN_WARN_PX}px, adjust`);
+  }
+  el('fitDot').className = 'fit-dot ' + cls;
+  el('fitText').textContent = msg;
+}
+
 function drawCourt() {
   if (!S.court.img) return;
   const ctx = courtCtx, sc = servedScale();
   ctx.drawImage(S.court.img, 0, 0);
   const P = S.court.points.map((p) => p ? [p[0] * sc, p[1] * sc] : null);
+
+  // Predicted court from the corners: dashed, so it reads as "where this should be"
+  // rather than as another clicked line.
+  const H = homographyFromCorners(S.court.points.slice(0, 4));
+  if (H) {
+    const seg = (a, b, color) => {
+      const p = projectFt(H, a[0], a[1]), q = projectFt(H, b[0], b[1]);
+      if (!p || !q) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.moveTo(p[0] * sc, p[1] * sc); ctx.lineTo(q[0] * sc, q[1] * sc);
+      ctx.stroke(); ctx.setLineDash([]);
+    };
+    seg([0, USER_KITCHEN_FT], [COURT_W_FT, USER_KITCHEN_FT], KU);
+    seg([0, OPP_KITCHEN_FT],  [COURT_W_FT, OPP_KITCHEN_FT],  KO);
+    seg([0, NET_FT], [COURT_W_FT, NET_FT], '#ffffff');
+    // Service centre line -- painted on every court, and it stops at the kitchen.
+    seg([COURT_W_FT / 2, 0], [COURT_W_FT / 2, USER_KITCHEN_FT], '#ffffff');
+    seg([COURT_W_FT / 2, OPP_KITCHEN_FT], [COURT_W_FT / 2, COURT_L_FT], '#ffffff');
+  }
+  updateFitBar(H);
 
   const line = (a, b, color) => {
     if (!P[a] || !P[b]) return;
