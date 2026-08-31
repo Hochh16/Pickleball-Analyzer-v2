@@ -292,6 +292,21 @@ def finalize_session_collection(session_id: str) -> dict:
                               venue_ok=_venue_ok(session_id))
     except CollectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        # add() commits the member BEFORE rebuilding, so a rebuild failure used to surface
+        # as a bare "Internal Server Error" while the member was in fact added -- the
+        # operator could not tell whether to retry, and retrying then reported "already a
+        # member". Say what actually happened, and that a retry rebuilds rather than
+        # double-adding.
+        added = any(m["session_id"] == session_id
+                    for m in collections.get_doc(cid).get("members", []))
+        raise HTTPException(
+            status_code=500,
+            detail=(f"{session_id} was added to {cid}, but building the cumulative report "
+                    f"failed: {type(e).__name__}: {e}. Use 'Rebuild' on the collection to "
+                    f"try again — the video is already a member."
+                    if added else
+                    f"Could not add {session_id} to {cid}: {type(e).__name__}: {e}"))
     return {"collection_id": cid, "added": True, "collection": doc}
 
 
@@ -592,6 +607,12 @@ def rebuild_collection(cid: str) -> dict:
         return collections.rebuild(cid)
     except CollectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        # Same reason as the add path: a stage failing over the union is a real outcome the
+        # operator has to act on, and "Internal Server Error" tells them nothing about which
+        # stage or which member.
+        raise HTTPException(status_code=500,
+                            detail=f"Rebuilding {cid} failed: {type(e).__name__}: {e}")
 
 
 @app.get("/api/collections/{cid}/files/{file_path:path}")
