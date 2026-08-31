@@ -1052,7 +1052,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "rally_duration_sec": mv_sample_size(safe_stats(rally_durs), len(rallies)),
         "by_end_reason": mv_sourced(by_end_reason, end_reason_confs, len(rallies)),
         "serve": mv_sourced({
+            # STRUCTURAL: one serve per rally, by construction. It therefore CANNOT reveal
+            # a serve we failed to detect, and labelling it "serves detected" implies a
+            # precision it does not have.
             "n_serves": n_serves,
+            # ...so carry what we actually FOUND alongside it. The gap between the two is
+            # the serve-detection shortfall, which is otherwise invisible in the report:
+            # 67 rallies against 55 detected contacts on the operator's six videos.
+            "n_serves_detected": sum(1 for s in shots if s.get("is_serve")),
             "n_serve_faults": n_serve_faults,
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
         }, end_reason_confs, len(rallies)),
@@ -1227,7 +1234,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
             "ready_position": mv_sample_size(rp or {}, (rp or {}).get("n_frames", 0)),
             "serve": mv_sourced({
+                # Rallies credited to this player as server -- structural, and only as good
+                # as server attribution, which measures 16/20 against the operator's labels.
                 "n_serves": len(rserves),
+                # ...and how many serve CONTACTS we actually found for them. The two differ
+                # when we credit the rally but never detect the strike.
+                "n_serves_detected": sum(1 for s in shots
+                                         if s.get("is_serve")
+                                         and int(s.get("track_id", -1)) in tids),
                 "n_serve_faults": rsf,
                 "serve_fault_rate": round(rsf / len(rserves), 4) if rserves else 0.0,
             }, role_served_erc[r], len(rserves), role_factor=rconf),

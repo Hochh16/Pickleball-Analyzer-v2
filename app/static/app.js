@@ -174,12 +174,24 @@ async function loadExistingSessions() {
       card.className = 'session-card';
       const steps = s.steps || {};
       const pill = (k, label) => `<span class="pill ${steps[k] ? 'done' : ''}">${label}</span>`;
+      // A finished video gets a direct link to its own report. Without it the only way in
+      // was the button bound to the session currently loaded, so an earlier video's report
+      // existed on disk with no route to it from the UI.
+      const reportLink = s.has_report
+        ? `<a class="sc-report" href="/api/sessions/${s.id}/files/report.html"
+              target="_blank" rel="noopener">Report →</a>`
+        : '';
       card.innerHTML =
         `<div class="sc-name"></div>
          <div class="sc-meta">${s.video.frame_width}×${s.video.frame_height} · ${fmtDuration(s.video.duration_sec)}</div>
-         <div class="sc-steps">${pill('calibration', 'Court')}${pill('roster', 'Players')}</div>`;
+         <div class="sc-steps">${pill('calibration', 'Court')}${pill('roster', 'Players')}${reportLink}</div>`;
       card.querySelector('.sc-name').textContent = s.name;
-      card.addEventListener('click', () => onSessionReady(s));
+      card.addEventListener('click', (ev) => {
+        // the report link is a link, not a card click -- opening the setup flow instead
+        // would be the opposite of what was asked for
+        if (ev.target.closest('.sc-report')) return;
+        onSessionReady(s);
+      });
       list.appendChild(card);
     });
   } catch (e) { /* library is best-effort */ }

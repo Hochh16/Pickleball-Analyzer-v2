@@ -199,6 +199,11 @@ def list_sessions(all: bool = False) -> dict:
         else:
             prev["duplicate_setups"] = prev.get("duplicate_setups", 0) + 1
     out = sorted(best.values(), key=lambda s: str(s.get("created_at", "")), reverse=True)
+    # Does a finished report exist for this video? The UI's only "View report" link was
+    # bound to the session currently loaded, so once the operator moved on there was no way
+    # back to an earlier video's report -- the file was there, with no route to it.
+    for s in out:
+        s["has_report"] = (store.folder(str(s["id"])) / "report.html").exists()
     return {"sessions": out}
 
 

@@ -386,3 +386,16 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
 .fallback { margin-top: 14px; }
 .fallback > summary { cursor: pointer; font-size: 14px; opacity: .75; }
 .btn.small { padding: 4px 10px; font-size: 13px; }
+
+
+/* Direct link to a finished video's own report, on its card in the session list. */
+.sc-report {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.sc-steps { display: flex; align-items: center; gap: 6px; }

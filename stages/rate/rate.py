@@ -309,6 +309,9 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
     n_serves = serve.get("n_serves", 0) or 0
     rate = serve.get("serve_fault_rate") if n_serves > 0 else None
     drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
+               # What we actually FOUND, beside the structural count. n_serves is one per
+               # rally by construction, so on its own it hides every serve we missed.
+               "n_serves_detected": serve.get("n_serves_detected"),
                "n_returns": user.get("n_returns", 0) or 0, "return_metric": None}
     if rate is None:
         return NEUTRAL_PRIOR_LEVEL, drivers

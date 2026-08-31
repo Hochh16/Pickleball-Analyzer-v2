@@ -76,7 +76,8 @@ METRIC_DISPLAY = {
     "volley_rate": ("Your shots that were volleys", "pct"),
     "n_volley": ("Net volleys detected", "int"),
     "serve_fault_rate": ("Serves that faulted", "pct"),
-    "n_serves": ("Serves detected", "int"),
+    "n_serves": ("Rallies served", "int"),
+    "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
@@ -544,6 +545,8 @@ def build_html(folder: Path) -> str:
         # Structural against structural: 58 serves, 56 returns.
         "n_serves": ((metrics.get("match", {}) or {}).get("serve", {}) or {}
                      ).get("value", {}).get("n_serves"),
+        "n_serves_detected": ((metrics.get("match", {}) or {}).get("serve", {}) or {}
+                              ).get("value", {}).get("n_serves_detected"),
         "n_returns": ((metrics.get("match", {}) or {}).get("returns", {}) or {}).get("value"),
         "forehand_count": _bs.get("forehand"),
         "backhand_count": _bs.get("backhand"),
