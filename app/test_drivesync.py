@@ -100,3 +100,62 @@ def test_outputs_ready_and_ingest(tmp_path):
     for f in VISION_OUTPUTS:
         assert (session_folder / f).exists()
     assert "pose_summary.json" in got   # sidecar carried across
+
+
+from app.drivesync import DriveSync, _readable_zip
+
+
+def _zip(path: Path, payload: bytes = b"x" * 1024) -> Path:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as z:
+        z.writestr("video.mp4", payload)
+    return path
+
+
+def test_a_bundle_already_synced_is_not_recopied(tmp_path):
+    """Re-running a clip must not push multi-GB again. The 5-minute bundles are 4.7 GB."""
+    drive = tmp_path / "My Drive"
+    drive.mkdir()
+    src = _zip(tmp_path / "s_vision_input.zip")
+    ds = DriveSync(drive)
+    first = ds.push_bundle("s", src)
+    stamp = first.stat().st_mtime_ns
+    again = ds.push_bundle("s", src)
+    assert again == first and again.stat().st_mtime_ns == stamp, "should have skipped the copy"
+
+
+def test_pushing_one_bundle_clears_the_others(tmp_path):
+    """The Colab notebook auto-detects the clip from the SINGLE bundle on Drive and refuses
+    to guess when there are several."""
+    drive = tmp_path / "My Drive"
+    drive.mkdir()
+    _zip(drive / "old_vision_input.zip")
+    ds = DriveSync(drive)
+    ds.push_bundle("new", _zip(tmp_path / "new_vision_input.zip"))
+    assert [p.name for p in drive.glob("*_vision_input.zip")] == ["new_vision_input.zip"]
+
+
+def test_a_failed_readback_is_reported_as_such_not_as_truncation(tmp_path, monkeypatch):
+    """Observed on a 2.24 GB bundle: three back-to-back copies all reported
+    "truncated/corrupt (2243191656/2243191656 bytes)" -- byte-identical sizes, so nothing was
+    truncated. Only the zip READ-BACK failed, because Drive was still uploading the file.
+    Saying "truncated" sent the diagnosis in exactly the wrong direction.
+    """
+    drive = tmp_path / "My Drive"
+    drive.mkdir()
+    src = _zip(tmp_path / "s_vision_input.zip")
+    monkeypatch.setattr("app.drivesync._readable_zip", lambda p: False)
+    monkeypatch.setattr("app.drivesync.VERIFY_BACKOFF_S", (0.0, 0.0))
+    ds = DriveSync(drive)
+    try:
+        ds.push_bundle("s", src)
+        raise AssertionError("should have raised")
+    except RuntimeError as e:
+        msg = str(e)
+    assert "right size" in msg and "still be uploading" in msg, msg
+    assert "truncated" not in msg, "the size matched, so nothing was truncated"
+
+
+def test_readable_zip_swallows_a_read_error(tmp_path):
+    """A read error on a Drive virtual filesystem means the upload is in flight, not damage."""
+    assert _readable_zip(_zip(tmp_path / "ok.zip")) is True
+    assert _readable_zip(tmp_path / "does_not_exist.zip") is False

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 import string
 import zipfile
 from pathlib import Path
@@ -26,6 +27,21 @@ from .pipeline import VISION_OUTPUTS  # the 5 required outputs (readiness gate)
 INPUT_SUFFIX = "_vision_input.zip"
 # Everything to pull back: the required set + optional sidecars Colab also writes.
 OUTPUT_FILES = tuple(VISION_OUTPUTS) + ("players_pending.json", "pose_summary.json")
+
+
+# How long to wait before re-checking a bundle Drive is still uploading. The check reads
+# the file back, so it races the upload; a pause costs seconds, while the old behaviour --
+# immediately re-copying multi-GB and calling the result corrupt -- cost the whole hand-off.
+VERIFY_BACKOFF_S = (3.0, 10.0)
+
+
+def _readable_zip(path: Path) -> bool:
+    """Can this file be read back as a zip? False on ANY read error, which on a Drive
+    virtual filesystem usually means the upload is still in flight rather than damage."""
+    try:
+        return zipfile.is_zipfile(str(path))
+    except OSError:
+        return False
 
 
 def detect_drive_dir() -> Optional[Path]:
@@ -85,12 +101,28 @@ class DriveSync:
         part = self.drive_dir / (keep + ".part")
         last = "unknown"
         try:
-            for _ in range(3):
-                shutil.copyfile(bundle_path, part)
-                if part.stat().st_size == src_size and zipfile.is_zipfile(str(part)):
+            for attempt in range(3):
+                # Re-verify what is already there before spending another multi-GB copy.
+                # The check reads back a file Drive is still UPLOADING, so a failure is
+                # usually the read losing a race, not a bad copy -- and re-copying 2 GB
+                # immediately makes the contention worse rather than better. Observed:
+                # three back-to-back copies of a 2.24 GB bundle all reported
+                # "truncated/corrupt (2243191656/2243191656 bytes)" -- byte-identical sizes,
+                # so nothing was truncated; only the zip read-back failed. The same file
+                # copied cleanly moments later when Drive was idle.
+                if not (part.exists() and part.stat().st_size == src_size):
+                    shutil.copyfile(bundle_path, part)
+                size_ok = part.stat().st_size == src_size
+                zip_ok = size_ok and _readable_zip(part)
+                if size_ok and zip_ok:
                     os.replace(part, dest)
                     return dest
-                last = f"copy landed truncated/corrupt ({part.stat().st_size}/{src_size} bytes)"
+                last = (f"copy is {part.stat().st_size} of {src_size} bytes -- truncated"
+                        if not size_ok else
+                        f"copy is the right size ({src_size} bytes) but could not be read "
+                        f"back as a zip; Drive may still be uploading it")
+                if attempt < 2:
+                    time.sleep(VERIFY_BACKOFF_S[attempt])
         finally:
             if part.exists():
                 try:
