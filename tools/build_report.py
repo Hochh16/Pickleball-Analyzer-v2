@@ -500,6 +500,26 @@ def fn(n: int) -> str:
     return f'<sup><a href="#fn{n}">{n}</a></sup>'
 
 
+def unclicked_members(collection: dict) -> list:
+    """Members whose "you" was GUESSED rather than clicked, as [(name, basis, conf)].
+
+    A cumulative report inherits the LOWEST seed confidence across its videos, so one
+    unclicked video made the banner say "nobody marked which player to analyse" over five
+    videos that were clicked. That is both wrong and unactionable: the operator cannot tell
+    which video to re-do.
+    """
+    out = []
+    for m in (collection or {}).get("members", []) or []:
+        try:
+            tr = json.loads((Path(m["path"]) / "track_roles.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, KeyError):
+            continue
+        basis, conf = user_seed_basis(tr)
+        if basis and basis != "click":
+            out.append((m.get("session_id", "?"), basis, conf))
+    return out
+
+
 def user_seed_basis(track_roles: dict) -> tuple:
     """How the "user" role was decided, as (basis, confidence).
 
@@ -606,7 +626,21 @@ def build_html(folder: Path) -> str:
     # or from the starting corner at 0.5 when no click exists. The 0.5 case is a coin flip
     # nothing verifies, so say so where it cannot be missed rather than in a log line.
     _basis, _conf = user_seed_basis(track_roles)
-    if _basis and _basis != "click":
+    _guessed = unclicked_members(collection) if collection else []
+    if collection and _basis and _basis != "click":
+        # Name the videos. The collection's seed confidence is the LOWEST of its members, so
+        # one unclicked video otherwise indicts all of them and gives the operator nothing to
+        # act on.
+        if _guessed:
+            _names = ", ".join(f"{esc(n)} ({esc(b)})" for n, b, _c in _guessed)
+            A('<div class="card warn-card">'
+              f'<p style="margin:0"><b>Check this is you in '
+              f'{len(_guessed)} of {n_vids} videos.</b> Nobody clicked on you in: '
+              f'{_names}. For those we guessed, so their share of every per-player number '
+              f'here may belong to your partner. The other '
+              f'{n_vids - len(_guessed)} identified you from a click. Re-run setup on the '
+              f'ones named and click yourself in the frame.</p></div>')
+    elif _basis and _basis != "click":
         A('<div class="card warn-card">'
           '<p style="margin:0"><b>Check this is you.</b> Nobody marked which player to '
           'analyse, so we guessed from the starting side you chose during setup '

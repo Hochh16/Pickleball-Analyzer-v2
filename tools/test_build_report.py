@@ -51,3 +51,26 @@ def test_the_moments_list_uses_the_same_third_shot_rule_as_the_metrics():
     groups = user_shot_groups(classified, rallies, roles)
     assert groups["Third shots"] == [2.0], (
         "must take the shot after the RETURN, not rally position 3")
+
+
+def test_the_identity_warning_names_the_videos_that_were_guessed(tmp_path):
+    """A cumulative report inherits the LOWEST seed confidence of its members, so ONE
+    unclicked video made the banner read "nobody marked which player to analyse" across six
+    videos of which five were clicked -- wrong, and unactionable, because it does not say
+    which one to re-do."""
+    import json
+    from tools.build_report import unclicked_members
+    def _member(name, basis, conf):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "track_roles.json").write_text(json.dumps(
+            {"track_roles": {"1": {"role": "user", "basis": basis, "confidence": conf}}}),
+            encoding="utf-8")
+        return {"session_id": name, "path": str(d)}
+    coll = {"members": [_member("clicked", "click", 0.95),
+                        _member("guessed", "starting-corner", 0.5),
+                        _member("appearance", "appearance+height", 0.95)]}
+    got = unclicked_members(coll)
+    assert [n for n, _b, _c in got] == ["guessed", "appearance"]
+    assert unclicked_members({"members": []}) == []
+    assert unclicked_members(None) == []

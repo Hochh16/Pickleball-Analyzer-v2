@@ -186,13 +186,26 @@ def list_sessions(all: bool = False) -> dict:
     raw = [s for s in store.list() if _is_real(s)]
     if all:
         return {"sessions": raw}
+    def _progress(s: dict) -> tuple:
+        """How far a setup got. Newest is the tie-break, NOT the rule.
+
+        Keeping the most recent setup per video hid finished work: the operator re-ran the
+        court setup for "PB 3 minute outdoor" three times after the analysis had completed,
+        so the row offered was an empty attempt and the finished session -- the one in their
+        cumulative report, with a report of its own -- was unreachable from the UI.
+        """
+        f = store.folder(str(s.get("id", "")))
+        steps = s.get("steps") or {}
+        return ((f / "report.html").exists(),
+                (f / "classified.json").exists(),
+                sum(1 for v in steps.values() if v),
+                str(s.get("created_at", "")))
+
     best: dict = {}
     for s in raw:
         key = str(s.get("video_path") or s.get("id"))
         prev = best.get(key)
-        # keep the most recent setup for a video, but report how many exist so nothing
-        # is silently hidden
-        if prev is None or str(s.get("created_at", "")) > str(prev.get("created_at", "")):
+        if prev is None or _progress(s) > _progress(prev):
             s = dict(s)
             s["duplicate_setups"] = (prev or {}).get("duplicate_setups", 0) + 1
             best[key] = s
