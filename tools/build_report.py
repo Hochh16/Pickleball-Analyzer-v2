@@ -206,11 +206,20 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
     # number is to see it accumulate -- so the wording has to say which it is.
     where = "in these sessions" if n_videos > 1 else "in this session"
     whose = "across these sessions" if n_videos > 1 else "in the match"
-    n = drivers.get("n_third_decisions")
-    by = drivers.get("third_shot_by_type") or {}
+    # THIRD SHOTS, not drop-or-drive decisions. Operator, 2026-08-27: "count third shots
+    # separate from 3rd shot drops. any shot after a return that the user hits is a 3rd shot
+    # regardless of whether the user or their partner served." The line used to render
+    # n_third_decisions -- the subset we could type from a landing -- which showed "0 of 3"
+    # beside a rating card reading n=9 for the same player in the same report.
+    n = drivers.get("n_third_shots")
+    n_drop = drivers.get("n_third_shot_drops")
+    if not isinstance(n, int) or not isinstance(n_drop, int):
+        # older metrics.json without the split: fall back to the decision counts
+        n = drivers.get("n_third_decisions")
+        by = drivers.get("third_shot_by_type") or {}
+        n_drop = int((by or {}).get("drop", 0) or 0)
     if not isinstance(n, int):
         return ""
-    n_drop = int(by.get("drop", 0) or 0)
     # Third shots we SAW you play from deep but could not type, because no bounce was
     # detected after them and the fallback signal is a coin flip. Shown so a small
     # denominator reads as "not measured yet" rather than "you hardly played any".
@@ -520,11 +529,21 @@ def build_html(folder: Path) -> str:
     match_counts = {
         "dink_count": _bt.get("dink"),
         "n_volley": ((_mm.get("volley", {}) or {}).get("value", {}) or {}).get("n_volley"),
-        "n_serves": _bt.get("serve"),
+        # STRUCTURAL, to match n_returns on the next line. Using the shot_mix count of
+        # shots TYPED "serve" put 47 next to 56 returns, which reads as 9 missing serves --
+        # but they are different questions. Every rally has a serve whether or not we could
+        # type it, and a serve we retype as the return it really is still opened a rally.
+        # Structural against structural: 58 serves, 56 returns.
+        "n_serves": ((metrics.get("match", {}) or {}).get("serve", {}) or {}
+                     ).get("value", {}).get("n_serves"),
         "n_returns": ((metrics.get("match", {}) or {}).get("returns", {}) or {}).get("value"),
         "forehand_count": _bs.get("forehand"),
         "backhand_count": _bs.get("backhand"),
-        # all four players' third-shot decisions, as context for the user's own count
+        # all four players' THIRD SHOTS, as context for the user's own count. Was
+        # n_third_decisions, so "16 by all players" sat beside a user line built from a
+        # different denominator -- two counts of two different things, one sentence apart.
+        "n_third_shots": (((metrics.get("match", {}) or {}).get("third_shot", {}) or {})
+                          .get("value", {}) or {}).get("n_third_shots"),
         "n_third_decisions": (((metrics.get("match", {}) or {}).get("third_shot", {}) or {})
                               .get("value", {}) or {}).get("n_third_decisions"),
     }
@@ -647,7 +666,9 @@ def build_html(folder: Path) -> str:
         drivers = d.get("driver_metrics", {}) or {}
         nums = []
         if c == "third_shot":
-            line = third_shot_line(drivers, match_counts.get("n_third_decisions"),
+            line = third_shot_line(drivers,
+                                   match_counts.get("n_third_shots")
+                                   or match_counts.get("n_third_decisions"),
                                    max(1, n_vids))
             if line:
                 nums.append(line)
