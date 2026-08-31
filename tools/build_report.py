@@ -689,12 +689,17 @@ def build_html(folder: Path) -> str:
     if not isinstance(dur, (int, float)) or dur <= 0:
         dur = timeline.get("duration_sec")
     mins = f"{dur/60:.1f}" if isinstance(dur, (int, float)) and dur > 0 else "—"
+    # Say the scope in the LABEL. The number has always been in-rally only, but the tile
+    # said "Shots", so there was no way to tell it from all detections without reading the
+    # code -- and the operator had to ask which one it was.
+    n_outside = max(0, len(_all_shots) - len(shots))
     stats = [("Minutes analyzed", mins), ("Rallies", len(rallies)),
-             ("Shots", len(shots)), ("Volleys (hit in the air)", n_volley),
+             ("Shots in rallies", len(shots)), ("Volleys (hit in the air)", n_volley),
              ("Ball bounces", len(bounces_doc.get("bounces", [])))]
     A('<div class="card"><div class="stats">')
     for label, val in stats:
-        ref = fn(5) if label == "Ball bounces" else ""
+        ref = fn(5) if label == "Ball bounces" else (
+              fn(6) if label == "Shots in rallies" else "")
         A(f'<div class="stat"><div class="stat-n num">{esc(val)}</div>'
           f'<div class="stat-l">{esc(label)}{ref}</div></div>')
     A('</div></div>')
@@ -1039,6 +1044,12 @@ def build_html(folder: Path) -> str:
       f'gap is real bounces missed by detection — a known ball-detection limit we\'re '
       f'improving. It thins the landing map and depth stats, but doesn\'t affect your '
       f'positioning or rating.</li>')
+    A(f'<li id="fn6">Every shot count in this report is shots played <b>during rallies</b>. '
+      f'{n_outside} further contact{"" if n_outside == 1 else "s"} '
+      f'{"was" if n_outside == 1 else "were"} detected outside any rally — warm-up hits, '
+      f'balls picked up and returned between points, and some false detections — and '
+      f'{"is" if n_outside == 1 else "are"} excluded, because they are not shots played '
+      f'in a point. So this is smaller than the raw detection count, on purpose.</li>')
     A('</ol>')
     A('</div></div>')
     return _PAGE.replace("__CSS__", CSS).replace("__BODY__", "\n".join(O))
