@@ -103,7 +103,7 @@ async function initVideoStep() {
     S.driveSync = !!cfg.drive_sync;
   } catch (e) { /* fall back to whatever /api/videos returns */ }
   loadVideos();
-  loadExistingSessions();
+  loadExistingSessions(); loadReports();
 }
 
 async function loadVideos() {
@@ -160,6 +160,51 @@ async function pickLocal(path) {
     const session = await jsonPost('/api/sessions', { path });  // backend derives a good name
     onSessionReady(session);
   } catch (e) { toast('Could not open that video: ' + e.message, true); }
+}
+
+async function loadReports() {
+  // Every finished report in one place: the cumulative ones first, then each video's own.
+  // Previously the only way to a report was the button bound to the session currently
+  // loaded, so finishing a second video made the first one's report unreachable.
+  try {
+    const wrap = el('reportsWrap');
+    const list = el('reportList');
+    list.innerHTML = '';
+    let n = 0;
+
+    let cols = { collections: [] };
+    try { cols = await api('/api/collections'); } catch (e) { /* optional */ }
+    (cols.collections || []).forEach((c) => {
+      if (!c.has_report) return;
+      n += 1;
+      const a = document.createElement('a');
+      a.className = 'report-row cumulative';
+      a.href = `/api/collections/${c.id}/files/report.html`;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.innerHTML = `<span class="rr-name"></span>
+                     <span class="rr-meta">cumulative · ${c.n_members} video${c.n_members === 1 ? '' : 's'}</span>
+                     <span class="rr-go">Open →</span>`;
+      a.querySelector('.rr-name').textContent = c.name;
+      list.appendChild(a);
+    });
+
+    const { sessions } = await api('/api/sessions');
+    (sessions || []).forEach((s) => {
+      if (!s.has_report) return;
+      n += 1;
+      const a = document.createElement('a');
+      a.className = 'report-row';
+      a.href = `/api/sessions/${s.report_session_id}/files/report.html`;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.innerHTML = `<span class="rr-name"></span>
+                     <span class="rr-meta">${fmtDuration(s.video.duration_sec)}${s.report_is_older_setup ? ' · from an earlier setup' : ''}</span>
+                     <span class="rr-go">Open →</span>`;
+      a.querySelector('.rr-name').textContent = s.name;
+      list.appendChild(a);
+    });
+
+    wrap.hidden = n === 0;
+  } catch (e) { /* best-effort */ }
 }
 
 async function loadExistingSessions() {

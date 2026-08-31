@@ -33,3 +33,28 @@ def test_the_session_list_says_which_videos_have_a_report(tmp_path):
             assert rep.exists(), f"{s['id']} links to a report that is not there"
         else:
             assert s["report_session_id"] is None
+
+
+def test_every_finished_report_is_listable_from_one_place():
+    """The operator: "HOW DO I SEE existing reports? SHOULD BE VERY CLEAR!!!"
+
+    Every finished report -- cumulative and per video -- has to be reachable from the start
+    screen without loading a session first. Before this, the only link was bound to the
+    session currently loaded, so finishing a second video made the first unreachable.
+    """
+    from app import server
+    cols = server.list_collections()["collections"]
+    for c in cols:
+        assert "has_report" in c and "n_members" in c
+        if c["has_report"]:
+            assert (server.collections.folder(str(c["id"])) / "report.html").exists()
+    sessions = server.list_sessions()["sessions"]
+    listable = [s for s in sessions if s["has_report"]]
+    # nothing with a report on disk may be missing from the list
+    for s in sessions:
+        if not s["has_report"]:
+            same = [o for o in server.list_sessions(all=True)["sessions"]
+                    if str(o.get("video_path")) == str(s.get("video_path"))]
+            assert not any((server.store.folder(str(o["id"])) / "report.html").exists()
+                           for o in same), f"{s['id']}: a report exists but is not listed"
+    assert listable, "no per-video reports listed"

@@ -399,3 +399,18 @@ select:focus { outline: 2px solid var(--teal); outline-offset: 0; }
   border: 1px solid currentColor;
 }
 .sc-steps { display: flex; align-items: center; gap: 6px; }
+
+
+/* "Your reports": every finished report reachable from the start screen. */
+.report-list { display: flex; flex-direction: column; gap: 8px; }
+.report-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px;
+  border: 1px solid rgba(128,128,128,.35);
+  text-decoration: none; font-weight: 600;
+}
+.report-row:hover { border-color: currentColor; }
+.report-row.cumulative { border-width: 2px; }
+.rr-name { flex: 1; }
+.rr-meta { font-size: 12px; font-weight: 400; opacity: .7; }
+.rr-go { font-size: 13px; }

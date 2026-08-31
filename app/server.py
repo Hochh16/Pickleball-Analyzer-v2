@@ -585,7 +585,15 @@ def get_ball_model() -> FileResponse:
 @app.get("/api/collections")
 def list_collections() -> dict:
     active = collections.active()
-    return {"collections": collections.list(),
+    # has_report / n_members so the start screen can list finished reports without opening
+    # each collection. Finding a report was the hardest thing in that screen.
+    cols = []
+    for c in collections.list():
+        c = dict(c)
+        c["n_members"] = len(c.get("members", []) or [])
+        c["has_report"] = (collections.folder(str(c["id"])) / "report.html").exists()
+        cols.append(c)
+    return {"collections": cols,
             "active_id": active["id"] if active else None,
             # Nothing in the data can verify a collection holds one person, so the
             # reminder travels with the list rather than living only in the docs.

@@ -74,6 +74,14 @@
           </div>
           <div class="browse-list" id="videoList"></div>
 
+          <!-- REPORTS FIRST. Finding a finished report was the hardest thing in this
+               screen: the only link was bound to the session currently loaded, so an
+               earlier video's report existed on disk with no route to it. -->
+          <div class="existing" id="reportsWrap" hidden>
+            <h2>Your reports</h2>
+            <div class="report-list" id="reportList"></div>
+          </div>
+
           <div class="existing" id="existingWrap" hidden>
             <h2>Or continue a previous setup</h2>
             <div class="session-list" id="sessionList"></div>
