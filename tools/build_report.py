@@ -130,11 +130,19 @@ def user_shot_groups(classified: dict, rallies: list, track_roles: dict) -> dict
     by_id = {int(s["shot_id"]): s for s in classified.get("shots", [])}
     mine = lambda s: s.get("track_id") is not None and int(s["track_id"]) in tids
 
+    # The SAME index rule Stage 8 uses -- imported, not re-implemented. This function had
+    # its own copy that took rally position 3, so the report listed "Third shots (7)" while
+    # the metrics said 9 for the same player in the same report.
+    from stages.compute_metrics.compute_metrics import third_shot_index
     third = []
     for r in rallies:
-        ids = [i for i in r.get("shot_ids", []) if i in by_id]
-        if len(ids) >= 3 and mine(by_id[ids[2]]):
-            third.append(float(by_id[ids[2]]["t_sec"]))
+        i = third_shot_index(r, by_id)
+        if i is None:
+            continue
+        ids = r.get("shot_ids", [])
+        sid = int(ids[i])
+        if sid in by_id and mine(by_id[sid]):
+            third.append(float(by_id[sid]["t_sec"]))
 
     def of_type(*types):
         return sorted(float(s["t_sec"]) for s in by_id.values()

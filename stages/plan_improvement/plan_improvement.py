@@ -404,6 +404,35 @@ def conf_label(c: float) -> str:
     return "high" if c >= 0.6 else ("moderate" if c >= 0.3 else "low")
 
 
+# What each category is called in a sentence. `name.replace("_", "/")` produced
+# "third/shot shots", which is not a thing.
+EVENT_NOUN = {"dink": "dinks", "volley": "volleys", "serve_return": "serves",
+              "forehand": "forehands", "backhand": "backhands",
+              "third_shot": "third shots"}
+
+
+def _too_few_reason(name: str, n_events, drivers: dict) -> str:
+    """Why a category is not coached yet, in the operator's own terms.
+
+    The third shot needs its own sentence. Its gate counts third shots we could TYPE from a
+    landing, but the player played more than that -- saying "only 3 third shots were seen"
+    when they played 9 misstates what happened and reads as a detection failure on their
+    part. Say both numbers.
+
+    Also avoids "in this clip": a cumulative report spans several sessions, and this text is
+    rendered there unchanged.
+    """
+    noun = EVENT_NOUN.get(name, name.replace("_", " ") + " shots")
+    if name == "third_shot":
+        played = drivers.get("n_third_shots")
+        if isinstance(played, int) and isinstance(n_events, int) and played > n_events:
+            return (f"You played {played} third shots, but only {n_events} could be typed "
+                    f"reliably (no bounce was detected after the others) — too few to judge "
+                    f"a drop rate, so we're not coaching it yet. More video will fill this in.")
+    return (f"Only {n_events} {noun} were seen — too few to judge a rate, so we're not "
+            f"coaching it yet. More video will fill this in.")
+
+
 def _category_events(name: str, drivers: dict) -> Optional[int]:
     """Detected primary-event count for an event-gated category (else None). A
     category resting on zero detected events (e.g. 0 dinks in a 5-shot sample) is a
@@ -467,10 +496,7 @@ def compute_plan(rating: dict, metrics: Optional[dict],
         if data_source == "real" and (dconf < ASSESS_CONF_FLOOR or too_few):
             reason = UNMEASURED_REASON.get(name)
             if reason is None or too_few:
-                reason = (f"Only {n_events} {name.replace('_', '/')} shots were seen in "
-                          f"this clip — too few to judge a rate, so we're not coaching "
-                          f"it yet. A longer clip will fill this in."
-                          if too_few else
+                reason = (_too_few_reason(name, n_events, drivers) if too_few else
                           f"{name} not reliably measured yet (limited_by {limited_by}).")
             unmeasured.append({
                 "dimension": name,

@@ -38,6 +38,31 @@ SCHEMA_VERSION = 2            # v2: inline {value, confidence, n, limited_by} wr
 # measured across all three -- leaving lobs out of the denominator scored a player who lobbed
 # the third ball as if it had not been played.
 THIRD_SHOT_CHOICES = ("drop", "drive", "lob")
+
+
+def third_shot_index(rally: dict, shot_by_id: dict):
+    """Which shot in this rally is the THIRD SHOT, as an index into its shot_ids.
+
+    Operator's definition, taken literally: "any shot after a return that the user hits is a
+    3rd shot". So find the RETURN and take the next shot -- not a fixed rally position.
+
+    Position 3 is wrong whenever the rally does not run serve-return-third: if Stage 5 missed
+    the serve the rally opens on the return and position 3 is the fourth ball. Stage 7's
+    `opened_on_return` flag is not a safe substitute either -- it is tuned for naming the
+    serving SIDE (19/20 there) and over-fires as a shot index.
+
+    Module level, and imported by tools/build_report.py, because the report had its OWN copy
+    using position 3: it listed "Third shots (7)" beside a metrics-derived 9, for the same
+    player in the same report.
+
+    Falls back to position 3 when no shot in the rally is typed as a return.
+    """
+    ids = rally.get("shot_ids") or []
+    for k, sid in enumerate(ids[:-1]):
+        s = shot_by_id.get(int(sid))
+        if s is not None and s.get("shot_type") == "return":
+            return k + 1
+    return 2 if len(ids) > 2 else None
 # shots need a deeper, lower stance than power shots. A shot is "good" if its bend is
 # within its type's band. (Shoulder-turn technique was removed: absolute 3-D rotation
 # is not reliably measurable from one corner camera -- dinks read 62 deg vs a true
@@ -881,26 +906,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     # result a "decision"; a player who lobs the third ball instead of dropping it was scored
     # as if that ball had never been played.
     def _third_index(r: dict) -> Optional[int]:
-        """Which shot in this rally is the THIRD SHOT.
-
-        Operator's definition, taken literally: "any shot after a return that the user hits is
-        a 3rd shot". So find the RETURN and take the next shot -- not a fixed rally position.
-
-        Position 3 is wrong whenever the rally does not run serve-return-third: if Stage 5
-        missed the serve the rally opens on the return and position 3 is the fourth ball, and
-        if a stray contact survives at the front everything shifts the other way. Stage 7's
-        `opened_on_return` flag is not a safe substitute either -- it is tuned for naming the
-        serving SIDE (19/20 there) and over-fires as a shot index, marking rallies whose
-        position 0 is plainly a real serve.
-
-        Falls back to position 3 when no shot in the rally is typed as a return.
-        """
-        ids = r.get("shot_ids") or []
-        for k, sid in enumerate(ids[:-1]):
-            s = shot_by_id.get(int(sid))
-            if s is not None and s.get("shot_type") == "return":
-                return k + 1
-        return 2 if len(ids) > 2 else None
+        return third_shot_index(r, shot_by_id)
 
     def _third_shots(only_user: bool) -> List[dict]:
         """EVERY third shot, whatever its type.
