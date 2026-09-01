@@ -527,11 +527,14 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     a ball that travelled `excursion_px` away from the first impact did not stay in the
     hitter's hands. See SAME_SIDE_EXCURSION_PX for the measurement.
 
-    `ball_xy` is (fx, fy, known) indexed by frame. Returns (kept, n_dropped)."""
+    `ball_xy` is (fx, fy, known) indexed by frame.
+    Returns (kept, n_dropped, discarded, trace) -- `trace` is debugging detail about each
+    drop and is deliberately separate from `discarded`, whose dicts are live shots."""
     fps_local = float(fps) or 60.0
     shots_sorted = sorted(shots, key=lambda x: x["frame"])
     kept: List[dict] = []
     discarded: List[dict] = []
+    trace: List[dict] = []          # debug only; never touches the shot dicts
     n_dropped = 0
     run: List[dict] = []
     prev_side: Optional[str] = None
@@ -567,6 +570,17 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
         # Measured against the operator's labelled serves on two clips: serve contacts
         # detected 12/24 -> 18/24, with the junk still removed (shots 124 -> 125, 70 -> 72).
         if ball_xy is not None and len(run) > 1:
+            # NOTE: this window is a flat 1.0s and therefore overruns later contacts in
+            # the same run, so an earlier bounce can inherit the serve's flight and take
+            # the slot -- at 1:34.22 the bounce 0.68s before the serve scored 909px
+            # against the serve's 618px, deleting the serve. Five of the six serves with
+            # no detected contact die here. Bounding the window at the next contact was
+            # tried and REVERTED: it fixed that serve but cost serve_recall 1.0 -> 0.9,
+            # shot_type_correct 44 -> 41, junk_in_rallies 10 -> 13 and doubled the
+            # rally-end error, because a bound collapses to nothing when two candidates
+            # land a few frames apart (at 1:26.72 a real strike then scored 21.8px). A
+            # floor under the bound did not recover it either. The fix has to separate a
+            # bounce from a strike on something other than how far the ball later went.
             choice = max(run, key=lambda s: post_excursion(int(s["frame"])))
         else:
             # no ball track to ask: fall back to the old timing branch
@@ -575,6 +589,22 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
         kept.append(choice)
         for other in run:
             if other is not choice:
+                # Which contact beat it, and by how much. A bare "dropped by handling"
+                # cannot say whether the filter picked the wrong winner or the run was
+                # wrongly formed, and those need opposite fixes.
+                #
+                # Kept OUT of the shot dict: these are the same objects restore_serves
+                # puts back, so annotating them wrote debug keys into shots.json and
+                # moved three regression numbers that have nothing to do with tracing.
+                rec = {"frame": int(other["frame"]),
+                       "run_winner": int(choice["frame"]), "run_size": len(run)}
+                if ball_xy is not None:
+                    # The SAME measure the choice is made on, or the trace contradicts
+                    # the decision it exists to explain.
+                    rec["excursion"] = round(post_excursion(int(other["frame"])), 1)
+                    rec["winner_excursion"] = round(
+                        post_excursion(int(choice["frame"])), 1)
+                trace.append(rec)
                 discarded.append(other)
         n_dropped += len(run) - 1
 
@@ -642,7 +672,7 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
     flush()
     kept.sort(key=lambda x: x["frame"])
     discarded.sort(key=lambda x: x["frame"])
-    return kept, n_dropped, discarded
+    return kept, n_dropped, discarded, trace
 
 
 def load_formation(folder: Path):
@@ -1013,6 +1043,17 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     min_speed = params["min_ball_speed_px_per_frame"]
     min_dir = params["min_direction_change_deg"]
 
+    # Why a candidate died, frame by frame. Every rejection is counted in stats, but a
+    # count cannot answer "what happened to the serve at 1:34.22" -- and guessing at that
+    # from the totals cost two wrong diagnoses (the has-ball threshold, then camera
+    # placement), both measured and rejected only after the fact. Held in memory and
+    # written beside shots.json, so a labelled serve can be traced to the filter that
+    # dropped it instead of to a hypothesis.
+    discards: List[dict] = []
+
+    def discard(frame, reason, **extra):
+        discards.append({"frame": int(frame), "reason": reason, **extra})
+
     n_candidates = 0
     n_low_speed = 0
     n_gap_rejected = 0
@@ -1037,6 +1078,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         s_max = max(np.linalg.norm(v_in), np.linalg.norm(v_out))
         if s_max < min_speed:
             n_low_speed += 1
+            discard(i, "low_speed", speed=round(float(s_max), 1),
+                    needed=float(min_speed))
             continue
         n_candidates += 1
         score = max(turn[i] / 180.0, min(1.0, sratio[i]))
@@ -1049,8 +1092,14 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     suppressed = 0
     taken = np.zeros(n, dtype=bool)
     for f, _ in cand:
-        if any(abs(f - a) <= W for a in accepted):
+        near = [a for a in accepted if abs(f - a) <= W]
+        if near:
             suppressed += 1
+            # Record WHICH candidate won. A merge is a redirect, not a fate: if the winner
+            # is itself dropped later the whole cluster dies, and without the pointer the
+            # trace stops at "merged" and says nothing.
+            discard(f, "merged_into_nearby_candidate",
+                    merged_into=int(min(near, key=lambda a: abs(f - a))))
             continue
         accepted.append(f)
         taken[f] = True
@@ -1187,11 +1236,13 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         if (contam_filter
                 and max_latch_jump_pxpf(fx, fy, known, f, latch_half) >= latch_thresh):
             n_rejected_latch += 1
+            discard(f, "wrong_object_latch")
             continue
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:
             n_no_player += 1
+            discard(f, "no_player_in_range")
             continue
         p, dist, basis, radius = a
         pre, post, dchg = windowed(f)
@@ -1225,7 +1276,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     #     never produces. Gated to real ball because the synthetic generator does
     #     not model strict net-crossing alternation.
     if params.get("handling_filter"):
-        shots, n_handling, handling_discards = reject_same_side_runs(
+        shots, n_handling, handling_discards, handling_trace = reject_same_side_runs(
             shots, side_by_track or {}, params["handling_reset_frames"],
             params["fps"], ball_xy=(fx, fy, known),
             excursion_px=params.get("same_side_excursion_px"),
@@ -1235,7 +1286,10 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                                        SAME_SIDE_CROSS_MARGIN_FT),
             cross_frames=params.get("same_side_cross_frames", SAME_SIDE_CROSS_FRAMES))
     else:
-        n_handling, handling_discards = 0, []
+        n_handling, handling_discards, handling_trace = 0, [], []
+    for _d in handling_trace:
+        discard(_d["frame"], "handling_same_side_run",
+                **{k: v for k, v in _d.items() if k != "frame"})
     impulse_frames = sorted(s["frame"] for s in shots)
 
     # --- Serves (ball appears near a player after dead time) ----------------
@@ -1357,6 +1411,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                                    params["grounded_window_frames"])
             if gf is not None and gf >= params["grounded_max_frac"]:
                 n_ground_ball += 1
+                discard(s["frame"], "ground_ball", grounded_frac=round(float(gf), 2))
                 continue
             kept.append(s)
         shots = kept
@@ -1415,7 +1470,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
     }
-    return shots, stats, warnings
+    return shots, stats, warnings, discards
 
 
 def run(folder: Path, args, log: logging.Logger) -> dict:
@@ -1565,11 +1620,16 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                  "tools.build_ball_3d and re-run this stage to enable the net-crossing "
                  "split (it recovers real shots the run filter would delete).")
 
-    shots, stats, warnings = detect(df_ball, players_by_frame, poses,
-                                    court["image_to_court"], log, params,
-                                    side_by_track, ball_court_y,
-                                    formation=load_formation(folder),
-                                    players_px=load_players_px(folder))
+    shots, stats, warnings, discards = detect(df_ball, players_by_frame, poses,
+                                              court["image_to_court"], log, params,
+                                              side_by_track, ball_court_y,
+                                              formation=load_formation(folder),
+                                              players_px=load_players_px(folder))
+
+    # Beside shots.json, not inside it: it is a debugging trace, not part of the contract,
+    # and it is large (thousands of rejected candidates). tools/why_no_shot.py reads it.
+    with (folder / "shot_discards.json").open("w", encoding="utf-8") as f:
+        json.dump({"fps": params["fps"], "discards": discards}, f)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': shots are derived from "

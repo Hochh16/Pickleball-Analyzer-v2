@@ -257,20 +257,20 @@ def run_smoke_test() -> int:
     side = {1: "near", 2: "far"}
     # an alternating rally is fully kept
     rally = [{"frame": f, "track_id": t} for f, t in [(0, 1), (20, 2), (40, 1), (60, 2)]]
-    k_rally, d_rally, _ = reject_same_side_runs(rally, side, 90)
+    k_rally, d_rally, _, _ = reject_same_side_runs(rally, side, 90)
     # A TIGHT same-side run is a strike plus a tracking wobble: keep the STRONGEST, not the
     # last. (This asserted "last" until v0.5.1, which is what "wrong player" turned out to
     # be -- the old rule deleted a 172-degree paddle reversal and kept a 26-degree wobble.)
     run = [{"frame": f, "track_id": 1, "turn_rate_deg": t, "speed_change_ratio": 0.0}
            for f, t in [(100, 20.0), (114, 172.0), (130, 15.0), (150, 26.0), (168, 10.0)]]
-    k_run, d_run, _ = reject_same_side_runs(run, side, 90)
+    k_run, d_run, _, _ = reject_same_side_runs(run, side, 90)
     # A run SPREAD over seconds is genuine handling (bounce, bounce, serve): keep the LAST.
     spread = [{"frame": f, "track_id": 1, "turn_rate_deg": t, "speed_change_ratio": 0.0}
               for f, t in [(0, 172.0), (300, 20.0), (560, 30.0)]]
-    k_spread, d_spread, _ = reject_same_side_runs(spread, side, 600, 60.0)
+    k_spread, d_spread, _, _ = reject_same_side_runs(spread, side, 600, 60.0)
     # same side after a long gap (> reset) is a new rally, kept
     newrally = [{"frame": 0, "track_id": 1}, {"frame": 200, "track_id": 1}]
-    k_new, d_new, _ = reject_same_side_runs(newrally, side, 90)
+    k_new, d_new, _, _ = reject_same_side_runs(newrally, side, 90)
     okD = (len(k_rally) == 4 and d_rally == 0
            and len(k_run) == 1 and d_run == 4 and k_run[0]["frame"] == 114
            and len(k_spread) == 1 and d_spread == 2 and k_spread[0]["frame"] == 560
@@ -294,16 +294,16 @@ def run_smoke_test() -> int:
     # ball parked at the hitter the whole time: genuine handling, no split
     still_x = np.full(n_fr, 500.0)
     still_y = np.full(n_fr, 900.0)
-    k_still, d_still, _ = reject_same_side_runs(
+    k_still, d_still, _, _ = reject_same_side_runs(
         run, side, 90, 60.0, ball_xy=(still_x, still_y, known_arr), excursion_px=450.0)
     # ball leaves and comes back between every pair: separate shots, nothing dropped
     away_x = still_x.copy()
     for a, b in zip((100, 114, 130, 150), (114, 130, 150, 168)):
         away_x[(a + b) // 2] = 500.0 + 900.0
-    k_away, d_away, _ = reject_same_side_runs(
+    k_away, d_away, _, _ = reject_same_side_runs(
         run, side, 90, 60.0, ball_xy=(away_x, still_y, known_arr), excursion_px=450.0)
     # no ball given -> unchanged from the shipped behaviour
-    k_none, d_none, _ = reject_same_side_runs(run, side, 90, 60.0)
+    k_none, d_none, _, _ = reject_same_side_runs(run, side, 90, 60.0)
     okD2 = (len(k_still) == 1 and d_still == 4
             and len(k_away) == 5 and d_away == 0
             and len(k_none) == len(k_run) and d_none == d_run)
@@ -321,18 +321,18 @@ def run_smoke_test() -> int:
     print("Phase D3: net-crossing split")
     net = 22.0
     parked = {f: 10.0 for f in range(90, 180)}                     # never leaves the near side
-    k_park, d_park, _ = reject_same_side_runs(
+    k_park, d_park, _, _ = reject_same_side_runs(
         run, side, 90, 60.0, ball_court_y=parked, net_y_ft=net, cross_frames=10)
     blip = dict(parked)
     for f in (120, 121):                                          # two stray frames only
         blip[f] = 40.0
-    k_blip, d_blip, _ = reject_same_side_runs(
+    k_blip, d_blip, _, _ = reject_same_side_runs(
         run, side, 90, 60.0, ball_court_y=blip, net_y_ft=net, cross_frames=10)
     over = dict(parked)
     for a, b in zip((100, 114, 130, 150), (114, 130, 150, 168)):
         for f in range((a + b) // 2 - 6, (a + b) // 2 + 6):        # 12 frames on the far side
             over[f] = 40.0
-    k_over, d_over, _ = reject_same_side_runs(
+    k_over, d_over, _, _ = reject_same_side_runs(
         run, side, 90, 60.0, ball_court_y=over, net_y_ft=net, cross_frames=10)
     okD3 = (len(k_park) == 1 and d_park == 4
             and len(k_blip) == 1 and d_blip == 4
