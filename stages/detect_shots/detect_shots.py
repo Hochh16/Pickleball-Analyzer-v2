@@ -581,6 +581,21 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
             # land a few frames apart (at 1:26.72 a real strike then scored 21.8px). A
             # floor under the bound did not recover it either. The fix has to separate a
             # bounce from a strike on something other than how far the ball later went.
+            #
+            # The whole FAMILY of forward-looking cues is closed, not just this one.
+            # Crossing the net was measured as well, in reconstructed court feet and again
+            # in raw pixels against the projected net line, and separated 1 of 7 losing
+            # runs. The reason is structural and visible in the numbers: wherever the
+            # winner sits BEFORE the serve the two score identically (+279/+279 px at
+            # 1:34.22, +196/+196 at 2:32.50, +178/+178 at 2:30.54), because the earlier
+            # contact's window contains the serve's own flight. Excursion, court-feet
+            # crossing and pixel crossing are one measurement in three units; all tie.
+            #
+            # What the data points at instead is run FORMATION. The median run is 3
+            # contacts over 0.9s, but the tail reaches 28 contacts over 10.2s with 2.6s
+            # gaps inside it. "Exactly one real shot per same-side run" cannot hold for a
+            # ten-second run, so no choice of winner can fix it -- the run should have
+            # been split, and that is where the next attempt belongs.
             choice = max(run, key=lambda s: post_excursion(int(s["frame"])))
         else:
             # no ball track to ask: fall back to the old timing branch
