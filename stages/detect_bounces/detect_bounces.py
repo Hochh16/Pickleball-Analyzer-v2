@@ -367,6 +367,14 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
     # interpolated, lightly-smoothed pixel_y and require real descent INTO and
     # rebound OUT OF the peak (prominence) to reject flat mid-air wobble; the y-flip
     # check below then re-confirms the vertical reversal on the raw trajectory.
+    # Why each candidate died. The same reasoning as stage 5's shot_discards.json: a total
+    # cannot say what happened to the landing of the drop at 2:31, and guessing at it from
+    # the totals has already cost two wrong diagnoses on the shot side.
+    discards: List[dict] = []
+
+    def discard(frame, reason, **extra):
+        discards.append({"frame": int(frame), "reason": reason, **extra})
+
     n_low_speed = 0
     n_gap_rejected = 0
     prom = params["bounce_prominence_px"]
@@ -381,6 +389,8 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         descent = ys[i] - ys[i - Wp:i].min()           # fell this far into the peak
         rebound = ys[i] - ys[i + 1:i + Wp + 1].min()   # rose this far back out
         if descent < prom or rebound < prom:
+            discard(i, "below_prominence", descent=round(float(descent), 1),
+                    rebound=round(float(rebound), 1), needed=float(prom))
             continue
         if not known[max(0, i - 2):i + 3].any():
             continue                                   # peak sits deep inside a gap
@@ -412,6 +422,7 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
     for f, score in cand:
         if near_shot(f):
             n_rejected_at_shot_frame += 1
+            discard(f, "too_close_to_a_shot")
             continue
         pre_nms.append((f, score))
 
@@ -422,7 +433,10 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
     pre_nms.sort(key=lambda c: c[1], reverse=True)
     accepted_frames: List[int] = []
     for f, _ in pre_nms:
-        if any(abs(f - a) <= W for a in accepted_frames):
+        near = [a for a in accepted_frames if abs(f - a) <= W]
+        if near:
+            discard(f, "merged_into_nearby_candidate",
+                    merged_into=int(min(near, key=lambda a: abs(f - a))))
             continue
         accepted_frames.append(f)
     accepted_frames.sort()
@@ -550,6 +564,10 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
                 or cx < -m_out or cx > COURT_WIDTH_FT + m_out
                 or cy < -m_out or cy > COURT_LENGTH_FT + m_out):
             n_rejected_far_out += 1
+            discard(f, "projects_far_off_court",
+                    court_x=None if not math.isfinite(cx) else round(float(cx), 1),
+                    court_y=None if not math.isfinite(cy) else round(float(cy), 1),
+                    allowed=float(m_out))
             continue
         in_court, out_side, zone = classify_in_court(cx, cy, tol)
         if not math.isfinite(cx):
@@ -694,7 +712,7 @@ def detect(df_ball: pd.DataFrame, shots: List[dict], players_by_frame,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
     }
-    return bounces, stats, warnings
+    return bounces, stats, warnings, discards
 
 
 def run(folder: Path, args, log: logging.Logger) -> dict:
@@ -782,8 +800,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         log.info(f"ball height available for {len(z_by_frame)} frames; "
                  f"the per-interval cap prefers a candidate the reconstruction "
                  f"puts on the ground")
-    bounces, stats, warnings = detect(df_ball, shots, players_by_frame,
+    bounces, stats, warnings, discards = detect(df_ball, shots, players_by_frame,
                                       court["image_to_court"], log, params, z_by_frame)
+
+    # Beside bounces.json, not inside it: a debugging trace, not part of the contract.
+    with (folder / "bounce_discards.json").open("w", encoding="utf-8") as _trace_f:
+        json.dump({"fps": params["fps"], "discards": discards}, _trace_f)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': bounces are derived "
