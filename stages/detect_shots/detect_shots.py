@@ -596,6 +596,23 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
             # gaps inside it. "Exactly one real shot per same-side run" cannot hold for a
             # ten-second run, so no choice of winner can fix it -- the run should have
             # been split, and that is where the next attempt belongs.
+            #
+            # Run SPAN was measured for that split and rejected: over the 36 runs whose
+            # real contact the operator labelled, runs whose real shot is FIRST span
+            # 0.28-4.25s and those whose real shot is LAST span 0.55-10.42s. They overlap
+            # almost entirely, and the best span threshold picks the right END 24/36,
+            # against 22/36 for blindly always keeping the last. There is no gap to put a
+            # threshold in; the old timing branch was weak in principle, not merely
+            # mis-thresholded.
+            #
+            # Excluding GROUNDED contacts from winning was measured and rejected too.
+            # grounded_fraction does separate a bounce from a shot (real shots reach 0.63,
+            # between-point balls start at 0.76) and it lifted this filter from 23/36 to
+            # 25/36 -- 3 runs fixed, 1 broken -- and serve misses from 3 to 2. But over
+            # the pipeline it cost server_correct 8 -> 7, shot_type_correct 44 -> 42,
+            # junk_in_rallies 10 -> 12 and identity_gap 21 -> 23. A better winner inside
+            # this filter keeps failing to pay for itself downstream, which is the third
+            # such result and is itself the finding: the win is not in the winner.
             choice = max(run, key=lambda s: post_excursion(int(s["frame"])))
         else:
             # no ball track to ask: fall back to the old timing branch
