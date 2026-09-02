@@ -762,6 +762,39 @@ def serving_side_at(df, frame: int, court_len_ft: float, window: int = 3):
     return None
 
 
+# "At the kitchen" means within this of the non-volley line. Wide enough that a receiver
+# who has not quite arrived still counts, narrow enough to exclude mid-court.
+KITCHEN_BAND_FT = 3.0
+
+
+def receiver_at_kitchen(df, frame: int, side: str, court_len_ft: float,
+                        window: int = 4) -> Optional[bool]:
+    """Is one of the RECEIVING pair up at their kitchen line? None when it cannot tell.
+
+    The receiving team stacks: the returner deep (a return is struck from behind the
+    baseline) and their partner already at the non-volley line. Nothing mid-rally looks
+    like that. Measured over the accepted serves on the labelled clips, this holds for
+    84% of real serves and 30% of false ones -- the widest separation any serve cue has
+    shown here, and unlike the excursion and net-crossing family it asks where the PLAYERS
+    are, so it cannot be defeated by one contact's window overrunning the next.
+    """
+    if df is None or side not in ("near", "far"):
+        return None
+    if not {"frame", "court_y_ft", "track_id"}.issubset(df.columns):
+        return None            # no evidence, not evidence of absence
+    w = df[(df.frame >= frame - window) & (df.frame <= frame + window)]
+    if w.empty:
+        return None
+    y = w.groupby("track_id")["court_y_ft"].median()
+    net = court_len_ft / 2.0
+    # receivers are the pair on the OTHER side of the net from the server
+    recv = y[y >= net] if side == "near" else y[y < net]
+    if recv.empty:
+        return None
+    line = net + 7.0 if side == "near" else net - 7.0
+    return bool(((recv - line).abs() <= KITCHEN_BAND_FT).any())
+
+
 SERVE_HELD_FRAC = 0.85      # share of the pre-contact window with the ball on that player
 SERVE_HELD_LOOK_S = 1.5     # how far back "has the ball" is measured
 SERVE_HELD_RADIUS = 0.4     # ...within this fraction of the player's height, in pixels
@@ -851,7 +884,8 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
 
 def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: float,
                      open_gap_frames: int, return_frames: int,
-                     dead_gap_frames: int, min_inter_serve_frames: int) -> int:
+                     dead_gap_frames: int, min_inter_serve_frames: int,
+                     formation=None) -> int:
     """Unified point-boundary detection (operator method 2026-07-27). A rally is
     SERVE -> ... -> POINT-END, one of each, alternating. Combine weak cues with the
     structural one-each constraint so no single rule has to carry it. Sets `is_serve`
@@ -882,6 +916,10 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
 
     def gap_next(i):
         return (ss[i + 1]["frame"] - ss[i]["frame"]) if i + 1 < N else dead_gap_frames + 1
+
+    def kitchen(i):
+        return receiver_at_kitchen(formation, int(ss[i]["frame"]),
+                                   side(i), net_y_ft * 2.0)
 
     def returned(i):
         s = side(i)
@@ -960,6 +998,15 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
             # +1 outdoor, -1 indoor. Restricted this way it is +1 with nothing lost --
             # 79% -> 83% against the operator's serve strikes.
             continue
+        elif (kitchen(i) is True and kitchen(accepted[-1]) is False):
+            # FORMATION TIE-BREAK, on the same footing and for the same failure as the
+            # return tie-break below: a false accept takes the slot and then blocks the
+            # real serve behind it. The receiving pair stacks for a serve -- returner deep,
+            # partner at the kitchen -- and that holds for 84% of real serves against 30%
+            # of false ones. Like `returned`, too weak to gate on outright (16% of real
+            # serves would be lost, and a receiver who has not finished walking up is still
+            # receiving), but sound when choosing between two candidates for one slot.
+            accepted[-1] = i
         elif returned(i) is True and returned(accepted[-1]) is not True:
             # RETURN TIE-BREAK. Acceptance is otherwise greedy first-wins, so a deep
             # between-point ball (a feed lobbed back to the server) claims the slot and
@@ -1471,7 +1518,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             open_gap_frames=params["serve_open_gap_frames"],
             return_frames=params["point_return_frames"],
             dead_gap_frames=params["point_dead_gap_frames"],
-            min_inter_serve_frames=params["point_min_inter_serve_frames"])
+            min_inter_serve_frames=params["point_min_inter_serve_frames"],
+            formation=formation)
     for s in shots:
         s.setdefault("is_between_point", False)
     for i, s in enumerate(shots):

@@ -456,3 +456,41 @@ def test_a_discarded_serve_comes_back_when_the_server_had_the_ball():
     assert restore_serves([{"frame": F - 30, "track_id": 1}], [dict(d) for d in disc],
                           {1: "near"}, formation, players_px, bx, by, known, court_y,
                           L, net, fps) == []
+
+
+def test_the_receiving_pair_stacks_for_a_serve():
+    """The formation tie-break rests on this reading of the court, so pin the reading.
+
+    A serve has the receiving team split -- returner deep, partner at the non-volley line.
+    Nothing mid-rally looks like that, which is why it separates a real serve (84%) from a
+    false accept (30%) where every cue about the BALL's later flight tied.
+    """
+    import pandas as pd
+
+    from stages.detect_shots.detect_shots import receiver_at_kitchen
+
+    L = 44.0
+
+    def frame_at(ys, frame=100):
+        return pd.DataFrame([{"frame": f, "track_id": i, "court_y_ft": y}
+                             for i, y in enumerate(ys) for f in range(frame - 4, frame + 5)])
+
+    # near side serves: receivers are the far pair (y > 22). One deep behind the far
+    # baseline, one up at the far kitchen line (22 + 7 = 29).
+    stacked = frame_at([-2.0, -3.0, 46.0, 29.2])
+    assert receiver_at_kitchen(stacked, 100, "near", L) is True
+
+    # mid-rally: both receivers at mid-court, neither at the kitchen line
+    midcourt = frame_at([-2.0, -3.0, 36.0, 38.0])
+    assert receiver_at_kitchen(midcourt, 100, "near", L) is False
+
+    # the far side serving flips which pair counts as receivers
+    far_serve = frame_at([-1.0, 15.1, 46.0, 47.0])
+    assert receiver_at_kitchen(far_serve, 100, "far", L) is True
+
+    # no evidence is not evidence of absence
+    assert receiver_at_kitchen(None, 100, "near", L) is None
+    empty = pd.DataFrame(columns=["frame", "track_id", "court_y_ft"])
+    assert receiver_at_kitchen(empty, 100, "near", L) is None
+    assert receiver_at_kitchen(pd.DataFrame(), 100, "near", L) is None
+    assert receiver_at_kitchen(stacked, 100, None, L) is None
