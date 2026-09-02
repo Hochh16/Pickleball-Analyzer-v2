@@ -183,3 +183,60 @@ def test_the_operators_own_rally_windows_are_shown_as_context(tmp_path):
         assert got == ["1", "between points"]
     finally:
         ts.store_path("V.mp4").unlink(missing_ok=True)
+
+
+def test_a_corrected_hitter_replaces_the_one_we_guessed(tmp_path):
+    """There was nowhere to say "you credited the wrong player", so the operator said it in
+    the notes -- "shot was by opponent on far side", "dink by partner", "shot was by
+    partner, not user" -- and the importer, reading only structured columns, kept our wrong
+    hitter all four times. Server attribution is scored against exactly that field, so the
+    answer key itself was wrong where we most needed it right."""
+    from openpyxl import load_workbook
+    c = _clip(tmp_path)
+    out = c / "_labeling" / srs.OUT_NAME
+    srs.build(c, out)
+    wb = load_workbook(out)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    assert "CORRECT_HITTER" in col and "CORRECT_SIDE" in col
+
+    row = hdr + 2
+    ours_hitter = str(ws.cell(row=row, column=col["hitter"]).value or "")
+    ws.cell(row=row, column=col["CORRECT_HITTER"], value="partner")
+    ws.cell(row=row, column=col["CORRECT_SIDE"], value="far")
+    wb.save(out)
+    srs.score(c, out)
+
+    with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    got = rows[0]
+    assert got["hitter_role"] == "partner", (
+        f"the correction was ignored; still {got['hitter_role']!r} (we said {ours_hitter!r})")
+    assert got["hitter_side"] == "far"
+    assert "corrected" in got["notes"]
+
+
+def test_correcting_only_the_hitter_keeps_our_side(tmp_path):
+    """The two are separate answers: the operator often knows WHO hit it without disputing
+    which end of the court they were on. Overwriting side with a blank would erase a fact
+    nobody questioned."""
+    from openpyxl import load_workbook
+    c = _clip(tmp_path)
+    out = c / "_labeling" / srs.OUT_NAME
+    srs.build(c, out)
+    wb = load_workbook(out)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    row = hdr + 2
+    ours_side = str(ws.cell(row=row, column=col["side"]).value or "")
+    ws.cell(row=row, column=col["CORRECT_HITTER"], value="opp_a")
+    wb.save(out)
+    srs.score(c, out)
+    with (c / "_labeling" / srs.CSV_NAME).open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["hitter_role"] == "opp_a"
+    assert rows[0]["hitter_side"] == ours_side

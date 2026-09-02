@@ -665,9 +665,23 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
                 c["retracted"] += 1
             continue
         c["confirmed"] += 1 if not corr else 0
+        # A corrected hitter REPLACES ours. Until these columns existed the operator wrote
+        # it in the notes -- "shot was by opponent on far side", "dink by partner" -- and
+        # this importer, reading only the structured columns, kept the wrong player on all
+        # four. Server attribution is scored against this exact field.
+        _hit = str(ws.cell(row=r, column=col.get("hitter", 3)).value or "").strip() or None
+        _side = str(ws.cell(row=r, column=col.get("side", 4)).value or "").strip() or None
+        if col.get("CORRECT_HITTER"):
+            _c = str(ws.cell(row=r, column=col["CORRECT_HITTER"]).value or "").strip()
+            if _c:
+                _hit = _c
+        if col.get("CORRECT_SIDE"):
+            _c = str(ws.cell(row=r, column=col["CORRECT_SIDE"]).value or "").strip()
+            if _c:
+                _side = _c
         c[add_shot(doc, t, key=row_key, type_=ty,
-                   hitter=str(ws.cell(row=r, column=col.get("hitter", 3)).value or "") or None,
-                   side=str(ws.cell(row=r, column=col.get("side", 4)).value or "") or None,
+                   hitter=_hit,
+                   side=_side,
                    volley=vol,
                    detected=detected, source=src, notes=notes,
                    kind="review", claimed=claimed, existing=assign.get(r), assigned=True,

@@ -41,6 +41,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 FONT = "Arial"
 VALID = ["serve", "return", "drive", "dink", "drop", "lob", "not a shot"]
+# Who actually hit it, when we credited the wrong player. "opponent" is accepted
+# alongside opp_a/opp_b because the operator cannot always tell the two apart, and
+# an unattributed opponent is still worth more than a wrong attribution.
+HITTERS = ["user", "partner", "opp_a", "opp_b", "opponent"]
+SIDES = ["near", "far"]
 N_BLANK_ROWS = 30          # for shots we missed entirely
 OUT_NAME = "shot_review.xlsx"
 CSV_NAME = "labels_from_review.csv"
@@ -146,6 +151,9 @@ def build(clip: Path, out_path: Path) -> Path:
                 "unless that stored answer is wrong.")
     ws["A4"] = ("Missed a shot entirely? Use the blank rows at the bottom: time + "
                 "CORRECT_TYPE, leave # empty.")
+    ws["A8"] = ("Wrong player? Put the right one in CORRECT_HITTER (and CORRECT_SIDE if "
+                "we also had the wrong end of the court). Do NOT put it in notes -- notes "
+                "are read by a human, these columns are read by the app.")
     ws["A7"] = ("Put 'y' in NOT_A_SHOT for a detection that is not a shot (a feed, a "
                 "pick-up, an adjacent court), and 'y' in RALLY_END for the shot that ENDED "
                 "the point (into the net, hit out, a winner).")
@@ -193,9 +201,14 @@ def build(clip: Path, out_path: Path) -> Path:
         return "between points" if rally_truth else ""
 
     hr = 9 if not rally_truth else 11
+    # CORRECT_HITTER / CORRECT_SIDE exist because there was nowhere structured to say
+    # "you credited the wrong player". On the outdoor sheet the operator wrote it in the
+    # notes instead -- "shot was by opponent on far side", "dink by partner" -- four times,
+    # and the importer, reading only the structured columns, kept the wrong hitter every
+    # time. That corrupts exactly what server attribution is scored against.
     headers = ["#", "time", "your rally", "hitter", "side", "our_type", "our_volley",
                "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "CORRECT_TYPE",
-               "CORRECT_VOLLEY", "notes"]
+               "CORRECT_VOLLEY", "CORRECT_HITTER", "CORRECT_SIDE", "notes"]
     if rally_truth:
         # The operator counted the shots in each rally. Showing their count against ours says
         # exactly which rally to hunt in for a shot we missed -- the alternative is watching
@@ -280,7 +293,8 @@ def build(clip: Path, out_path: Path) -> Path:
     from openpyxl.utils import get_column_letter
     letter = {h: get_column_letter(i) for i, h in enumerate(headers, start=1)}
     for name, choices in (("CORRECT_TYPE", VALID), ("CORRECT_VOLLEY", ("yes", "no")),
-                          ("NOT_A_SHOT", ("y",)), ("RALLY_END", ("y",))):
+                          ("NOT_A_SHOT", ("y",)), ("RALLY_END", ("y",)),
+                          ("CORRECT_HITTER", HITTERS), ("CORRECT_SIDE", SIDES)):
         d = DataValidation(type="list", formula1='"' + ",".join(choices) + '"',
                            allow_blank=True)
         ws.add_data_validation(d)
@@ -289,7 +303,8 @@ def build(clip: Path, out_path: Path) -> Path:
     for h, w in (("#", 7), ("time", 10), ("your rally", 13), ("hitter", 10), ("side", 7),
                  ("our_type", 12), ("our_volley", 12), ("ALREADY KNOWN", 20),
                  ("NOT_A_SHOT", 12), ("RALLY_END", 11), ("CORRECT_TYPE", 15),
-                 ("CORRECT_VOLLEY", 15), ("notes", 46)):
+                 ("CORRECT_VOLLEY", 15), ("CORRECT_HITTER", 16), ("CORRECT_SIDE", 14),
+                 ("notes", 46)):
         if h in letter:
             ws.column_dimensions[letter[h]].width = w
     ws.freeze_panes = ws[f"A{first}"]
@@ -329,8 +344,10 @@ def score(clip: Path, xlsx: Path) -> int:
     C_OURS = col.get("our_type", 5)
     C_HIT = col.get("hitter", 3)
     C_SIDE = col.get("side", 4)
+    C_CHIT = col.get("CORRECT_HITTER")
+    C_CSIDE = col.get("CORRECT_SIDE")
 
-    out, n_corr, n_agree, n_missed = [], 0, 0, 0
+    out, n_corr, n_agree, n_missed, n_rehit = [], 0, 0, 0, 0
     unparsed: List[tuple] = []
     for r in range(hdr_row + 1, ws.max_row + 1):
         n = ws.cell(row=r, column=1).value
@@ -361,10 +378,25 @@ def score(clip: Path, xlsx: Path) -> int:
             n_corr += 1
         else:
             n_agree += 1
+        # A corrected hitter REPLACES ours. Without these columns the operator wrote it
+        # in the notes -- "shot was by opponent on far side" -- and the wrong player was
+        # carried into the truth store, which is what server attribution is scored on.
+        hitter = str(ws.cell(row=r, column=C_HIT).value or "").strip()
+        side = str(ws.cell(row=r, column=C_SIDE).value or "").strip()
+        c_hit = (str(ws.cell(row=r, column=C_CHIT).value or "").strip().lower()
+                 if C_CHIT else "")
+        c_side = (str(ws.cell(row=r, column=C_CSIDE).value or "").strip().lower()
+                  if C_CSIDE else "")
+        if c_hit or c_side:
+            n_rehit += 1
+            hitter = c_hit or hitter
+            side = c_side or side
+            notes = (notes + f" | hitter corrected to {hitter}/{side}").strip(" |")
+
         out.append({"shot_no": n or "", "frame": int(round(t * fps)),
                     "shot_id": n or "", "time": clock(t),
-                    "hitter_role": str(ws.cell(row=r, column=C_HIT).value or ""),
-                    "hitter_side": str(ws.cell(row=r, column=C_SIDE).value or ""),
+                    "hitter_role": hitter,
+                    "hitter_side": side,
                     "true_type": true_type,
                     "true_volley": {"yes": "y", "no": "n"}.get(vol, ""),
                     "true_in": "", "notes": notes})
@@ -379,6 +411,8 @@ def score(clip: Path, xlsx: Path) -> int:
     print(f"  {n_agree} confirmed as already correct")
     print(f"  {n_corr} corrected")
     print(f"  {n_missed} shots we MISSED entirely")
+    if n_rehit:
+        print(f"  {n_rehit} credited to a different player")
     if unparsed:
         print(f"\n  {len(unparsed)} row(s) had content but an UNREADABLE time -- "
               f"these were NOT counted:")
