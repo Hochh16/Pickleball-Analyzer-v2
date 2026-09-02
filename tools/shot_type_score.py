@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.truth_store import known
 
 MATCH_S = 0.6
+LANDING_S = 2.5     # how long after a shot its landing bounce may be
 # The types the operator uses. "serve" is included because it is a type they label, but it
 # is reported separately: it is decided structurally, not by the type classifier.
 TYPES = ("serve", "return", "drive", "dink", "drop", "lob")
@@ -65,11 +66,40 @@ def score_clip(clip: Path) -> dict:
     truth = sorted((s for s in known(clip)["shots"]
                     if not s.get("not_a_shot") and s.get("type") in TYPES),
                    key=lambda s: float(s["t_sec"]))
+    # Where the shot LANDED, taken from the bounce list rather than impact_court_xy_ft.
+    # That field is the ball's position at the PADDLE projected through the ground
+    # homography, and the ball is in the air there -- only 35% of those values land within
+    # 5 ft of the court at all, against 99% for a bounce, which really is on the ground.
+    # The bounce must also be on the FAR side of the net: a shot that crossed has to land
+    # there, and "the next bounce" alone picks up the hitter's own side and reads negative.
+    court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
+    net = float(court["court_geometry_feet"]["length_ft"]) / 2.0
+    bpath = clip / "bounces.json"
+    bounces = (sorted(json.loads(bpath.read_text(encoding="utf-8"))["bounces"],
+                      key=lambda b: int(b["frame"])) if bpath.exists() else [])
+
+    def landing(shot):
+        f, side = int(shot["frame"]), shot.get("hitter_side")
+        if side not in ("near", "far"):
+            return None
+        for b in bounces:
+            bf = int(b["frame"])
+            if not (0 < bf - f <= LANDING_S * fps):
+                continue
+            xy = b.get("court_xy_ft")
+            if not xy or xy[1] is None:
+                continue
+            y = float(xy[1])
+            if (y > net) if side == "near" else (y < net):
+                return (y - net) if side == "near" else (net - y)
+        return None
+
     rows = []
     for tr, s in pair_up(truth, shots, fps):
         got = None if s is None else (s.get("shot_type") or "").strip().lower()
         rows.append({"t": float(tr["t_sec"]), "want": tr["type"], "got": got,
                      "is_volley": None if s is None else bool(s.get("is_volley")),
+                     "depth": None if s is None else landing(s),
                      "clip": clip.name})
     return {"clip": clip.name, "fps": fps, "rows": rows}
 
@@ -118,6 +148,23 @@ def main(clips=None) -> int:
         sel = [r for r in typed if r["got"] == g]
         ok = sum(1 for r in sel if r["want"] == g)
         print(f"    we say {g:<9} {ok:>3}/{len(sel):<4} {ok/len(sel):>4.0%}")
+
+    print("\n  where the ball LANDED, by what the operator called the shot:")
+    print("     (feet past the net; the kitchen line is 7 ft, the far baseline 22 ft)")
+    for want in ("dink", "drop", "drive", "lob", "return", "serve"):
+        sel = [r for r in typed if r["want"] == want]
+        if not sel:
+            continue
+        v = sorted(r["depth"] for r in sel if r.get("depth") is not None)
+        if v:
+            print(f"    {want:<8} landing found {len(v):>3}/{len(sel):<3} "
+                  f"({len(v)/len(sel):>3.0%})   median {v[len(v)//2]:>5.1f} ft   "
+                  f"p25 {v[len(v)//4]:>5.1f}  p75 {v[3*len(v)//4]:>5.1f}")
+        else:
+            print(f"    {want:<8} landing found   0/{len(sel):<3}")
+    print("    Landing depth separates where it exists -- drop and dink land at the kitchen,")
+    print("    drive and return land deep -- while speed does not. COVERAGE is the limit,")
+    print("    and it is worst exactly where it is needed most.")
 
     print("\n  the confusions that cost the most:")
     conf = Counter(f'{r["want"]} -> {r["got"]}' for r in typed if r["got"] != r["want"])
