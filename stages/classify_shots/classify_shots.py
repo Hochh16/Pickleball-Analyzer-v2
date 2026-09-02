@@ -78,6 +78,46 @@ VOLLEY_AIRBORNE_FT = 1.5    # zmin above this never touched down -> a volley
 VOLLEY_MIN_REBOUND_FT = 0.8  # the ball must visibly come back up out of the low point
 VOLLEY_MIN_FRAMES = 4       # reconstructed frames needed between the two shots to decide
 
+# WHAT THE CURRENT FEATURES CAN AND CANNOT DO (measured 2026-09-02, 100 labelled
+# non-serve shots on the two reviewed clips). The operator's definitions:
+#
+#     dink   struck from the kitchen out to ~2 ft beyond (FRONT LEG), landing in the
+#            opponent's kitchen, hit softly
+#     drop   the same but struck from the transition zone or deeper; one that lands
+#            mid-court is a FAILED drop, still a drop
+#     drive  higher speed AND lower arc, together
+#     lob    high arc AND long flight time
+#     "no one criteria will work by itself"
+#
+# Each criterion separately:
+#     hitter position   STRONG for dink vs drop -- front foot 7.6 ft from the net against
+#                       20.0 ft, and the front foot beats the body centre (dink p75 falls
+#                       from 11.3 to 8.7 ft, which is the operator's rule almost exactly)
+#     landing depth     STRONG where it exists -- dink 6.9 ft past the net, drop 7.2,
+#                       drive 13.1 -- but only ~45% of shots have one, and the gap is a
+#                       60fps limit, not a detector fault (see build_landing_index)
+#     arc               MODERATE, drop 0.272 against drive 0.155, but overlapping lob:
+#                       drops reach 0.47 against a lob threshold of 0.35
+#     flight time       MODERATE and consistent with the operator: dink 1.10s, drive 0.78,
+#                       drop 1.07, lob 1.57
+#     ball speed        UNRELIABLE. Pixel speed is INVERTED by camera distance (17 px/f for
+#                       misread drops against 13 for real drives) and the physical ft/s
+#                       reads 43 against 41. It is nonetheless what the no-landing path
+#                       tests FIRST and ALONE.
+#     body mechanics    WEAK as currently computed. Knee angle is IDENTICAL for dink and
+#                       drop (158.2 deg both) and the post/pre speed ratio is LOWEST for
+#                       drives (1.41 against 1.70 dink, 2.00 drop) -- the opposite of the
+#                       aggressive acceleration that defines one. Only contact height
+#                       carries anything: 31/49 drives are struck mid or high against
+#                       8/26 dinks.
+#
+# And in COMBINATION: a search over 288 rules built from position, arc, speed and flight
+# time -- including the front foot and the operator's own thresholds -- scores 60/100,
+# exactly what the current classifier scores. Rules that lift drop recall to 55% pay for it
+# in dink and lob. So the ceiling here is the FEATURES, not the rule, and the way past it
+# is a new measurement rather than a better combination of these: swing path and backswing
+# amplitude over time (not currently computed), or landing coverage.
+#
 # --- Fallback-path confidences: CALIBRATED against operator ground truth ------
 # Measured on 21 operator-labelled shots (20 s drill + match rally 10), 2026-07-21:
 #   landing-based path   : 73% accurate, reported 75%  -> honest, left alone
