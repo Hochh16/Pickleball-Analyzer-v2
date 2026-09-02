@@ -687,6 +687,33 @@ def bounced_between_3d(z_by_frame, f0: int, f1: int):
     The absolute threshold is used only to separate "near the ground" from "clearly not";
     the rebound is what carries the decision, because `bias` scales absolute z and a relative
     move does not inherit that error.
+
+    KNOWN WEAKNESS, measured and not yet fixed. `zmin` is the minimum of 30-60 reconstructed
+    samples, so one bad sample decides it, and 12-13% of reconstructed frames are exactly
+    0.0 -- k is clipped at 1.0 in build_ball_3d, so z = H(1 - 1/k) collapses to zero
+    whenever the size measurement falls out of range. That is a failed measurement, not a
+    ball on the ground, and a single one turns a volley into a ground shot. It is the
+    largest single cause of the missed volleys: 13 of the 20 across the two reviewed clips.
+
+    Requiring the ball to HOLD low for consecutive frames was tried and REVERTED. On its
+    own it changes nothing, because the caller reads None and True alike as "not a volley",
+    so the only way to gain is to answer False more often. Doing that for the band where
+    the ball dips below VOLLEY_AIRBORNE_FT but never holds at the ground is tempting -- that
+    band is 64% volleys against the "not a volley" the caller assumes, so the prior really
+    is backwards there -- but it does not pay:
+
+        volley accuracy on labelled shots   93/113 -> 95/113   (+2)
+        shot_type_correct                   107    -> 103      (-4)
+        volleys flagged on outdoor-7        22     -> 42       (operator counts 27)
+
+    Two reasons it fails. The volley TYPE path is the weaker one (56% vs 71% on court C),
+    so every shot moved into it costs type accuracy; and flipping the whole band overshoots
+    the operator's own volley total by more than the old under-call missed it. identity_gap
+    improves hugely (27 -> 7 on outdoor-7) but that is mechanical -- the identity is
+    shots - (volleys + bounces), so adding volleys closes it by construction and proves
+    nothing.
+
+    The way in is a discriminator WITHIN that 25-shot band, not a blanket flip.
     """
     if not z_by_frame or f1 - f0 < 2:
         return None
