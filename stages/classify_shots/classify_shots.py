@@ -68,6 +68,9 @@ RESET_MIN_INCOMING_FTPS = 25.0
 DRIVE_MIN_SPEED_HORIZ_FTPS = 26.0
 DINK_MAX_SPEED_HORIZ_FTPS = 23.0
 TRAJ_SPEED_CONF_MIN = 0.6
+# Ratio of the anchored drive median to the net-crossing drive median
+# (37.0 / 57.8), so the two speeds share the drive/dink thresholds.
+NET_CROSS_SPEED_SCALE = 0.64
 
 # Height-based volley test. The ball is 1-6 ft up in flight and reads 0.17-0.38 ft at a
 # detected bounce across all four clips, so the two cases are far apart -- but `bias` scales
@@ -941,6 +944,11 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         # that lands deep is a LOB (from the net) or a DRIVE, never a dink.
 
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
+    # A drive is fast AND FLAT together in the operator's definition, and requiring both
+    # HERE was tried and reverted: it drops the score from 97/142 to 85/142, because a
+    # fast arced ball then falls past every remaining branch and lands on "unknown" -- 20
+    # of them. The arc test belongs where there is somewhere for the loser to go, not as
+    # an extra gate on the first branch of a chain that ends in nothing.
     if post_ftps is not None and post_ftps >= drive_min:
         return "drive", FB_DRIVE
     # (The old "reset" branch lived here: fast ball in, slow ball out, not from the
@@ -1162,6 +1170,19 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             speed_for_type = tj["horizontal_speed_ftps"]
             d_min, d_max = DRIVE_MIN_SPEED_HORIZ_FTPS, DINK_MAX_SPEED_HORIZ_FTPS
             speed_source = "trajectory_horizontal"
+        elif (tj is not None and not traj_phantom
+              and tj.get("anchor_type") == "net_crossing"
+              and tj.get("horizontal_speed_ftps") is not None):
+            # The net-crossing speed, accepted BELOW the confidence floor because the
+            # alternative is the pixel speed, which is inverted by camera distance and
+            # actively wrong. It measures the approach to the net rather than the whole
+            # flight, so it reads high on the same shots -- drives 57.8 ft/s against the
+            # anchored 37.0 -- and is rescaled here so one set of thresholds serves both.
+            # Worth it for coverage: 99% of shots against 63%, and a wider drive-vs-rest
+            # margin (1.86x against 1.48x).
+            speed_for_type = tj["horizontal_speed_ftps"] * NET_CROSS_SPEED_SCALE
+            d_min, d_max = DRIVE_MIN_SPEED_HORIZ_FTPS, DINK_MAX_SPEED_HORIZ_FTPS
+            speed_source = "net_crossing"
         else:
             speed_for_type = post_ftps
             d_min, d_max = DRIVE_MIN_SPEED_FTPS, DINK_MAX_SPEED_FTPS

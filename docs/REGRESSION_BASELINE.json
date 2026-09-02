@@ -8,7 +8,7 @@
    "bounces": 78,
    "identity_gap": 27,
    "rallies": 18,
-   "rating": 3.9,
+   "rating": 3.87,
    "rating_confidence": 0.43,
    "shots_truth": 98,
    "volleys_truth": 17,
@@ -37,14 +37,14 @@
    "rally_end_truth": 16,
    "rally_end_within_2s": 12,
    "rally_end_median_err_s": 1.3,
-   "shot_type_correct": 63,
+   "shot_type_correct": 62,
    "shot_type_labelled": 111,
    "shot_type_sample_was_missed": 21
   },
   "pb_3_min_indoor_1_court_b": {
    "shots": 83,
    "volleys": 16,
-   "dinks": 19,
+   "dinks": 12,
    "bounces": 47,
    "identity_gap": 20,
    "rallies": 10,
@@ -73,14 +73,14 @@
    "rally_end_truth": 10,
    "rally_end_within_2s": 5,
    "rally_end_median_err_s": 2.34,
-   "shot_type_correct": 7,
+   "shot_type_correct": 9,
    "shot_type_labelled": 20,
    "shot_type_sample_was_missed": 20
   },
   "pb_3_min_indoor_1_court_c": {
    "shots": 77,
    "volleys": 9,
-   "dinks": 17,
+   "dinks": 14,
    "bounces": 47,
    "identity_gap": 21,
    "rallies": 11,
@@ -110,19 +110,19 @@
    "rally_end_truth": 10,
    "rally_end_within_2s": 4,
    "rally_end_median_err_s": 3.85,
-   "shot_type_correct": 44,
+   "shot_type_correct": 46,
    "shot_type_labelled": 60,
    "shot_type_sample_was_missed": 11
   },
   "pb_5_min_indoor_1_court_a": {
    "shots": 126,
    "volleys": 26,
-   "dinks": 22,
+   "dinks": 18,
    "bounces": 63,
    "identity_gap": 37,
    "rallies": 19,
-   "rating": 3.78,
-   "rating_confidence": 0.45
+   "rating": 3.71,
+   "rating_confidence": 0.46
   }
  }
 }

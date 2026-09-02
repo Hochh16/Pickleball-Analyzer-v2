@@ -39,6 +39,10 @@ STAGE_VERSION = "0.1.0"  # Phase 1: ground-anchored horizontal speed
 PHASE = 1
 
 NET_Y_FT = 22.0
+NET_CROSS_FRAMES = 3     # consecutive frames past the net before a crossing counts
+# Below BOUNCE_CONF and NEXT_CONTACT_CONF: this measures the ball's approach to the net
+# rather than its full flight, so it is a coarser number even where it is available.
+NET_CROSS_CONF = 0.55
 EPS = 1e-9
 
 # --- Defaults (court feet / seconds — resolution & fps independent) ----------
@@ -218,15 +222,56 @@ def build_landing_index(bounces: List[dict]) -> Dict[int, dict]:
     return out
 
 
+def net_crossing_speed(ball_y: Dict[int, float], f: int, side: str, hitter_y: float,
+                       fps: float, look_s: float = 2.5) -> Optional[float]:
+    """Distance to the net over the time the ball takes to get across it.
+
+    The operator's idea, and it is the right shape for this system. The anchored speed
+    needs the shot's landing bounce or the next contact, and 59 of 202 shots have neither
+    -- a rally-ender has nothing coming back, a missed bounce leaves nothing to measure
+    to. Every shot that crosses the net crosses the net.
+
+    Both inputs are the reliable kind. The hitter's court position is ground truth from
+    players.parquet, and WHEN the ball gets across is a sustained, relative question about
+    the 3-D track, which is the class this reconstruction answers well -- unlike absolute
+    per-frame position, which it gets wrong about 30% of the time.
+
+    The crossing must be SUSTAINED. Taking the first frame that reads across dates it
+    frames too early, and since the distance is fixed that inflates the speed: dinks came
+    out at 96 ft/s and one shot at 396. Requiring the ball to stay across gives dink 25.6,
+    drop 36.9, drive 57.8, lob 16.1 -- the right order, and a wider drive-vs-rest margin
+    than the anchored speed manages (1.86x against 1.48x) on 99% of shots against 63%.
+    """
+    if not ball_y or side not in ("near", "far") or hitter_y is None:
+        return None
+    run, first = 0, None
+    for g in range(f + 1, f + int(look_s * fps)):
+        v = ball_y.get(g)
+        if v is None:
+            continue
+        past = (v > NET_Y_FT) if side == "near" else (v < NET_Y_FT)
+        if past:
+            if run == 0:
+                first = g
+            run += 1
+            if run >= NET_CROSS_FRAMES:
+                dt = (first - f) / fps
+                return abs(float(hitter_y) - NET_Y_FT) / dt if dt > 0 else None
+        else:
+            run = 0
+    return None
+
+
 def compute(shots: List[dict], landing: Dict[int, dict],
             players: Dict[Tuple[int, int], dict],
             poses: Dict[Tuple[int, int], dict],
-            M: np.ndarray, fps: float, params: dict, log: logging.Logger
+            M: np.ndarray, fps: float, params: dict, log: logging.Logger,
+            ball_y: Optional[Dict[int, float]] = None
             ) -> Tuple[List[dict], dict]:
     max_gap_frames = params["max_volley_gap_s"] * fps
     min_airtime = params["min_airtime_s"]
     by_index = {i: s for i, s in enumerate(shots)}
-    n_bounce = n_next = n_none = 0
+    n_bounce = n_next = n_none = n_net = 0
     results: List[dict] = []
 
     for i, s in enumerate(shots):
@@ -271,10 +316,17 @@ def compute(shots: List[dict], landing: Dict[int, dict],
                     conf *= 0.5
                 break
 
+        if anchor_type == "none" and near is not None:
+            ns = net_crossing_speed(ball_y or {}, f, s.get("hitter_side"), near[1], fps)
+            if ns is not None:
+                anchor_type, speed, conf = "net_crossing", ns, NET_CROSS_CONF
+
         if anchor_type == "bounce":
             n_bounce += 1
         elif anchor_type == "next_contact":
             n_next += 1
+        elif anchor_type == "net_crossing":
+            n_net += 1
         else:
             n_none += 1
 
@@ -290,9 +342,9 @@ def compute(shots: List[dict], landing: Dict[int, dict],
         })
 
     stats = {"shots": len(shots), "anchor_bounce": n_bounce,
-             "anchor_next_contact": n_next, "anchor_none": n_none}
+             "anchor_next_contact": n_next, "anchor_net_crossing": n_net, "anchor_none": n_none}
     log.info(f"trajectory for {len(shots)} shots; anchors: bounce={n_bounce} "
-             f"next_contact={n_next} none={n_none}")
+             f"next_contact={n_next} net_crossing={n_net} none={n_none}")
     return results, stats
 
 
@@ -329,8 +381,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     }
 
     landing = build_landing_index(bounces)
+    _b3 = folder / "ball_3d.parquet"
+    ball_y = {}
+    if _b3.exists():
+        _df = pd.read_parquet(_b3, columns=["frame", "court_y_ft"])
+        ball_y = {int(f): float(v) for f, v in zip(_df["frame"], _df["court_y_ft"])
+                  if v == v}
     results, stats = compute(shots, landing, players, poses,
-                             court["image_to_court"], fps, params, log)
+                             court["image_to_court"], fps, params, log, ball_y)
 
     out = {
         "schema_version": SCHEMA_VERSION,
