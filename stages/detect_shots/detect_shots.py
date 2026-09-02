@@ -1428,6 +1428,16 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                     n_serves += 1
                     break
             continue
+        # ...but do NOT invent a contact where the impulse detector saw none. Scored
+        # against the operator's own adjudication over both reviewed clips, this branch
+        # emits 1 real shot and 11 they marked not-a-shot -- a 92% junk rate -- and 3 of
+        # those OPEN a rally, so they do not merely inflate a count, they invent a point.
+        # What they are is consistent in the operator's notes: a ball fed to the server,
+        # a ball picked up, a ball from the adjacent court. All of them look like a serve
+        # to this test, because all of them are a ball appearing near a player after dead
+        # time. The PROMOTION above is kept: using the same evidence to flag a contact the
+        # impulse detector already found is what took serves from 11 of 18 rallies to
+        # nearly all of them, and it invents nothing.
         bx, by = float(fx[f]), float(fy[f])
         a = associate(f, bx, by)
         if a is None:
@@ -1532,6 +1542,27 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             dead_gap_frames=params["point_dead_gap_frames"],
             min_inter_serve_frames=params["point_min_inter_serve_frames"],
             formation=formation)
+    # A contact INVENTED by the serve-appearance test only earns its place if the point
+    # structure then accepts it as a serve. Scored against the operator's adjudication over
+    # both reviewed clips, this branch emits 1 real shot and 11 they marked not-a-shot, and
+    # 3 of those OPEN a rally -- inventing a point rather than inflating a count. Their
+    # notes are consistent about what they are: a ball fed to the server, a ball picked up,
+    # a ball from the adjacent court. Each looks like a serve to this test because each is
+    # a ball appearing near a player after dead time.
+    #
+    # Deleting the branch outright was measured too: precision 78% -> 81% but serves
+    # 18/24 -> 17/24 and shot type 97 -> 96, because the one real shot it finds is a real
+    # serve. Keeping only what the structure accepts is the same removal without that cost.
+    n_serve_appearance_dropped = 0
+    if params.get("contamination_filter"):
+        kept_sa = []
+        for s in shots:
+            if s.get("detection_method") == "serve_appearance" and not s.get("is_serve"):
+                n_serve_appearance_dropped += 1
+                continue
+            kept_sa.append(s)
+        shots = kept_sa
+
     for s in shots:
         s.setdefault("is_between_point", False)
     for i, s in enumerate(shots):
@@ -1558,6 +1589,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_rejected_teleport_in": n_rejected_teleport,
         "n_rejected_latch": n_rejected_latch,
         "n_serve_deduped": n_serve_dedup,
+        "n_serve_appearance_dropped": n_serve_appearance_dropped,
         "n_rejected_ground_ball": n_ground_ball,
         "ball_visible_frac": round(ball_visible_frac, 4),
         "analyzed_frame_range": [f_lo, f_hi],
