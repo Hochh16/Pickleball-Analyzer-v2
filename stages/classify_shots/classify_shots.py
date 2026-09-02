@@ -656,7 +656,28 @@ def build_landing_index(bounces_doc: dict) -> Dict[int, float]:
     court coordinates reliably (unlike the airborne ball contact, whose ground-
     homography projection explodes — see KNOWN_ISSUES Stage 6 depth-speed). This
     is the SOUND signal for the drive/drop/dink/lob split: a drive lands deep, a
-    drop/dink lands within the kitchen (+~2 ft)."""
+    drop/dink lands within the kitchen (+~2 ft).
+
+    INFERRING the missing ones was tried and REVERTED. Where a landing cannot be detected
+    because the reply lands on the same frame -- the largest single cause, and a physical
+    limit at 60fps rather than a detector fault -- the landing can be estimated from where
+    the replying player stood, corrected for the ~2.5 ft they stand behind it. It moves the
+    right numbers and still does not pay:
+
+        drop recall   35% -> 48%      dink recall  65% -> 92%
+        drive recall  67% -> 41%      shot_type_correct 114 -> 109 over the harness clips
+
+    The failure is a bias, not noise. Replies are often taken near the kitchen, so inferred
+    depths cluster shallow and the classifier reads dink: dinks rose on EVERY clip
+    (+14, +6, +7, +10) against an operator count that did not move. Two thirds of a drive's
+    landings are inferred, so drive pays for all of it.
+
+    Underneath that is a definition mismatch worth knowing before trying again. The
+    operator's "drive" is about PACE -- a hard flat ball -- while landing depth measures
+    DEPTH, and a drive taken early off the bounce lands short. Where the landing is really
+    measured the two still separate (drop 7.2 ft, drive 13.1 ft); it is the inferred
+    population that does not, because it is exactly the shots taken early.
+    """
     out: Dict[int, float] = {}
     for b in sorted(bounces_doc.get("bounces", []), key=lambda b: b.get("frame", 0)):
         bs = b.get("between_shots", [None, None])
