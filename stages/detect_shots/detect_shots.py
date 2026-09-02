@@ -629,6 +629,10 @@ def reject_same_side_runs(shots: List[dict], side_by_track: Dict[int, str],
                 # puts back, so annotating them wrote debug keys into shots.json and
                 # moved three regression numbers that have nothing to do with tracing.
                 rec = {"frame": int(other["frame"]),
+                       # the track is needed to ask anything about the PLAYER who made
+                       # this contact, and a discarded contact is in no other file
+                       "track_id": other.get("track_id"),
+                       "side": other.get("hitter_side"),
                        "run_winner": int(choice["frame"]), "run_size": len(run)}
                 if ball_xy is not None:
                     # The SAME measure the choice is made on, or the trace contradicts
@@ -828,6 +832,14 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
     generous radius it separates nothing (every contact has the ball nearby just before it);
     at 0.4 of the player's height, a serve sits at 0.81-0.93 of the window against 0.28-0.37
     for everything else.
+
+    The receiving-stack test was tried here too, after it earned its place in serve
+    acceptance, and is NOT used: over the 466 discarded contacts on the labelled clips the
+    has-ball gate admits 18 for 11 serves and 7 junk, while a kitchen-receiver gate admits
+    43 for 14 serves and 29 junk, and the two combined are worse than either alone (17 for
+    9 and 8). Junk admitted here becomes a false serve, and a false serve blocks a real one,
+    so the looser gate costs more than the serves it recovers. The cue is real -- it just
+    belongs where two candidates compete for one slot, not where contacts are readmitted.
     """
     if formation is None or not discards:
         return []
