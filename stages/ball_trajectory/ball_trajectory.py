@@ -166,6 +166,31 @@ def crosses_net(near_y: float, far_y: float) -> bool:
     return (near_y - NET_Y_FT) * (far_y - NET_Y_FT) < 0
 
 
+# WHY A THIRD OF SHOTS CARRY NO PHYSICAL SPEED (measured 2026-09-02, 202 shots on the two
+# reviewed clips). The speed is range/airtime, so it needs an ANCHOR -- the shot's landing
+# bounce, or the next contact -- and 59 shots get neither. That is not one fault:
+#
+#     27  are rally-ENDERS or between-point contacts. Nothing came back, so there is no
+#         next contact and usually no in-court landing. Unmeasurable by definition, not a
+#         failure, and the classifier should not be waiting on a number that cannot exist.
+#     32  are mid-rally shots that should have had one. Their landing bounce was either
+#         never detected or was rejected here for not crossing the net, AND the next
+#         contact was unusable -- most often because it is on the SAME side, which in a
+#         rally means a shot between them was missed.
+#
+# A further 19 shots have a speed that is deliberately distrusted (a volley with a bounce
+# anchor) and 17 fall under TRAJ_SPEED_CONF_MIN in Stage 6.
+#
+# So the mid-rally gap is downstream of missed shots and missed bounces rather than of the
+# arithmetic here, and it matters: with the pixel-derived speed mixed in, drives read 30.7
+# ft/s against 24.5 for everything else, while on the physical speed alone they read 37.0
+# against 25.0. The fallback dilutes a real signal.
+#
+# One threshold here is worth revisiting on its own: max_volley_gap_s is 1.5s, but the
+# operator's flight times put dinks at a median 1.10s with p75 1.55 and lobs at 1.57. A
+# lob's next contact is therefore outside the window by construction.
+
+
 def anchor_ok(near: Tuple[float, float], far: Tuple[float, float],
               rng: float, max_range_ft: float) -> bool:
     """Physical sanity: the range can't exceed the court length, and the ball must
