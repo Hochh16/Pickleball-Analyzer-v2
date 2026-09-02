@@ -1038,12 +1038,24 @@ def build_html(folder: Path) -> str:
       'On its own it isn\'t good or bad — strong players often move <i>less</i> but '
       'get to better spots — so we don\'t rate it. The coachable lever is footwork '
       'and positioning, which lives under Strategy above.</li>')
-    A(f'<li id="fn5">Every ground shot bounces once, so bounces should equal your '
-      f'non-volley shots: about {max(0, len(shots) - n_volley)} expected here, '
-      f'{len(all_bounces)} detected. The ~{max(0, len(shots) - n_volley - len(all_bounces))} '
-      f'gap is real bounces missed by detection — a known ball-detection limit we\'re '
-      f'improving. It thins the landing map and depth stats, but doesn\'t affect your '
-      f'positioning or rating.</li>')
+    # A SERVE is struck from the hand, so it does not follow a bounce. Counting serves in
+    # the expectation is what produced this report's "78 missing bounces", which sent the
+    # operator hunting a detection fault: 64 of that 78 was simply the serve count. Of what
+    # remained, roughly half are shots the operator labelled a VOLLEY and we did not -- 13
+    # of 26 on the outdoor clip, 8 of 17 on court C -- and a volley correctly has no bounce
+    # before it. So name both, and the residue is small.
+    n_srv = sum(1 for s in shots if s.get("is_serve"))
+    n_need = max(0, len(shots) - n_volley - n_srv)
+    n_gap = max(0, n_need - len(all_bounces))
+    A(f'<li id="fn5">A shot played off the bounce follows exactly one bounce. Serves do '
+      f'not — a serve is struck from the hand — and neither do volleys, taken out of the '
+      f'air. That leaves {n_need} shots here that should each follow a bounce, against '
+      f'{len(all_bounces)} bounces detected'
+      + (f', a shortfall of about {n_gap}. ' if n_gap else ', so the two agree. ')
+      + f'Part of any shortfall is not a missing bounce at all: where we read a volley as '
+      f'a ground shot we expect a bounce that never existed, and on the clips with '
+      f'shot-by-shot review that accounts for about half of it. The rest thins the landing '
+      f'map and depth statistics, but does not affect your positioning or rating.</li>')
     A(f'<li id="fn6">Every shot count in this report is shots played <b>during rallies</b>. '
       f'{n_outside} further contact{"" if n_outside == 1 else "s"} '
       f'{"was" if n_outside == 1 else "were"} detected outside any rally — warm-up hits, '
