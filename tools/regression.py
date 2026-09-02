@@ -48,8 +48,24 @@ CLIPS = [
 
 # Stages 5-11: everything below the GPU vision pass. ~24 s for a 5-minute clip, so --rerun is
 # cheap now; before the Stage 4 work it was ~30 minutes and this would not have been usable.
-POST_STAGES = ["detect_shots", "detect_bounces", "ball_trajectory", "classify_shots",
-               "segment_rallies", "compute_metrics", "rate", "plan_improvement"]
+#
+# These are the stages app/pipeline.py runs, IN ITS ORDER AND WITH ITS
+# ARGUMENTS. This had drifted from the app: the point-ends stage was missing and
+# segment_rallies ran without --use-rally-ends, so --rerun rebuilt a pipeline the app never
+# runs. With unmodified code that alone moved 16 baseline numbers -- rally_end_within_2s
+# halving on every clip, junk_in_rallies up 10 on one -- which makes --rerun evidence about
+# a code change indistinguishable from evidence about the harness.
+POST_STAGES = [
+    ("stages.detect_shots.detect_shots", ["--force"]),
+    ("stages.detect_bounces.detect_bounces", ["--force"]),
+    ("stages.ball_trajectory.ball_trajectory", ["--force"]),
+    ("stages.classify_shots.classify_shots", ["--force"]),
+    ("tools.detect_rally_ends", ["--force"]),
+    ("stages.segment_rallies.segment_rallies", ["--force", "--use-rally-ends"]),
+    ("stages.compute_metrics.compute_metrics", ["--force"]),
+    ("stages.rate.rate", ["--force"]),
+    ("stages.plan_improvement.plan_improvement", ["--force"]),
+]
 
 # Operator counts for the source video "PB 5 minute outdoor" (docs/ACCURACY_LEDGER.md,
 # corrected 2026-08-01). Keyed by source video, not by clip folder, because several analysed
@@ -87,11 +103,12 @@ def _load(clip: Path, name: str) -> Optional[dict]:
 
 
 def rerun_post(clip: Path) -> None:
-    for s in POST_STAGES:
-        r = subprocess.run([sys.executable, "-m", f"stages.{s}.{s}", str(clip), "--force"],
+    for module, args in POST_STAGES:
+        r = subprocess.run([sys.executable, "-m", module, str(clip), *args],
                            capture_output=True, text=True)
         if r.returncode != 0:
-            raise SystemExit(f"{s} failed on {clip.name}:\n{(r.stderr or r.stdout)[-600:]}")
+            raise SystemExit(
+                f"{module} failed on {clip.name}:\n{(r.stderr or r.stdout)[-600:]}")
 
 
 def measure(clip: Path) -> Dict[str, object]:
@@ -209,6 +226,16 @@ def measure(clip: Path) -> Dict[str, object]:
         pass
 
     # --- serves -------------------------------------------------------------
+    # CAUTION: serve_recall/serve_precision here match detections against truth.json's
+    # start_t_sec -- the RALLY START, not the strike -- with a 3.0s tolerance. That is loose
+    # enough for a FALSE serve to satisfy a real rally, so removing junk can LOWER the
+    # recall. Measured on pb_5_minute_outdoor-7: 2 of 12 hits were satisfied by a false
+    # serve (the opponent's return at 1:35.50 credited to the rally starting 1:33.00, and
+    # 5:03.17 to 5:01.00 -- both cases where the operator's serve was missed and the return
+    # was accepted in its place). The formation tie-break removed two such false serves and
+    # this number FELL 0.93 -> 0.86 while the operator-scored result rose 10/14 -> 11/14.
+    # Use `python -m tools.serve_score` to judge a serve change; it matches the operator's
+    # labelled serves side-constrained, so junk cannot satisfy it.
     truth_sv = score_serves.truth_serves(clip)
     if truth_sv:
         got = score_serves.detected_serves(clip)
