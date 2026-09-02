@@ -8,7 +8,7 @@
    "bounces": 78,
    "identity_gap": 27,
    "rallies": 18,
-   "rating": 3.89,
+   "rating": 3.9,
    "rating_confidence": 0.43,
    "shots_truth": 98,
    "volleys_truth": 17,
@@ -21,13 +21,13 @@
    "missed_labelled": 10,
    "wrong_player": 1,
    "real_shots_kept": 103,
-   "serve_recall": 0.93,
-   "serve_precision": 0.72,
+   "serve_recall": 0.86,
+   "serve_precision": 0.67,
    "serve_timing_median_s": 0.02,
    "truth_shots_known": 112,
    "truth_missed_known": 21,
    "truth_fp_known": 45,
-   "junk_in_rallies": 21,
+   "junk_in_rallies": 20,
    "real_outside_rallies": 3,
    "truth_missed_recovered": 11,
    "volley_judged": 66,
@@ -120,9 +120,9 @@
    "dinks": 22,
    "bounces": 63,
    "identity_gap": 37,
-   "rallies": 20,
-   "rating": 3.74,
-   "rating_confidence": 0.47
+   "rallies": 19,
+   "rating": 3.78,
+   "rating_confidence": 0.45
   }
  }
 }
