@@ -110,6 +110,27 @@ VOLLEY_MIN_FRAMES = 4       # reconstructed frames needed between the two shots 
 #                       aggressive acceleration that defines one. Only contact height
 #                       carries anything: 31/49 drives are struck mid or high against
 #                       8/26 dinks.
+#     SWING speed       NOT MEASURABLE from this footage, though the operator is right that
+#                       it should be decisive. Peak wrist speed normalised by the player's
+#                       own pixel height is distance-invariant, which is exactly what ball
+#                       pixel speed is not -- so it was the most promising idea available.
+#                       It carries nothing: drives 2.06 body-lengths/sec against 2.01 for
+#                       everything else, and at every threshold drives and non-drives are
+#                       caught at the same rate (26/49 against 26/52 at 2.0). The joints are
+#                       not the problem -- wrist visibility is 93-98% -- the SCALE is: the
+#                       player is a median 148 px tall (p10 91), so a swing spans tens of
+#                       pixels and its per-frame displacement is a few, comparable to the
+#                       tracker's own jitter. A first attempt using the peak rather than a
+#                       smoothed percentile gave dinks 19.8 body-lengths/sec, which is what
+#                       measuring noise looks like.
+#
+# CORRECTION, and it matters: ball speed DOES separate a drive, contrary to what an earlier
+# note here implied. That claim came from the misread drops only -- the subset where speed
+# had already failed -- which is a biased sample. Measured over all labelled shots using the
+# PHYSICAL trajectory speed and discarding the pixel-derived one, drives run 37.0 ft/s
+# against dink 25.0, drop 27.0, lob 20.7. It is a real signal with heavy overlap (some drops
+# are struck hard), not the absence of one. Mixing the pixel speed in is what hides it:
+# together they read 30.7 against 24.5.
 #
 # And in COMBINATION: a search over 288 rules built from position, arc, speed and flight
 # time -- including the front foot and the operator's own thresholds -- scores 60/100,
