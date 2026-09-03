@@ -115,13 +115,13 @@
    "shot_type_sample_was_missed": 11
   },
   "pb_5_min_indoor_1_court_a": {
-   "shots": 121,
-   "volleys": 26,
+   "shots": 120,
+   "volleys": 25,
    "dinks": 21,
-   "bounces": 60,
-   "identity_gap": 35,
+   "bounces": 59,
+   "identity_gap": 36,
    "rallies": 19,
-   "rating": 3.7,
+   "rating": 3.69,
    "rating_confidence": 0.46
   }
  }

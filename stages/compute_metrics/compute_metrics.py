@@ -79,6 +79,9 @@ ROLE_CONF_FLOOR = 0.55        # role_confidence below this -> role_contaminated
 # The kitchen line is 7 ft past the net and the baseline 22, so 15 ft is "in the back
 # third" -- the depth a serve or return is trying for.
 LANDING_LOOK_S = 2.5
+# The kitchen is 7 ft from the net on each side. A serve must clear it -- the LINE
+# counts as in the kitchen, so a serve landing on it is a fault.
+SERVE_KITCHEN_DEPTH_FT = 7.0
 DEEP_LANDING_MIN_FT = 15.0
 
 NET_Y_FT = 22.0               # net line (= length_ft / 2)            [Stage 6]
@@ -1108,6 +1111,58 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "deep_frac": round(deep / len(depths), 3),
                 "coverage": round(len(depths) / len(sel), 3) if sel else 0.0}
 
+    def _in_play(shot, is_serve):
+        """Did this shot land in? "in" / "out" / None where we cannot say.
+
+        Operator, 2026-09-03: "for a serve, if the ball bounces in the far side box
+        diagonally across from the server from the kitchen line to the baseline it is a
+        good serve. otherwise, a fault. for a return of serve, if the ball bounces on the
+        opposite side in the court it is good, otherwise a fault."
+
+        That is the rule, and this is it. It works because these two shots have the best
+        landing coverage in the system -- struck deep, landing deep, with nobody standing
+        on the bounce: measured across the six videos, a landing is found for 44 of 62
+        serves and 34 of 48 returns, against about a fifth of drops.
+
+        Two honest limits. The DIAGONAL half cannot be checked: which service box is
+        correct depends on the score, which we do not track, so a serve to the wrong box
+        reads as in. And a bounce on the hitter's OWN side is not treated as a net fault
+        -- measured, 6 of those 7 serves bounce 17-25 ft from the net and 2-10 ft from the
+        server, which is the ball being bounced before the serve, not a ball in the net.
+        A real net fault lands within a few feet of the net, and there are too few of them
+        to tell the two apart on a threshold anyone could defend. So: not adjudicated.
+        """
+        f, side = int(shot["frame"]), shot.get("hitter_side")
+        if side not in ("near", "far"):
+            return None
+        for b in _bounce_list:
+            bf = int(b.get("frame", 0))
+            if bf <= f:
+                continue
+            if bf - f > LANDING_LOOK_S * fps:
+                return None
+            xy = b.get("court_xy_ft") or [None, None]
+            if xy[1] is None:
+                continue
+            x, y = float(xy[0]), float(xy[1])
+            depth = (y - NET_Y_FT) if side == "near" else (NET_Y_FT - y)
+            if depth <= 0:
+                return None                       # bounced on their own side: see above
+            if not (0.0 <= x <= COURT_WID_FT) or depth > NET_Y_FT:
+                return "out"                      # wide of the sideline, or past the baseline
+            if is_serve and depth < SERVE_KITCHEN_DEPTH_FT:
+                return "out"                      # short: a serve must clear the kitchen
+            return "in"
+        return None
+
+    def _in_play_block(sel, is_serve):
+        calls = [v for v in (_in_play(s, is_serve) for s in sel) if v is not None]
+        n_in = sum(1 for v in calls if v == "in")
+        return {"n": len(sel), "n_measured": len(calls),
+                "n_in": n_in, "n_out": len(calls) - n_in,
+                "in_frac": round(n_in / len(calls), 3) if calls else None,
+                "coverage": round(len(calls) / len(sel), 3) if sel else 0.0}
+
     _serves_all = [s for s in shots if s.get("is_serve")]
     _returns_all = [s for s in shots if s.get("shot_type") == "return"]
 
@@ -1134,12 +1189,15 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "n_serve_faults_measured": n_serve_faults_measured,
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
             "depth": _depth_block(_serves_all),
+            "in_play": _in_play_block(_serves_all, True),
         }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
         "third_shot": _third_block(third_shots, third_unmeasurable, per_user=False,
                                    all_thirds=all_third_shots),
         "returns": mv_structural(n_returns, n_returns),
         "return_depth": mv_sample_size(_depth_block(_returns_all), len(_returns_all)),
+        "return_in_play": mv_sample_size(_in_play_block(_returns_all, False),
+                                         len(_returns_all)),
         "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
             "in_rate": round(n_in / (n_in + n_out), 4) if (n_in + n_out) else 0.0,
@@ -1324,9 +1382,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 # -level depth would rate everyone by the group's average.
                 "depth": _depth_block([s for s in shots if s.get("is_serve")
                                        and int(s.get("track_id", -1)) in tids]),
+                "in_play": _in_play_block([s for s in shots if s.get("is_serve")
+                                           and int(s.get("track_id", -1)) in tids], True),
             }, role_served_erc[r], len(rserves), role_factor=rconf),
             "return_depth": mv_sample_size(
                 _depth_block([s for s in returns if int(s["track_id"]) in tids]),
+                sum(1 for s in returns if int(s["track_id"]) in tids)),
+            "return_in_play": mv_sample_size(
+                _in_play_block([s for s in returns if int(s["track_id"]) in tids], False),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
             "errors_committed": mv_sourced(errors_committed[r], role_error_raw_erc[r],
                                            errors_committed[r], role_factor=rconf),

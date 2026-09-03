@@ -71,7 +71,12 @@ VISION_STEPS = [
 # annotated render + compress are intentionally omitted (see module docstring);
 # the report links the original clip.
 POST_STEPS = [
-    Step("shots", "Detect shots", module="stages.detect_shots.detect_shots", args=["--force"]),
+    # --no-bounces on pass 1: Stage 5.5 runs after this, so bounces.json on disk belongs
+    # to the PREVIOUS run of the whole pipeline. Reading it here makes a re-run depend on
+    # its own last output -- court A alternated between 120 and 121 shots on identical
+    # code until this was closed off. Pass 2 below reads them, which is the point of it.
+    Step("shots", "Detect shots", module="stages.detect_shots.detect_shots",
+         args=["--force", "--no-bounces"]),
     Step("bounces", "Detect bounces", module="stages.detect_bounces.detect_bounces", args=["--force"]),
     # Stage 5 gets a SECOND pass, because its best shot filter needs an input that only
     # exists after Stage 5.5. `reject_same_side_runs` deletes a real shot every time one is

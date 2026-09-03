@@ -136,6 +136,7 @@ def _unwrap_user(uw: dict) -> dict:
         "third_shot": _v(uw.get("third_shot")) or {},
         "n_returns": _v(uw.get("n_returns")) or 0,
         "return_depth": _v(uw.get("return_depth")) or {},
+        "return_in_play": _v(uw.get("return_in_play")) or {},
         "ready_position": _v(uw.get("ready_position")) or {},
         "position": _v(uw.get("position")) or {},
         "mean_post_speed_ftps": _v(uw.get("mean_post_speed_ftps")),
@@ -304,7 +305,23 @@ def score_volley(user: dict) -> Tuple[float, dict]:
 
 
 def score_serve_return(user: dict) -> Tuple[float, dict]:
-    """Serve + return, on fault rate AND now DEPTH.
+    """Serve + return, on IN-PLAY RATE and DEPTH -- both measured from the landing.
+
+    The in-play half is the operator's own rule, 2026-09-03: "for a serve, if the ball
+    bounces in the far side box diagonally across from the server from the kitchen line to
+    the baseline it is a good serve. otherwise, a fault. for a return of serve, if the ball
+    bounces on the opposite side in the court it is good, otherwise a fault."
+
+    It replaces `serve_fault_rate` here, which was not a measurement of the serve at all:
+    it counted rallies where only one shot was detected, so a return we failed to see read
+    as the server's fault. That number is 0 on almost every clip, which scored every player
+    at the top of the term regardless of how they served. The in-play rate is decided by
+    watching the ball land -- 13 of 16 serves and 11 of 14 returns on outdoor-12 -- and
+    where too few landings exist to judge, the old fault rate still stands in.
+
+    The rule's one blind spot is stated where it is implemented: which service box is
+    correct depends on the score, which we do not track, so a serve to the wrong box reads
+    as in.
 
     A deep serve and a deep return are what USA Pickleball rates here -- "deeper serves
     and returns" is the 4.0 criterion -- and depth was the pending half of this category:
@@ -322,6 +339,8 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
     rate = serve.get("serve_fault_rate") if n_serves > 0 else None
     s_depth = serve.get("depth") or {}
     r_depth = user.get("return_depth") or {}
+    s_play = serve.get("in_play") or {}
+    r_play = user.get("return_in_play") or {}
     drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
                # How many of the faults we watched land, against how many are inferred
                # from the point simply ending on the serve. Faults we CAN see are the
@@ -334,10 +353,22 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
                "n_serves_detected": serve.get("n_serves_detected"),
                "n_returns": user.get("n_returns", 0) or 0,
                "serve_depth": s_depth or None,
-               "return_depth": r_depth or None}
+               "return_depth": r_depth or None,
+               "serve_in_play": s_play or None,
+               "return_in_play": r_play or None}
 
     parts, weights = [], []
-    if rate is not None:
+    # A serve or return that lands in is the floor of this category, so the scale is
+    # narrow and high: 85% in play is ordinary rec play, 100% is what a 4.0 does.
+    scored_in_play = False
+    for blk in (s_play, r_play):
+        if blk and blk.get("n_measured", 0) >= IN_PLAY_MIN_N and blk.get("in_frac") is not None:
+            parts.append(clamp_level(lin(blk["in_frac"], 0.70, 2.5, 1.0, 4.5)))
+            weights.append(1.0)
+            scored_in_play = True
+    # Only where nothing landed often enough to judge. The fault rate is an inference from
+    # rallies that ended early, and it reads 0 almost everywhere -- see the docstring.
+    if not scored_in_play and rate is not None:
         parts.append(clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)))
         weights.append(1.0)
     # Deep is 15 ft past the net, the back third. A player landing most of them there is
@@ -352,6 +383,7 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
 
 
 DEPTH_MIN_N = 5           # landings needed before depth moves the serve/return score
+IN_PLAY_MIN_N = 5         # ...and before the in/out call does
 CONTACT_FRONT_MIN_N = 4   # min stroke-side shots with a contact-point read to score
 
 def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:

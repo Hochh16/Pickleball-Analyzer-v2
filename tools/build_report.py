@@ -50,6 +50,9 @@ CATEGORY_ELEMENTS = {
                ("Block / reset", "planned"), ("Put-aways", "planned"),
                ("Speed-ups & counters", "planned")],
     "serve_return": [("Serve / return count", "live"),
+                     # In-play is a MEASUREMENT now -- the operator's own rule, decided by
+                     # watching the serve or return land -- but only on the four fifths of
+                     # them whose landing is found, so it stays partial rather than live.
                      ("In-play rate & faults", "partial"),
                      # Depth is measured from the landing bounce now, but only for the
                      # shots whose landing is found -- about two thirds of serves and
@@ -83,6 +86,8 @@ METRIC_DISPLAY = {
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
+    "serve_in_play": ("Serves that landed in", "in_play"),
+    "return_in_play": ("Returns that landed in", "in_play"),
     "serve_depth": ("Serves landing deep", "depth"),
     "return_depth": ("Returns landing deep", "depth"),
     "forehand_count": ("Forehands detected", "int"),
@@ -279,6 +284,11 @@ def serve_fault_line(drivers: dict) -> str:
     how much of it was measured, and let a low number read as "we cannot see these yet"
     rather than as a clean serve.
     """
+    # Where we actually watched serves land, THAT is the answer to "did they go in", and
+    # this line would sit beside it saying something weaker about the same thing.
+    in_play = drivers.get("serve_in_play") or {}
+    if isinstance(in_play, dict) and in_play.get("n_measured"):
+        return ""
     n = drivers.get("n_serve_faults")
     n_meas = drivers.get("n_serve_faults_measured")
     n_serves = drivers.get("n_serves")
@@ -312,6 +322,19 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "in_play":
+            # val = {n, n_measured, n_in, n_out, in_frac, coverage}. The operator's rule:
+            # a serve must land past the kitchen line and inside the far court, a return
+            # anywhere in the far court. Decided by watching the ball land, so it carries
+            # its denominator like depth does.
+            if not isinstance(val, dict) or not val.get("n_measured"):
+                return None
+            nm, n = int(val["n_measured"]), int(val.get("n") or 0)
+            n_out = int(val.get("n_out") or 0)
+            pct = int(round((val.get("in_frac") or 0) * 100))
+            tail = "none went out" if n_out == 0 else \
+                (f"1 landed out or short" if n_out == 1 else f"{n_out} landed out or short")
+            return f"{pct}% ({tail}, watched down on {nm} of {n})"
         if fmt == "depth":
             # val = {n, n_measured, median_depth_ft, deep_frac, coverage}. Say the
             # denominator: depth comes from the landing bounce, and the landing is found
@@ -635,6 +658,10 @@ def build_html(folder: Path) -> str:
         # rather than implying every serve was measured.
         "serve_depth": (((metrics.get("match", {}) or {}).get("serve", {}) or {})
                         .get("value", {}) or {}).get("depth"),
+        "serve_in_play": (((metrics.get("match", {}) or {}).get("serve", {}) or {})
+                          .get("value", {}) or {}).get("in_play"),
+        "return_in_play": (((metrics.get("match", {}) or {}).get("return_in_play", {}) or {})
+                           .get("value")),
         "return_depth": (((metrics.get("match", {}) or {}).get("return_depth", {}) or {})
                          .get("value")),
         "forehand_count": _bs.get("forehand"),

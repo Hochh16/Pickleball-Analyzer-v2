@@ -1842,8 +1842,10 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                               side_by_track, ball_court_y,
                                               formation=load_formation(folder),
                                               players_px=load_players_px(folder),
-                                              own_feet_bounce=load_own_feet_bounce(
-                                                  folder, court["net_y_ft"], fps, log))
+                                              own_feet_bounce=(
+                                                  None if args.no_bounces else
+                                                  load_own_feet_bounce(
+                                                      folder, court["net_y_ft"], fps, log)))
 
     # Beside shots.json, not inside it: it is a debugging trace, not part of the contract,
     # and it is large (thousands of rejected candidates). tools/why_no_shot.py reads it.
@@ -1913,6 +1915,13 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     p.add_argument("--no-ball-3d", action="store_true", dest="no_ball_3d",
                    help="ignore ball_3d.parquet even when present: same-side runs then "
                         "split on ball excursion only (the first-pass behaviour)")
+    p.add_argument("--no-bounces", action="store_true", dest="no_bounces",
+                   help="ignore bounces.json even when present (the first-pass "
+                        "behaviour). Stage 5.5 runs AFTER this stage, so on a re-run the "
+                        "file on disk was written by the PREVIOUS run -- and letting pass "
+                        "1 read it makes the pipeline depend on its own last output. "
+                        "Court A alternated 120/121 shots between identical runs until "
+                        "the first pass was made to ignore it.")
     p.add_argument("--same-side-excursion-px", type=float, default=None,
                    dest="same_side_excursion_px",
                    help="absolute px override (default: SAME_SIDE_EXCURSION_PX scaled by "

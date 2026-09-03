@@ -56,6 +56,11 @@ CLIPS = [
 # halving on every clip, junk_in_rallies up 10 on one -- which makes --rerun evidence about
 # a code change indistinguishable from evidence about the harness.
 POST_STAGES = [
+    # TWO passes of shots+bounces, mirroring app/pipeline.py -- see the comment there. The
+    # harness omits build_ball_3d between them (it decodes the video, which is 98% of the
+    # cost); everything else has to match, or --rerun measures a pipeline nobody ships.
+    ("stages.detect_shots.detect_shots", ["--force", "--no-bounces"]),
+    ("stages.detect_bounces.detect_bounces", ["--force"]),
     ("stages.detect_shots.detect_shots", ["--force"]),
     ("stages.detect_bounces.detect_bounces", ["--force"]),
     ("stages.ball_trajectory.ball_trajectory", ["--force"]),
