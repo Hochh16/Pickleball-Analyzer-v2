@@ -188,6 +188,21 @@ KITCHEN_MAX_DIST_FT = 9.0   # effective kitchen depth from net (court_zones)
 # itself: the operator's dinks reach 8.7 ft at p75 and their drives start well behind, and
 # scored over the no-landing shots this value separates them best.
 NET_ZONE_MAX_FT = 11.0
+# Gating the drive branch on ARC where the hitter is DEEP was measured across a sweep and
+# is NOT used. It does what it is meant to -- 13 of the operator's 23 drops read fast
+# enough to be typed a drive, speed cannot separate them (drops reach 43 ft/s against 41
+# for real drives) and the arc can (0.272 against 0.155) -- and the whole sweep is a
+# straight trade of drive against drop:
+#
+#     threshold   0.20   0.25   0.30   0.35   0.40   0.45   0.50
+#     total       98     98     98     99     99    100     99
+#     drive       61%    63%    63%    65%    65%    67%    67%
+#     drop        43%    39%    39%    39%    39%    39%    35%
+#
+# At its best (0.45) the total merely returns to what it is without the gate, buying drop
+# recall 30% -> 39% at drive 71% -> 67%. On the labelled clips that is a wash; over the
+# four harness clips it is shot_type_correct 119 -> 117. A rebalance that costs two on the
+# broader sample is not worth a threshold fitted on 142 shots.
 BASELINE_MIN_DIST_FT = 17.0  # within ~5ft of the 22ft baseline
 BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
 LANDMARK_VIS_FLOOR = 0.5
@@ -976,6 +991,12 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
     # speed-banded chain and out onto "unknown".
     _fast = post_ftps is not None and post_ftps >= drive_min
     _at_net = contact_dist_from_net is not None and contact_dist_from_net <= NET_ZONE_MAX_FT
+    # A hard ball AT THE NET is a put-away and speed alone should call it. A hard ball
+    # from DEEP is the ambiguous one: 13 of the operator's 23 drops read fast enough to be
+    # typed a drive here, and speed cannot separate them (drops reach 43 ft/s against 41
+    # for real drives) while the arc can (drop 0.272 against drive 0.155). So the arc test
+    # applies only where the hitter is deep -- applying it everywhere was measured twice
+    # and costs drive recall 71% -> 47%.
     if _fast:
         return "drive", FB_DRIVE
     if _at_net:
