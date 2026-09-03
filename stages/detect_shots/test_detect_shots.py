@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from stages.detect_shots.detect_shots import (main as detect_main,
+                                              make_own_feet_bounce,
                                               reject_same_side_runs,
                                               structure_points)
 
@@ -494,3 +495,58 @@ def test_the_receiving_pair_stacks_for_a_serve():
     assert receiver_at_kitchen(empty, 100, "near", L) is None
     assert receiver_at_kitchen(pd.DataFrame(), 100, "near", L) is None
     assert receiver_at_kitchen(stacked, 100, None, L) is None
+
+
+def _feet_bounce(frame, side, net_y=22.0):
+    """A bounce at the hitter's own feet: their side of the net, flagged at-feet."""
+    y = net_y - 21.0 if side == "near" else net_y + 21.0
+    return {"frame": frame, "court_xy_ft": [10.0, y], "is_at_feet": True}
+
+
+def test_a_ball_that_lands_at_the_hitters_own_feet_is_not_a_serve():
+    """Operator, 2026-09-03, on the 7 accepted serves whose first post-contact bounce was on
+    their own side: "that is not a serve and is just a bounce."
+
+    A player bouncing the ball is what happens BETWEEN points and never after a serve is
+    struck. Measured over the 29 accepted serves on the two scored clips, 5 of the 9 false
+    accepts land the ball at the hitter's own feet and none of the 20 real serves do; the
+    two real serves with such a bounce at all have it at 2.65s and 2.77s, the ball coming
+    back between points. Cutting them took false accepts from 31% to 19% and, because a
+    false accept blocks the real serve behind it, serves right 18/24 -> 19/24.
+    """
+    fps = 60.0
+    shots = [_shot(0, "near", 25.0),                    # a serve
+             _shot(int(1.0 * fps), "far", 25.0),        # returned
+             _shot(int(20.0 * fps), "near", 30.0),      # deep + a long gap: looks like one
+             _shot(int(21.0 * fps), "far", 20.0)]       # and it is even answered
+    bl = [_feet_bounce(int(20.7 * fps), "near")]
+    ask = make_own_feet_bounce(bl, 22.0, fps)
+    structure_points(shots, **_args(fps), own_feet_bounce=ask)
+    assert [bool(s["is_serve"]) for s in shots] == [True, False, False, False]
+
+    # ...and with the ball landing across the net instead, it is a serve again.
+    shots = [dict(s) for s in shots]
+    across = [{"frame": int(20.7 * fps), "court_xy_ft": [10.0, 36.0], "is_at_feet": False}]
+    structure_points(shots, **_args(fps),
+                     own_feet_bounce=make_own_feet_bounce(across, 22.0, fps))
+    assert bool(shots[2]["is_serve"])
+
+
+def test_only_the_FIRST_bounce_after_the_contact_is_the_landing():
+    """A later bounce is a different event -- the ball being retrieved, the next point being
+    set up. Reading past the first is how the landing question gets answered by something
+    that is not the landing, and it is why the cut has to be time-bounded: the real serves
+    that have an own-feet bounce at all have it at 2.65s and 2.77s."""
+    fps = 60.0
+    shot = _shot(0, "near", 30.0)
+    across = {"frame": int(0.5 * fps), "court_xy_ft": [10.0, 36.0], "is_at_feet": False}
+    late_feet = _feet_bounce(int(1.2 * fps), "near")
+    assert make_own_feet_bounce([across, late_feet], 22.0, fps)(shot) is False
+    # the same feet bounce FIRST, and it decides
+    assert make_own_feet_bounce([late_feet], 22.0, fps)(shot) is True
+    # beyond the window it is the ball coming back, not the serve landing
+    assert make_own_feet_bounce([_feet_bounce(int(2.7 * fps), "near")], 22.0, fps)(shot) \
+        is False
+    # no bounces at all, and no side to judge from, are both "no evidence", not "at feet"
+    assert make_own_feet_bounce([], 22.0, fps)(shot) is False
+    assert make_own_feet_bounce([late_feet], 22.0, fps)({"frame": 0}) is None

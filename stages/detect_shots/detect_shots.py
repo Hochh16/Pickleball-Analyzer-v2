@@ -894,10 +894,69 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
     return out
 
 
+# A player bouncing the ball does it in the couple of seconds before they serve; the ball
+# coming back to them between points arrives later. The two real serves that have an
+# own-side at-feet bounce after them at all have it at 2.65s and 2.77s, and no real serve
+# has one inside 2.0s -- so the cut holds anywhere from 0.75s to 2.0s. 1.5s sits in the
+# middle of that band rather than on either edge of it.
+OWN_FEET_BOUNCE_S = 1.5
+
+
+def load_own_feet_bounce(folder: Path, net_y_ft: float, fps: float, log):
+    """Stage 5.5's bounces, if they exist yet.
+
+    Same arrangement as ball_3d.parquet: Stage 5.5 runs AFTER this stage, so the first
+    pass over a new video has no bounces and the second picks them up. The pipeline runs
+    this stage twice for exactly that reason, so production always gets the second pass;
+    a one-shot run degrades to the previous behaviour rather than failing.
+    """
+    path = folder / "bounces.json"
+    if not path.exists():
+        return None
+    try:
+        bl = sorted(json.loads(path.read_text(encoding="utf-8")).get("bounces", []),
+                    key=lambda b: int(b.get("frame", 0)))
+    except (ValueError, OSError, KeyError, TypeError):
+        return None
+    if not bl:
+        return None
+    log.info("serve candidates checked against %d bounces from Stage 5.5", len(bl))
+    return make_own_feet_bounce(bl, net_y_ft, fps)
+
+
+def make_own_feet_bounce(bounces: List[dict], net_y_ft: float, fps: float,
+                         look_s: float = OWN_FEET_BOUNCE_S):
+    """Build `shot -> did the ball land at this hitter's own feet?`.
+
+    Only the FIRST bounce after the contact is consulted. A later one is a different
+    event -- the ball being retrieved, the next point being set up -- and reading past the
+    first is how the landing question gets answered by something that is not the landing.
+    """
+    def ask(shot) -> Optional[bool]:
+        side = shot.get("hitter_side")
+        if side not in ("near", "far"):
+            return None
+        f = int(shot["frame"])
+        for b in bounces:
+            dt = int(b.get("frame", 0)) - f
+            if dt <= 0:
+                continue
+            if dt > look_s * fps:
+                return False
+            xy = b.get("court_xy_ft") or [None, None]
+            if xy[1] is None:
+                continue
+            landed = "near" if float(xy[1]) < net_y_ft else "far"
+            return bool(landed == side and b.get("is_at_feet"))
+        return False
+
+    return ask
+
+
 def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: float,
                      open_gap_frames: int, return_frames: int,
                      dead_gap_frames: int, min_inter_serve_frames: int,
-                     formation=None) -> int:
+                     formation=None, own_feet_bounce=None) -> int:
     """Unified point-boundary detection (operator method 2026-07-27). A rally is
     SERVE -> ... -> POINT-END, one of each, alternating. Combine weak cues with the
     structural one-each constraint so no single rule has to carry it. Sets `is_serve`
@@ -969,10 +1028,33 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
                 return ss[i]["frame"] - ss[j]["frame"]
         return open_gap_frames + 1        # nothing ever came from the other side
 
-    def serve_cand(i):
+    def ball_lands_at_own_feet(i):
+        """The ball's first landing after this contact is at the hitter's own feet.
+
+        Operator, 2026-09-03, on the 7 accepted serves whose first post-contact bounce was
+        on their own side: "that is not a serve and is just a bounce." Exactly right, and
+        the stronger reading -- a player bouncing the ball is what happens BETWEEN points,
+        and never after a serve is struck, so it argues against the shot being a serve at
+        all rather than merely failing to prove a fault.
+
+        Measured over the 29 accepted serves on the two scored clips: 5 of the 9 false
+        accepts land the ball at the hitter's own feet, and none of the 20 real serves do.
+        The two real serves that have such a bounce at all have it at 2.65s and 2.77s --
+        the ball coming back between points -- so the cut is stable anywhere from 0.75s to
+        2.0s, not a threshold fitted to noise.
+
+        This gates the CANDIDATE, before acceptance, because a false accept takes the one
+        serve slot the point has and then blocks the real serve behind it.
+        """
+        return bool(own_feet_bounce) and own_feet_bounce(ss[i]) is True
+
+    def serve_shape(i):
         return dist(i) >= behind_baseline_ft and gap_prev(i) >= open_gap_frames
 
-    def weak_serve_cand(i):
+    def serve_cand(i):
+        return serve_shape(i) and not ball_lands_at_own_feet(i)
+
+    def weak_serve_shape(i):
         """A serve the strict gap misses, admitted only on the opposite-side gap.
 
         It must also be ANSWERED -- the opposing side plays the ball back within
@@ -983,12 +1065,23 @@ def structure_points(shots: List[dict], net_y_ft: float, behind_baseline_ft: flo
         corroborate. Without it the relaxation opened a second rally at 3:31 made of four
         junk shots and no real ones.
         """
-        return (not serve_cand(i) and dist(i) >= behind_baseline_ft
+        return (not serve_shape(i) and dist(i) >= behind_baseline_ft
                 and gap_prev_opposite(i) >= open_gap_frames
                 and returned(i) is True)
 
+    def weak_serve_cand(i):
+        # ...and the relaxed door has to be shut against the same ball. Without this,
+        # disqualifying a candidate above would hand it straight back here.
+        return weak_serve_shape(i) and not ball_lands_at_own_feet(i)
+
+    # A POINT-END is asked of every shot that does not LOOK like a serve, and looking like
+    # a serve is a question about depth and timing -- deliberately the SHAPE predicates,
+    # not the accept ones. Routing the own-feet disqualifier through here instead made a
+    # rejected serve eligible to become a point-end, which re-cut the rally structure
+    # around it: court B lost a real rally (10 -> 9) and a real serve with it, while the
+    # filter had rejected nothing on that clip at all.
     ends = {i for i in range(N)
-            if not serve_cand(i) and not weak_serve_cand(i) and returned(i) is False
+            if not serve_shape(i) and not weak_serve_shape(i) and returned(i) is False
             and gap_next(i) >= dead_gap_frames}
 
     accepted: List[int] = []
@@ -1060,7 +1153,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
            log: logging.Logger, params: dict,
            side_by_track: Optional[Dict[int, str]] = None,
            ball_court_y: Optional[Dict[int, float]] = None,
-           formation=None, players_px=None
+           formation=None, players_px=None, own_feet_bounce=None
            ) -> Tuple[List[dict], dict, List[str]]:
     n = len(df_ball)
     fx = df_ball["pixel_x"].to_numpy(copy=True)
@@ -1541,7 +1634,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             return_frames=params["point_return_frames"],
             dead_gap_frames=params["point_dead_gap_frames"],
             min_inter_serve_frames=params["point_min_inter_serve_frames"],
-            formation=formation)
+            formation=formation, own_feet_bounce=own_feet_bounce)
     # A contact INVENTED by the serve-appearance test only earns its place if the point
     # structure then accepts it as a serve. Scored against the operator's adjudication over
     # both reviewed clips, this branch emits 1 real shot and 11 they marked not-a-shot, and
@@ -1748,7 +1841,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                               court["image_to_court"], log, params,
                                               side_by_track, ball_court_y,
                                               formation=load_formation(folder),
-                                              players_px=load_players_px(folder))
+                                              players_px=load_players_px(folder),
+                                              own_feet_bounce=load_own_feet_bounce(
+                                                  folder, court["net_y_ft"], fps, log))
 
     # Beside shots.json, not inside it: it is a debugging trace, not part of the contract,
     # and it is large (thousands of rejected candidates). tools/why_no_shot.py reads it.
