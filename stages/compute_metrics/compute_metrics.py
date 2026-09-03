@@ -75,6 +75,12 @@ STAGE_VERSION = "0.5.0"       # 0.3.0 front-foot -> 0.4.0 rally-scoped position 
 # --- Config (matches contract) ----------------------------------------------
 HEATMAP_BIN_FT = 2.0          # court grid bin -> 10 cols (x) x 22 rows (y)
 ROLE_CONF_FLOOR = 0.55        # role_confidence below this -> role_contaminated
+# How long after a shot its landing bounce may be, and how far past the net counts as DEEP.
+# The kitchen line is 7 ft past the net and the baseline 22, so 15 ft is "in the back
+# third" -- the depth a serve or return is trying for.
+LANDING_LOOK_S = 2.5
+DEEP_LANDING_MIN_FT = 15.0
+
 NET_Y_FT = 22.0               # net line (= length_ft / 2)            [Stage 6]
 KITCHEN_MAX_DIST_FT = 9.0     # effective kitchen depth from net      [Stage 6]
 BASELINE_MIN_DIST_FT = 17.0   # within ~5ft of own baseline -> baseline [Stage 6]
@@ -1041,6 +1047,57 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     match_span_sec = (round((max(all_frames) - min(all_frames)) / fps, 2)
                       if all_frames else 0.0)
 
+    # --- Serve and return DEPTH --------------------------------------------------
+    # A deep serve and a deep return are two of the USAPA serve/return criteria, and the
+    # rating already reserves a slot for them (driver_metrics.return_metric was null, and
+    # skill_coverage listed serve_depth_placement as pending).
+    #
+    # Depth is measured from the LANDING BOUNCE, not from impact_court_xy_ft: the latter is
+    # the ball at the paddle projected through the ground homography while it is airborne,
+    # and only about a third of those values land within 5 ft of the court at all, whereas
+    # a bounce really is on the ground and 99% of them do. The bounce must be on the FAR
+    # side of the net -- a shot that crossed has to land there, and "the next bounce" alone
+    # picks up the hitter's own side and reads negative.
+    #
+    # Serves and returns are the two shots this works BEST for: they are struck hard and
+    # deep, so the landing is a clean bounce far from the receiver, and it is found for 67%
+    # of serves and 73% of returns against 22% for drops.
+    _net_y = NET_Y_FT
+    _bounce_list = sorted((bounces_doc or {}).get("bounces", []),
+                          key=lambda b: int(b.get("frame", 0)))
+
+    def _landing_depth_ft(shot):
+        """Feet PAST THE NET where this shot landed, or None."""
+        f, side = int(shot["frame"]), shot.get("hitter_side")
+        if side not in ("near", "far"):
+            return None
+        for b in _bounce_list:
+            bf = int(b.get("frame", 0))
+            if not (0 < bf - f <= LANDING_LOOK_S * fps):
+                continue
+            xy = b.get("court_xy_ft") or [None, None]
+            if xy[1] is None:
+                continue
+            y = float(xy[1])
+            if (y > _net_y) if side == "near" else (y < _net_y):
+                return (y - _net_y) if side == "near" else (_net_y - y)
+        return None
+
+    def _depth_block(sel):
+        """Median depth and the share landing DEEP, with the coverage stated."""
+        depths = [d for d in (_landing_depth_ft(s) for s in sel) if d is not None]
+        if not depths:
+            return {"n": len(sel), "n_measured": 0, "median_depth_ft": None,
+                    "deep_frac": None, "coverage": 0.0}
+        deep = sum(1 for d in depths if d >= DEEP_LANDING_MIN_FT)
+        return {"n": len(sel), "n_measured": len(depths),
+                "median_depth_ft": round(sorted(depths)[len(depths) // 2], 1),
+                "deep_frac": round(deep / len(depths), 3),
+                "coverage": round(len(depths) / len(sel), 3) if sel else 0.0}
+
+    _serves_all = [s for s in shots if s.get("is_serve")]
+    _returns_all = [s for s in shots if s.get("shot_type") == "return"]
+
     match = {
         "n_rallies": mv_structural(len(rallies), len(rallies)),
         "n_shots": mv_structural(len(shots), len(shots)),
@@ -1062,11 +1119,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "n_serves_detected": sum(1 for s in shots if s.get("is_serve")),
             "n_serve_faults": n_serve_faults,
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
+            "depth": _depth_block(_serves_all),
         }, end_reason_confs, len(rallies)),
         "shot_mix": shot_mix(shots),
         "third_shot": _third_block(third_shots, third_unmeasurable, per_user=False,
                                    all_thirds=all_third_shots),
         "returns": mv_structural(n_returns, n_returns),
+        "return_depth": mv_sample_size(_depth_block(_returns_all), len(_returns_all)),
         "bounce_in_out": mv_sourced({
             "n_in": n_in, "n_out": n_out,
             "in_rate": round(n_in / (n_in + n_out), 4) if (n_in + n_out) else 0.0,
@@ -1244,7 +1303,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                          and int(s.get("track_id", -1)) in tids),
                 "n_serve_faults": rsf,
                 "serve_fault_rate": round(rsf / len(rserves), 4) if rserves else 0.0,
+                # Depth for THIS player's own serves. The rating is per-player, so a match
+                # -level depth would rate everyone by the group's average.
+                "depth": _depth_block([s for s in shots if s.get("is_serve")
+                                       and int(s.get("track_id", -1)) in tids]),
             }, role_served_erc[r], len(rserves), role_factor=rconf),
+            "return_depth": mv_sample_size(
+                _depth_block([s for s in returns if int(s["track_id"]) in tids]),
+                sum(1 for s in returns if int(s["track_id"]) in tids)),
             "errors_committed": mv_sourced(errors_committed[r], role_error_raw_erc[r],
                                            errors_committed[r], role_factor=rconf),
             "mean_post_speed_ftps": mv_known_limit(

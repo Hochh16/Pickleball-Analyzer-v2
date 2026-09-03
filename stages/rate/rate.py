@@ -135,6 +135,7 @@ def _unwrap_user(uw: dict) -> dict:
         "serve": _v(uw.get("serve")) or {},
         "third_shot": _v(uw.get("third_shot")) or {},
         "n_returns": _v(uw.get("n_returns")) or 0,
+        "return_depth": _v(uw.get("return_depth")) or {},
         "ready_position": _v(uw.get("ready_position")) or {},
         "position": _v(uw.get("position")) or {},
         "mean_post_speed_ftps": _v(uw.get("mean_post_speed_ftps")),
@@ -303,21 +304,48 @@ def score_volley(user: dict) -> Tuple[float, dict]:
 
 
 def score_serve_return(user: dict) -> Tuple[float, dict]:
-    """Serve + return. serve_fault_rate is the only live signal, and only when
-    serves are detected (n_serves>0). Return quality is not separately detected."""
+    """Serve + return, on fault rate AND now DEPTH.
+
+    A deep serve and a deep return are what USA Pickleball rates here -- "deeper serves
+    and returns" is the 4.0 criterion -- and depth was the pending half of this category:
+    the driver `return_metric` was literally null. It is measured from the landing BOUNCE,
+    which really is on the ground and projects reliably, unlike the airborne ball at the
+    paddle. Serves and returns are the two shots it works best for, being struck deep: the
+    landing is found for about two thirds of serves and three quarters of returns, against
+    a fifth of drops.
+
+    Depth only moves the score where it was actually measured, and the driver carries its
+    own denominator so the report can say so rather than implying every serve was read.
+    """
     serve = user.get("serve", {}) or {}
     n_serves = serve.get("n_serves", 0) or 0
     rate = serve.get("serve_fault_rate") if n_serves > 0 else None
+    s_depth = serve.get("depth") or {}
+    r_depth = user.get("return_depth") or {}
     drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
                # What we actually FOUND, beside the structural count. n_serves is one per
                # rally by construction, so on its own it hides every serve we missed.
                "n_serves_detected": serve.get("n_serves_detected"),
-               "n_returns": user.get("n_returns", 0) or 0, "return_metric": None}
-    if rate is None:
+               "n_returns": user.get("n_returns", 0) or 0,
+               "serve_depth": s_depth or None,
+               "return_depth": r_depth or None}
+
+    parts, weights = [], []
+    if rate is not None:
+        parts.append(clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)))
+        weights.append(1.0)
+    # Deep is 15 ft past the net, the back third. A player landing most of them there is
+    # doing what the 4.0 description asks; one landing few is short and attackable.
+    for blk in (s_depth, r_depth):
+        if blk and blk.get("n_measured", 0) >= DEPTH_MIN_N and blk.get("deep_frac") is not None:
+            parts.append(clamp_level(lin(blk["deep_frac"], 0.15, 2.5, 0.80, 4.6)))
+            weights.append(1.0)
+    if not parts:
         return NEUTRAL_PRIOR_LEVEL, drivers
-    return clamp_level(lin(rate, 0.0, 4.2, 0.3, 2.5)), drivers
+    return clamp_level(sum(p * w for p, w in zip(parts, weights)) / sum(weights)), drivers
 
 
+DEPTH_MIN_N = 5           # landings needed before depth moves the serve/return score
 CONTACT_FRONT_MIN_N = 4   # min stroke-side shots with a contact-point read to score
 
 def _score_stroke(user: dict, side: str) -> Tuple[float, dict]:
@@ -363,10 +391,15 @@ def score_backhand(user: dict) -> Tuple[float, dict]:
 def skill_coverage_block() -> dict:
     return {
         "covered": list(WEIGHTS.keys()),
-        "proxy_or_pending": ["serve_depth_placement", "third_shot_drop_outcome",
+        # serve_depth_placement and return_of_serve moved up: DEPTH is measured now, from
+        # the landing bounce. Both stay "proxy or pending" rather than covered, because
+        # depth is only half of each (placement and pace are not measured) and it exists
+        # only for the shots whose landing is found.
+        "proxy_or_pending": ["serve_depth_placement", "return_of_serve",
+                             "third_shot_drop_outcome",
                              "dink_tolerance", "forced_vs_unforced",
                              "shot_placement_targeting", "pace_power_control"],
-        "not_captured_yet": ["return_of_serve", "volleys_hands_battles",
+        "not_captured_yet": ["volleys_hands_battles",
                              "attack_conversion", "reset_under_pressure",
                              "defense_scrambling", "partner_stacking_poaching",
                              "footwork_split_step", "shot_selection_iq"],

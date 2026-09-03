@@ -51,7 +51,10 @@ CATEGORY_ELEMENTS = {
                ("Speed-ups & counters", "planned")],
     "serve_return": [("Serve / return count", "live"),
                      ("In-play rate & faults", "partial"),
-                     ("Depth", "planned"), ("Pace & spin", "planned")],
+                     # Depth is measured from the landing bounce now, but only for the
+                     # shots whose landing is found -- about two thirds of serves and
+                     # three quarters of returns -- so it is partial, not live.
+                     ("Depth", "partial"), ("Pace & spin", "planned")],
     "forehand": [("How many forehands you hit", "live"),
                  ("Contact point (in front of hip)", "live"),
                  ("Knee bend on drives", "live"),
@@ -79,6 +82,8 @@ METRIC_DISPLAY = {
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
+    "serve_depth": ("Serves landing deep", "depth"),
+    "return_depth": ("Returns landing deep", "depth"),
     "forehand_count": ("Forehands detected", "int"),
     "backhand_count": ("Backhands detected", "int"),
     "ready_position": ("Ready position (paddle up)", "ready"),
@@ -275,6 +280,18 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "depth":
+            # val = {n, n_measured, median_depth_ft, deep_frac, coverage}. Say the
+            # denominator: depth comes from the landing bounce, and the landing is found
+            # for about two thirds of serves, so "58% landed deep" over every serve would
+            # claim a measurement we do not have for the rest.
+            if not isinstance(val, dict) or not val.get("n_measured"):
+                return None
+            nm, n = int(val["n_measured"]), int(val.get("n") or 0)
+            pct = int(round((val.get("deep_frac") or 0) * 100))
+            med = val.get("median_depth_ft")
+            return (f"{pct}% landed deep, typically {med:.0f} ft past the net "
+                    f"(measured on {nm} of {n})")
         if fmt == "contact":
             # val = {n, n_in_front, pct_in_front, mean}. Report the count + share
             # hit in front of the body (the coachable technique read).
@@ -580,6 +597,14 @@ def build_html(folder: Path) -> str:
         "n_serves_detected": ((metrics.get("match", {}) or {}).get("serve", {}) or {}
                               ).get("value", {}).get("n_serves_detected"),
         "n_returns": ((metrics.get("match", {}) or {}).get("returns", {}) or {}).get("value"),
+        # Depth is the USAPA serve/return criterion and was listed as pending. Measured
+        # from the landing BOUNCE (the ball really is on the ground there), so it exists
+        # only for the shots whose landing was found -- the label carries that denominator
+        # rather than implying every serve was measured.
+        "serve_depth": (((metrics.get("match", {}) or {}).get("serve", {}) or {})
+                        .get("value", {}) or {}).get("depth"),
+        "return_depth": (((metrics.get("match", {}) or {}).get("return_depth", {}) or {})
+                         .get("value")),
         "forehand_count": _bs.get("forehand"),
         "backhand_count": _bs.get("backhand"),
         # all four players' THIRD SHOTS, as context for the user's own count. Was
