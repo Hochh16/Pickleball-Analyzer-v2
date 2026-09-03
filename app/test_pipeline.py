@@ -91,7 +91,14 @@ def test_local_gpu_runs_vision_locally(store_with_session, monkeypatch):
 
 def test_annotated_render_is_skipped(store_with_session, monkeypatch):
     """The Stage-11 overlay render + compress are intentionally omitted (the box
-    overlay added little); the report links the original clip. Report still builds."""
+    overlay added little); the report links the original clip. Report still builds.
+
+    Stage 11 itself is NOT skipped any more -- it runs --heatmaps-only, because skipping
+    the whole stage silently cost every app-produced report its court-positioning section.
+    So what has to hold is that the stage runs WITHOUT rendering a video: this test used
+    to assert `render.render` never ran at all, and went red the day the heatmaps were
+    put back rather than the day anything broke.
+    """
     store, sid = store_with_session
     monkeypatch.setattr(pipe, "_cuda_available", lambda: True)
     runner = PipelineRunner(store)
@@ -100,7 +107,9 @@ def test_annotated_render_is_skipped(store_with_session, monkeypatch):
     job = runner.start(sid)
     assert _wait(job, ("done",))
     mods = [m for m, _ in calls]
-    assert not any("render.render" in m for m in mods)
+    render_args = [a for m, a in calls if "render.render" in m]
+    assert len(render_args) == 1, "Stage 11 runs exactly once, for the heatmaps"
+    assert "--heatmaps-only" in render_args[0], "...and must never render the video"
     assert not any("compress_video" in m for m in mods)
     assert any("build_report" in m for m in mods)
     # the pipeline no longer defines render/compress steps at all

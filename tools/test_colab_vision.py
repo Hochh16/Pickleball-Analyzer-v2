@@ -7,6 +7,7 @@ table's integrity.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -109,7 +110,10 @@ def test_notebook_builds_as_git_bootstrapper():
     assert "git" in src and "clone" in src            # pulls code from GitHub
     assert gen.REPO_URL in src
     assert "from tools.colab_vision import run_all" in src
-    assert "run_all(REPO, clip=CLIP)" in src          # runs from the cloned repo
+    # Runs from the CLONED repo, on the chosen clip. Matched loosely on purpose: pinning
+    # the whole call meant adding the `rerun` argument turned this test red, which says
+    # nothing about whether the notebook still bootstraps itself from git.
+    assert re.search(r"run_all\(REPO,\s*clip=CLIP\s*[,)]", src)
     assert "del sys.modules[name]" in src             # re-runs reload pulled code
     assert "%%writefile" not in src                   # no embedded bundle anymore
 
