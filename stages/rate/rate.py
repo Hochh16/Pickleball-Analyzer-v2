@@ -136,6 +136,8 @@ def _unwrap_user(uw: dict) -> dict:
         "third_shot": _v(uw.get("third_shot")) or {},
         "n_returns": _v(uw.get("n_returns")) or 0,
         "return_depth": _v(uw.get("return_depth")) or {},
+        "dink_control": _v(uw.get("dink_control")) or {},
+        "reset": _v(uw.get("reset")) or {},
         "transition": _v(uw.get("transition")) or {},
         "return_in_play": _v(uw.get("return_in_play")) or {},
         "ready_position": _v(uw.get("ready_position")) or {},
@@ -231,6 +233,7 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
 
 
 MIN_THIRD_DECISIONS = 4   # fewer typed 3rd shots than this = too few to rate on
+DINK_CONTROL_MIN_N = 5    # dink landings before WHERE they land moves the dink score
 TRANSITION_MIN_N = 4      # mid-court balls we could watch afterwards, before it scores
 
 def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
@@ -294,13 +297,24 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
     dink_frac = (dink_n / n_shots) if n_shots > 0 else None
     mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
     knee = (sm.get("technique", {}) or {}).get("knee_bend_dink")   # {n, pct_good, ...}
+    control = user.get("dink_control") or {}
     drivers = {"dink_count": dink_n,
                "dink_frac": round(dink_frac, 4) if dink_frac is not None else None,
                "mean_rally_length": mean_len,
-               "dink_knee_bend": knee}
+               "dink_knee_bend": knee,
+               # WHERE the dinks land, which is the quality half of this category. A dink
+               # past the kitchen sits up to be attacked; the operator's own definition
+               # puts the target at the kitchen line plus two feet.
+               "dink_control": control or None}
     if dink_frac is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     base = lin(dink_frac, 0.0, 2.8, 0.4, 4.3)          # more dinking -> softer game
+    # Landing them in the kitchen is worth more than dinking often, but only once enough
+    # landings exist to say so.
+    if (control.get("n_measured", 0) >= DINK_CONTROL_MIN_N
+            and control.get("in_kitchen_frac") is not None):
+        base = (base + clamp_level(lin(control["in_kitchen_frac"],
+                                       0.25, 2.6, 0.85, 4.5))) / 2.0
     sustain = lin(mean_len, 3.0, 0.0, 10.0, 0.3) or 0.0
     # getting low enough on dinks (knee bend in the operator's 35-50 deg band) = a bump
     stance = 0.0
@@ -316,7 +330,12 @@ def score_volley(user: dict) -> Tuple[float, dict]:
     flattened to shot_mix.volley_rate / shot_mix.n_volley (see _unwrap_user)."""
     sm = user.get("shot_mix", {}) or {}
     rate = sm.get("volley_rate")
-    drivers = {"volley_rate": rate, "n_volley": sm.get("n_volley", 0)}
+    drivers = {"volley_rate": rate, "n_volley": sm.get("n_volley", 0),
+               # Taking the pace off a drive instead of trading with it -- the operator's
+               # own definition of a reset, and a block is the volleyed half of it. Counts
+               # only: they do not yet say whether the reset WORKED, so they inform the
+               # report without moving the score.
+               "reset": user.get("reset") or None}
     if rate is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     return clamp_level(lin(rate, 0.0, 2.8, 0.4, 4.2)), drivers

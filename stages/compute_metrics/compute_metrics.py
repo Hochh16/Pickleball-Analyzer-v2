@@ -259,6 +259,25 @@ def count_by(items, key) -> Dict[str, int]:
     return out
 
 
+def reset_block(shots: List[dict]) -> dict:
+    """Resets, and the share of them BLOCKED out of the air.
+
+    `is_reset` is the operator's own definition, 2026-08-26: "All resets are either drops
+    or dinks... can count drops and dinks as resets as well IF the previous shot was a
+    drive." So a reset is a soft ball answering an ATTACK -- taking the pace off instead of
+    trading with it -- and it is a qualifier on a drop or dink, never a type, so it adds
+    nothing to the shot total.
+
+    A BLOCK is the subset played as a volley: the same answer to the same attack, out of
+    the air rather than after the bounce. Both are exact counts -- no landing, no speed,
+    nothing to be short of -- so neither carries a denominator.
+    """
+    resets = [s for s in shots if s.get("is_reset")]
+    return {"n_resets": len(resets),
+            "n_blocked": sum(1 for s in resets if s.get("is_volley")),
+            "n_off_the_bounce": sum(1 for s in resets if not s.get("is_volley"))}
+
+
 def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
                        fps: float) -> dict:
     """Of the balls you played from mid-court, how often did you get to the kitchen line?
@@ -1242,6 +1261,30 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "deep_frac": round(deep / len(depths), 3),
                 "coverage": round(len(depths) / len(sel), 3) if sel else 0.0}
 
+    def _dink_control_block(sel):
+        """Dinks that land in the opponent's kitchen -- depth control, from the landing.
+
+        Operator's own definition of a dink, 2026-09-02: "landing in opponents kitchen area
+        (up to 2 feet beyond kitchen line)". So the target is KITCHEN_MAX_DIST_FT, which is
+        the 7 ft kitchen plus exactly that 2 ft of tolerance and is already the zone
+        boundary everywhere else in this pipeline.
+
+        A dink that lands past it sits up in the transition zone where it can be attacked,
+        which is what "depth control" means here. Carries its own denominator: the landing
+        is found for a little over half of dinks.
+        """
+        depths = [d for d in (_landing_depth_ft(s) for s in sel) if d is not None]
+        if not depths:
+            return {"n": len(sel), "n_measured": 0, "median_depth_ft": None,
+                    "in_kitchen_frac": None, "coverage": 0.0}
+        good = sum(1 for d in depths if d <= KITCHEN_MAX_DIST_FT)
+        return {"n": len(sel), "n_measured": len(depths),
+                "median_depth_ft": round(sorted(depths)[len(depths) // 2], 1),
+                "n_in_kitchen": good,
+                "in_kitchen_frac": round(good / len(depths), 3),
+                "coverage": round(len(depths) / len(sel), 3) if sel else 0.0}
+
+
     def _in_play(shot, is_serve):
         return in_play_verdict(shot, _bounce_list, fps, is_serve)
 
@@ -1478,6 +1521,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "return_depth": mv_sample_size(
                 _depth_block([s for s in returns if int(s["track_id"]) in tids]),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
+            "dink_control": mv_sample_size(
+                _dink_control_block([s for s in rshots if s.get("shot_type") == "dink"]),
+                sum(1 for s in rshots if s.get("shot_type") == "dink")),
+            "reset": mv_structural(reset_block(rshots),
+                                   sum(1 for s in rshots if s.get("is_reset"))),
             # Closing the transition zone: position only, so it is measurable where the
             # ball-derived third-shot metrics are not. Uses role_fpos -- the POSE front
             # foot -- for the reason in transition_success.

@@ -680,3 +680,22 @@ def test_only_MID_COURT_balls_are_asked_the_question():
         s = {"frame": 0, "features": {"contact_zone": zone}}
         assert transition_success([s], pos, fps)["n"] == 0, zone
     assert transition_success([_mid_shot(0)], pos, fps)["n"] == 1
+
+
+def test_a_reset_is_a_soft_ball_answering_a_DRIVE_and_a_block_is_the_volleyed_one():
+    """Operator, 2026-08-26: "All resets are either drops or dinks... can count drops and
+    dinks as resets as well IF the previous shot was a drive. So resets don't add to
+    overall shot total but are a qualifier on some of the drops and dinks."
+
+    Stage 6 sets is_reset on that rule; this only splits them by whether the answer was
+    played out of the air. Both are exact counts -- no landing, no speed.
+    """
+    from stages.compute_metrics.compute_metrics import reset_block as blk
+
+    shots = [{"is_reset": True, "is_volley": True},      # a block
+             {"is_reset": True, "is_volley": False},     # a reset off the bounce
+             {"is_reset": True, "is_volley": True},
+             {"is_reset": False, "is_volley": True},     # a volley that answers nothing
+             {"is_reset": False, "is_volley": False}]
+    assert blk(shots) == {"n_resets": 3, "n_blocked": 2, "n_off_the_bounce": 1}
+    assert blk([]) == {"n_resets": 0, "n_blocked": 0, "n_off_the_bounce": 0}

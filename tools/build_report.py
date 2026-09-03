@@ -58,11 +58,13 @@ CATEGORY_ELEMENTS = {
     "third_shot": [("How often you play the 3rd shot", "live"),
                    ("Drop-vs-drive choice", "partial"),
                    ("Transition success", "live"), ("Drop landing depth", "planned")],
+    # Depth control is measured from the landing; HEIGHT is split out and still planned,
+    # because a pop-up needs a height the operator has not put a number on yet.
     "dink": [("How much you dink", "partial"), ("Dink-rally length", "partial"),
-             ("Knee bend (staying low)", "live"),
-             ("Pop-up rate", "planned"), ("Height & depth control", "planned")],
+             ("Knee bend (staying low)", "live"), ("Depth control", "live"),
+             ("Height control & pop-ups", "planned")],
     "volley": [("How often you volley at the net", "partial"),
-               ("Block / reset", "planned"), ("Put-aways", "planned"),
+               ("Block / reset", "live"), ("Put-aways", "planned"),
                ("Speed-ups & counters", "planned")],
     # In-play and depth are both read off the landing bounce, which is the thing itself.
     # Faults are split out and stay partial: a fault we cannot see is inferred from the
@@ -100,6 +102,8 @@ METRIC_DISPLAY = {
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
     "transition": ("Getting to the kitchen from mid-court", "transition"),
+    "dink_control": ("Dinks landing in the kitchen", "kitchen"),
+    "reset": ("Resets off an opponent's drive", "reset"),
     "serve_in_play": ("Serves that landed in", "in_play"),
     "return_in_play": ("Returns that landed in", "in_play"),
     "serve_depth": ("Serves landing deep", "depth"),
@@ -339,6 +343,26 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "kitchen":
+            # val = {n, n_measured, median_depth_ft, n_in_kitchen, in_kitchen_frac, ...}.
+            # A dink landing past the kitchen sits up to be attacked, so this is the
+            # depth-control read -- with its denominator, since the landing is found for
+            # a little over half of dinks.
+            if not isinstance(val, dict) or not val.get("n_measured"):
+                return None
+            nm, ng = int(val["n_measured"]), int(val.get("n_in_kitchen") or 0)
+            pct = int(round((val.get("in_kitchen_frac") or 0) * 100))
+            med = val.get("median_depth_ft")
+            return (f"{ng} of {nm} ({pct}%), typically {med:.0f} ft past the net "
+                    f"(the kitchen line is 7)")
+        if fmt == "reset":
+            # val = {n_resets, n_blocked, n_off_the_bounce}. Exact counts: no landing and
+            # no speed involved, so no denominator to state.
+            if not isinstance(val, dict) or not val.get("n_resets"):
+                return None
+            n, b = int(val["n_resets"]), int(val.get("n_blocked") or 0)
+            return (f"{n}, of which {b} blocked out of the air"
+                    if b else f"{n}, all of them off the bounce")
         if fmt == "transition":
             # val = {n, n_measured, n_arrived, arrived_frac, coverage}. Says the count,
             # not just a rate: with a handful of mid-court balls in a session "40%" alone
