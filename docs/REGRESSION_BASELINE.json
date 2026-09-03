@@ -100,7 +100,7 @@
    "truth_fp_known": 21,
    "dinks_truth": 5,
    "serves_truth": 10,
-   "junk_in_rallies": 11,
+   "junk_in_rallies": 10,
    "real_outside_rallies": 0,
    "truth_missed_recovered": 11,
    "volley_judged": 47,
@@ -108,8 +108,8 @@
    "volley_missed": 7,
    "volley_invented": 0,
    "rally_end_truth": 10,
-   "rally_end_within_2s": 4,
-   "rally_end_median_err_s": 3.85,
+   "rally_end_within_2s": 5,
+   "rally_end_median_err_s": 3.3,
    "shot_type_correct": 48,
    "shot_type_labelled": 60,
    "shot_type_sample_was_missed": 11
@@ -122,7 +122,7 @@
    "identity_gap": 36,
    "rallies": 19,
    "rating": 3.66,
-   "rating_confidence": 0.45
+   "rating_confidence": 0.44
   }
  }
 }

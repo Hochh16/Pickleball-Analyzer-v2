@@ -61,7 +61,17 @@ SUSTAIN_S = 0.5         # ...for at least this long = the ball is DEAD, not boun
 NET_BAND_FT = 8.0       # within this of the net line = "at the net"
 DEAD_FRAC = 0.65        # share of samples in the window that must be low+near-net
 DEAD_TRAVEL_FT = 6.0    # a DEAD ball barely moves; a dink crosses the net at speed
-OUT_MARGIN_FT = 1.0     # tolerance outside the lines before calling a bounce OUT
+# Tolerance outside the lines before a bounce is OUT. 2 ft, not 1: the ground projection is
+# good but not exact, and the diagonal work on serves needed 3 ft of slack near the centre
+# line for the same reason. Measured on the operator's out-ends across three clips, calling
+# it from the BOUNCE rather than from ball_3d:
+#
+#     margin 1 ft   7 fire, 3 right   43%
+#     margin 2 ft   4 fire, 3 right   75%
+#     margin 3 ft   2 fire, 2 right  100%
+#
+# against 29% for the ball_3d call. 2 ft keeps enough ends to be worth having.
+OUT_MARGIN_FT = 2.0
 NOT_RETURNED_S = 2.0    # no contact this long after a bounce = nobody played it
 SCORE_TOL_S = 2.5       # match window when scoring against operator truth
 
@@ -82,7 +92,18 @@ SCORE_TOL_S = 2.5       # match window when scoring against operator truth
 #
 # The untrusted ends are still emitted -- they are what the next attempt has to beat -- but
 # `trusted` is False and Stage 7 ignores them.
-TRUSTED_REASONS = {"net"}
+# `out` joins `net` -- but only when the bounce POSITION came from the ground projection
+# (see the out branch). Read off ball_3d it is 29% and stays untrusted.
+TRUSTED_REASONS = {"net", "out"}
+
+
+def _mark_trusted(ends: list[dict]) -> None:
+    """Set `trusted` in place. An `out` end also has to have been GROUNDED -- read from the
+    bounce projected through the ground homography, not from the 3-D reconstruction, which
+    is the 29% number above. A `net` end never reads a position at all."""
+    for e in ends:
+        e["trusted"] = (e.get("reason") in TRUSTED_REASONS
+                        and (e.get("reason") != "out" or bool(e.get("grounded"))))
 
 
 def _dead_start(mask: np.ndarray, ts: np.ndarray, sustain_s: float, frac: float,
@@ -135,6 +156,25 @@ def detect(clip: Path) -> list[dict]:
     bdoc = json.loads((hp if hp.exists() else clip / "bounces.json").read_text(encoding="utf-8"))
     bkey = next(k for k in bdoc if isinstance(bdoc[k], list))
     bounce_t = sorted(float(b.get("t_sec", 0)) for b in bdoc[bkey])
+    # ...and WHERE each landed, taken from bounces.json SPECIFICALLY. The height-derived
+    # file finds ~1.8x more contacts, which is why it is preferred for timing, but its
+    # court_xy_ft is projected from the 3-D reconstruction and carries the same absolute
+    # error as ball_3d -- [38.7, -35.1], [-42.9, 117.2]. bounces.json projects the bounce
+    # PIXEL through the ground homography, which is exact at z=0 where a bounce is, and is
+    # the projection the serve depth and in/out work is measured on.
+    _pix = json.loads((clip / "bounces.json").read_text(encoding="utf-8"))
+    bounce_xy = sorted((float(b["t_sec"]), b["court_xy_ft"])
+                       for b in _pix.get("bounces", [])
+                       if b.get("court_xy_ft") and b["court_xy_ft"][0] is not None)
+
+    def _ground_xy(t: float, tol: float = 0.10):
+        """The ground-projected position of the bounce at time t, if we have one."""
+        best = None
+        for bt, xy in bounce_xy:
+            d = abs(bt - t)
+            if d <= tol and (best is None or d < best[0]):
+                best = (d, xy)
+        return best[1] if best else None
 
     ends = []
     for i, s in enumerate(shots):
@@ -165,11 +205,17 @@ def detect(clip: Path) -> list[dict]:
         nb = next((b for b in bounce_t if t0 < b <= t0 + MAX_LOOK_S), None)
         if nb is None:
             continue
-        row = b3.iloc[(b3.t_sec - nb).abs().argsort()[:1]]
-        if row.empty:
-            continue
-        bx = float(row.court_x_ft.iloc[0])
-        by = float(row.court_y_ft.iloc[0])
+        xy = _ground_xy(nb)
+        if xy is not None and xy[0] is not None and xy[1] is not None:
+            bx, by = float(xy[0]), float(xy[1])          # ground projection: trustworthy
+            grounded = True
+        else:
+            row = b3.iloc[(b3.t_sec - nb).abs().argsort()[:1]]
+            if row.empty:
+                continue
+            bx = float(row.court_x_ft.iloc[0])
+            by = float(row.court_y_ft.iloc[0])
+            grounded = False
         out = (bx < -OUT_MARGIN_FT or bx > W + OUT_MARGIN_FT
                or by < -OUT_MARGIN_FT or by > L + OUT_MARGIN_FT)
         if out:
@@ -178,6 +224,9 @@ def detect(clip: Path) -> list[dict]:
                          "hitter_side": s.get("hitter_side"),
                          "hitter_is_user": bool(s.get("is_user")),
                          "bounce_xy_ft": [round(bx, 1), round(by, 1)],
+                         # Only a GROUNDED out-call is trustworthy; one read off the 3-D
+                         # reconstruction is the 29% number in TRUSTED_REASONS.
+                         "grounded": grounded,
                          "outcome": "hitter_loses"})
             continue
         # bounced IN — did anyone play it?
@@ -217,8 +266,7 @@ def detect(clip: Path) -> list[dict]:
     ends = kept_ends
 
     # one END per point: collapse anything within NOT_RETURNED_S of the previous one
-    for e in ends:
-        e["trusted"] = e.get("reason") in TRUSTED_REASONS
+    _mark_trusted(ends)
     ends.sort(key=lambda e: e["t_sec"])
     merged: list[dict] = []
     for e in ends:
