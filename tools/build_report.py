@@ -765,10 +765,13 @@ def build_html(folder: Path) -> str:
                 if s is None:
                     continue
                 ref = fn(4) if k == "distance_ft_per_min" else ""
-                # Count drivers: show the match total AND the user's share, so the
-                # user's numbers sit in perspective (a 5-min clip has ~4 players).
-                mt = match_counts.get(k)
-                if k in match_counts and mt is not None:
+                # COUNT drivers only: show the match total AND the user's share, so the
+                # user's numbers sit in perspective (a 5-min clip has ~4 players). A rate
+                # is not perspective -- the match figure for serve depth averages four
+                # players, so it says nothing about this one -- and rendering it here put
+                # the raw depth dict on the page, str() of a dict inside the <b>.
+                mt = match_counts.get(k) if fmt == "int" else None
+                if mt is not None:
                     nums.append(f'<div class="metric">{esc(label)}: '
                                 f'<b>{esc(str(mt))}</b> in the match, '
                                 f'<b>{esc(s)}</b> by you{ref}</div>')
