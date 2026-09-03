@@ -82,6 +82,11 @@ LANDING_LOOK_S = 2.5
 # The kitchen is 7 ft from the net on each side. A serve must clear it -- the LINE
 # counts as in the kitchen, so a serve landing on it is a fault.
 SERVE_KITCHEN_DEPTH_FT = 7.0
+# How far from the centre line BOTH the server and the serve's landing must sit before the
+# diagonal is called against them. Of the 79 serves already judged in, 75 cross the line;
+# the 4 that do not are all within 2.4 ft of it, which is projection noise rather than a
+# serve to the wrong box. See in_play_verdict.
+CENTRE_LINE_MARGIN_FT = 3.0
 DEEP_LANDING_MIN_FT = 15.0
 
 NET_Y_FT = 22.0               # net line (= length_ft / 2)            [Stage 6]
@@ -244,6 +249,69 @@ def count_by(items, key) -> Dict[str, int]:
         v = key(it)
         out[v] = out.get(v, 0) + 1
     return out
+
+
+def in_play_verdict(shot: dict, bounces: List[dict], fps: float, is_serve: bool,
+                    look_s: float = LANDING_LOOK_S) -> Optional[str]:
+    """Did this shot land in? "in" / "out" / None where we cannot say.
+
+    Operator, 2026-09-03: "for a serve, if the ball bounces in the far side box diagonally
+    across from the server from the kitchen line to the baseline it is a good serve.
+    otherwise, a fault. for a return of serve, if the ball bounces on the opposite side in
+    the court it is good, otherwise a fault."
+
+    That is the rule, and this is it. It works because these two shots have the best
+    landing coverage in the system -- struck deep, landing deep, with nobody standing on
+    the bounce: across the six videos a landing is found for 44 of 62 serves and 34 of 48
+    returns, against about a fifth of drops.
+
+    THE DIAGONAL comes from where the server STANDS, not from the score -- operator,
+    correcting me: "If the server is standing to the right of the mid court line than the
+    serve must go in the left side box." So a serve must cross the CENTRE LINE as well as
+    the net. Measured over the 79 serves already judged in, 75 do (95%), which confirms
+    both the rule and that our x is good enough to use it. The 4 that do not are all
+    within 2.4 ft of the line -- one landing 0.1 ft past it, one server standing 0.5 ft
+    off it -- so they are projection noise, and CENTRE_LINE_MARGIN_FT declines to call
+    them. A serve to the wrong box misses by the width of a service court, not by two feet.
+
+    One honest limit remains: a bounce on the hitter's OWN side is not called a net fault.
+    Measured, 6 of those 7 serves bounce 17-25 ft from the net and 2-10 ft from the server,
+    which is the ball being bounced before serving, not a ball in the net. A real net fault
+    lands within a few feet of the net, and there are too few of them to separate the two
+    on a threshold anyone could defend. So: not adjudicated.
+    """
+    f, side = int(shot["frame"]), shot.get("hitter_side")
+    if side not in ("near", "far"):
+        return None
+    for b in bounces:
+        bf = int(b.get("frame", 0))
+        if bf <= f:
+            continue
+        if bf - f > look_s * fps:
+            return None
+        xy = b.get("court_xy_ft") or [None, None]
+        if xy[1] is None:
+            continue
+        x, y = float(xy[0]), float(xy[1])
+        depth = (y - NET_Y_FT) if side == "near" else (NET_Y_FT - y)
+        if depth <= 0:
+            return None                       # bounced on their own side: see above
+        if not (0.0 <= x <= COURT_WID_FT) or depth > NET_Y_FT:
+            return "out"                      # wide of the sideline, or past the baseline
+        if not is_serve:
+            return "in"
+        if depth < SERVE_KITCHEN_DEPTH_FT:
+            return "out"                      # short: a serve must clear the kitchen
+        hx = (shot.get("hitter_court_xy_ft") or [None, None])[0]
+        if hx is not None:
+            mid = COURT_WID_FT / 2.0
+            server, landing = float(hx) - mid, x - mid
+            if (abs(server) > CENTRE_LINE_MARGIN_FT
+                    and abs(landing) > CENTRE_LINE_MARGIN_FT
+                    and (server > 0) == (landing > 0)):
+                return "out"                  # into the box on the server's own side
+        return "in"
+    return None
 
 
 def rally_len_bucket(n: int) -> str:
@@ -1112,48 +1180,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "coverage": round(len(depths) / len(sel), 3) if sel else 0.0}
 
     def _in_play(shot, is_serve):
-        """Did this shot land in? "in" / "out" / None where we cannot say.
-
-        Operator, 2026-09-03: "for a serve, if the ball bounces in the far side box
-        diagonally across from the server from the kitchen line to the baseline it is a
-        good serve. otherwise, a fault. for a return of serve, if the ball bounces on the
-        opposite side in the court it is good, otherwise a fault."
-
-        That is the rule, and this is it. It works because these two shots have the best
-        landing coverage in the system -- struck deep, landing deep, with nobody standing
-        on the bounce: measured across the six videos, a landing is found for 44 of 62
-        serves and 34 of 48 returns, against about a fifth of drops.
-
-        Two honest limits. The DIAGONAL half cannot be checked: which service box is
-        correct depends on the score, which we do not track, so a serve to the wrong box
-        reads as in. And a bounce on the hitter's OWN side is not treated as a net fault
-        -- measured, 6 of those 7 serves bounce 17-25 ft from the net and 2-10 ft from the
-        server, which is the ball being bounced before the serve, not a ball in the net.
-        A real net fault lands within a few feet of the net, and there are too few of them
-        to tell the two apart on a threshold anyone could defend. So: not adjudicated.
-        """
-        f, side = int(shot["frame"]), shot.get("hitter_side")
-        if side not in ("near", "far"):
-            return None
-        for b in _bounce_list:
-            bf = int(b.get("frame", 0))
-            if bf <= f:
-                continue
-            if bf - f > LANDING_LOOK_S * fps:
-                return None
-            xy = b.get("court_xy_ft") or [None, None]
-            if xy[1] is None:
-                continue
-            x, y = float(xy[0]), float(xy[1])
-            depth = (y - NET_Y_FT) if side == "near" else (NET_Y_FT - y)
-            if depth <= 0:
-                return None                       # bounced on their own side: see above
-            if not (0.0 <= x <= COURT_WID_FT) or depth > NET_Y_FT:
-                return "out"                      # wide of the sideline, or past the baseline
-            if is_serve and depth < SERVE_KITCHEN_DEPTH_FT:
-                return "out"                      # short: a serve must clear the kitchen
-            return "in"
-        return None
+        return in_play_verdict(shot, _bounce_list, fps, is_serve)
 
     def _in_play_block(sel, is_serve):
         calls = [v for v in (_in_play(s, is_serve) for s in sel) if v is not None]

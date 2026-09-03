@@ -33,7 +33,20 @@ CATEGORY_LABEL = {
 }
 
 # What USA Pickleball rates in each category, broken into elements with our current
-# coverage: "live" (measured now), "partial" (early/low-confidence), "planned".
+# coverage. The three states answer ONE question -- is the number we show a measurement of
+# the thing the element names?
+#
+#   live     we measure that thing directly, and the line states its own denominator
+#   partial  the number is a PROXY for it, or covers only part of what the element names
+#   planned  nothing is shown yet
+#
+# It is deliberately NOT about coverage being short of 100%. Operator, 2026-09-03: "why is
+# the in play rate circle and depth circle only 1/2 filled in now? thought we now have a
+# correct calculation for those we measure?" -- and he was right, the two were half-filled
+# on exactly the reasoning that would half-fill nearly everything here. "Knee bend on
+# drives" is read on 15 of 50 forehands and is live; in-play is watched down on 9 of 10
+# serves. Every line prints "measured on N of M", which is where coverage belongs.
+
 CATEGORY_ELEMENTS = {
     "strategy": [("Kitchen-line positioning", "live"), ("Moving as a team", "live"),
                  ("Court coverage & movement", "live"),
@@ -49,15 +62,13 @@ CATEGORY_ELEMENTS = {
     "volley": [("How often you volley at the net", "partial"),
                ("Block / reset", "planned"), ("Put-aways", "planned"),
                ("Speed-ups & counters", "planned")],
-    "serve_return": [("Serve / return count", "live"),
-                     # In-play is a MEASUREMENT now -- the operator's own rule, decided by
-                     # watching the serve or return land -- but only on the four fifths of
-                     # them whose landing is found, so it stays partial rather than live.
-                     ("In-play rate & faults", "partial"),
-                     # Depth is measured from the landing bounce now, but only for the
-                     # shots whose landing is found -- about two thirds of serves and
-                     # three quarters of returns -- so it is partial, not live.
-                     ("Depth", "partial"), ("Pace & spin", "planned")],
+    # In-play and depth are both read off the landing bounce, which is the thing itself.
+    # Faults are split out and stay partial: a fault we cannot see is inferred from the
+    # point ending on the serve, and those are biased toward the real ones (a serve hit
+    # long lands off court, where bounces go undetected).
+    "serve_return": [("Serve / return count", "live"), ("In-play rate", "live"),
+                     ("Serve faults", "partial"), ("Depth", "live"),
+                     ("Pace & spin", "planned")],
     "forehand": [("How many forehands you hit", "live"),
                  ("Contact point (in front of hip)", "live"),
                  ("Knee bend on drives", "live"),

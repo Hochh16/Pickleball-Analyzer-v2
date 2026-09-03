@@ -541,3 +541,82 @@ def test_third_shots_are_counted_separately_from_third_shot_drops():
     assert t["n_third_shot_drops"] == allby.get("drop", 0), (
         "the drop count must come from ALL third shots, not the typed subset -- counting it "
         "from the subset reported 0 on a clip that contains one")
+
+
+from stages.compute_metrics.compute_metrics import in_play_verdict
+
+
+def _bounce(frame, x, y):
+    return {"frame": frame, "court_xy_ft": [x, y]}
+
+
+def _serve(x_from_left, frame=0, side="near"):
+    """A serve struck from behind the near baseline, x_from_left across the court."""
+    return {"frame": frame, "hitter_side": side,
+            "hitter_court_xy_ft": [x_from_left, -2.0 if side == "near" else 46.0]}
+
+
+def test_a_serve_must_cross_the_centre_line_as_well_as_the_net():
+    """Operator, 2026-09-03, correcting the claim that this needs the score: "It does not
+    depend on the score. If the server is standing to the right of the mid court line than
+    the serve must go in the left side box."
+
+    Measured over the 79 serves already judged in, 75 cross the line -- which is what
+    confirms both the rule and that our x is good enough to apply it.
+    """
+    fps = 60.0
+    # served from the left half, landing in the right-half box: the diagonal
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 16.0, 36.0)], fps, True) == "in"
+    # ...and landing back in the box on the server's own half is a fault
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 4.0, 36.0)], fps, True) == "out"
+    # mirrored, so the rule is not encoding one side of the court
+    assert in_play_verdict(_serve(16.0), [_bounce(30, 4.0, 36.0)], fps, True) == "in"
+    assert in_play_verdict(_serve(16.0), [_bounce(30, 16.0, 36.0)], fps, True) == "out"
+    # a far-side server serves along the same diagonal, toward the near boxes
+    far = _serve(4.0, side="far")
+    assert in_play_verdict(far, [_bounce(30, 16.0, 8.0)], fps, True) == "in"
+    assert in_play_verdict(far, [_bounce(30, 4.0, 8.0)], fps, True) == "out"
+
+
+def test_the_diagonal_declines_to_judge_near_the_centre_line():
+    """The 4 serves that do not cross are all within 2.4 ft of the line -- one landing 0.1
+    ft past it, one server standing 0.5 ft off it. That is projection noise, and a rule
+    that called them faults would be inventing faults out of it. A serve to the wrong box
+    misses by the width of a service court."""
+    fps = 60.0
+    # server clearly committed, landing a foot on the wrong side: too close to call
+    assert in_play_verdict(_serve(16.6), [_bounce(30, 10.1, 36.0)], fps, True) == "in"
+    # server straddling the line, landing just past it: also too close
+    assert in_play_verdict(_serve(10.5), [_bounce(30, 10.8, 36.0)], fps, True) == "in"
+    # both clearly committed to the same half: that is a fault
+    assert in_play_verdict(_serve(16.6), [_bounce(30, 15.0, 36.0)], fps, True) == "out"
+    # no hitter position at all: judge everything else, do not guess the diagonal
+    noxy = {"frame": 0, "hitter_side": "near"}
+    assert in_play_verdict(noxy, [_bounce(30, 4.0, 36.0)], fps, True) == "in"
+
+
+def test_a_return_is_judged_on_the_court_and_not_on_the_boxes():
+    """Operator: a return is good "if the ball bounces on the opposite side in the court".
+    No kitchen line, no diagonal -- those are serve rules, and applying them to returns
+    would fault every good return played short or down the same side."""
+    fps = 60.0
+    same_half = [_bounce(30, 4.0, 36.0)]
+    assert in_play_verdict(_serve(4.0), same_half, fps, False) == "in"
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 10.0, 25.0)], fps, False) == "in"
+    # ...but the court's own lines still apply
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 21.0, 36.0)], fps, False) == "out"
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 10.0, 45.0)], fps, False) == "out"
+
+
+def test_no_landing_and_an_own_side_bounce_are_both_NOT_ADJUDICATED():
+    """Neither is a fault. A serve hit long lands off court where bounces go undetected,
+    and a bounce on the server's own side is the ball being bounced before serving -- 6 of
+    those 7 land 17-25 ft from the net, nowhere near it."""
+    fps = 60.0
+    assert in_play_verdict(_serve(4.0), [], fps, True) is None
+    # a bounce beyond the look-ahead window says nothing about this shot
+    assert in_play_verdict(_serve(4.0), [_bounce(600, 16.0, 36.0)], fps, True) is None
+    # the ball bounced at the server's own feet, behind their own baseline
+    assert in_play_verdict(_serve(4.0), [_bounce(30, 4.0, -1.0)], fps, True) is None
+    # and with no side to judge from there is nothing to say
+    assert in_play_verdict({"frame": 0}, [_bounce(30, 16.0, 36.0)], fps, True) is None
