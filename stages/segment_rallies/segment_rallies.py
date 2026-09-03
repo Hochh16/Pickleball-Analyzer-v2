@@ -83,6 +83,26 @@ SERVE_SPAN_LOOK_S = 1.0
 # between points that the out-of-play rule can miss whenever the ball stays visible
 # (a player bouncing/holding it). Observed pre-fix: rallies carrying 5-15 s gaps.
 MAX_INTRA_RALLY_GAP_SEC = 6.0
+# TRIMMING THE RALLY'S TAIL ON THIS GAP WAS TRIED AND REJECTED. Measured against the
+# operator's rally boundaries, the rally START is already right -- median error 0.34s on
+# court C, 10 of 10 within two seconds -- and all the error is at the END, which runs late
+# by a median of 3.0s and by 6 to 10s on the ones it gets wrong, running on through the
+# dead time to whatever is handled before the next serve.
+#
+# The rhythm looked like the way in: inside a true rally the longest gap between
+# consecutive shots is 2.35s over 56 shots. Cutting at the FIRST gap past that severs the
+# rally wherever a shot was MISSED and cost 45 live shots, so the cut has to walk BACK from
+# the end, which trims a tail without touching the middle. On the two clips with rally
+# boundaries that scored 10/18 -> 12/18 ends within 2s.
+#
+# It did not generalise. On the third clip it went the other way -- ends within 2s 12 -> 11
+# and median error 1.30s -> 1.56s -- for a net wash across the harness, plus one real shot
+# pushed outside a rally and ratings moving 0.08. Two clips disagreeing is a threshold
+# fitted to one sample, which is the failure this repo keeps having.
+#
+# What DOES move the end is trusted-end coverage: every rally that ends late simply has no
+# trusted end, and three of court C's five ended `not-returned`, whose ceiling is 33%
+# (see tools/detect_rally_ends.py). That is bounce recall again.
 
 # Minimum-rally filter (real ball). A real point is a sustained exchange; between
 # points / after the game players stand at the net and tap the ball a couple times

@@ -94,6 +94,20 @@ SCORE_TOL_S = 2.5       # match window when scoring against operator truth
 # `trusted` is False and Stage 7 ignores them.
 # `out` joins `net` -- but only when the bounce POSITION came from the ground projection
 # (see the out branch). Read off ball_3d it is 29% and stays untrusted.
+#
+# `not-returned` STAYS UNTRUSTED, and widening its window does not rescue it. It fires when
+# a bounce lands in and no contact follows within NOT_RETURNED_S, so it should improve once
+# the window clears a live rally's longest shot-to-shot gap (2.35s, measured over 56 shots
+# inside true rallies). Swept across three clips:
+#
+#     window   2.0s  2.5s  3.0s  3.5s  4.0s  5.0s
+#     fires      15    15    12    11    10     9
+#     right       3     3     3     3     3     3
+#     precision 20%   20%   25%   27%   30%   33%
+#
+# It plateaus at 33% because the same three ends are all it ever finds: the rest fire on a
+# bounce that WAS returned by a contact we missed. That is bounce/shot recall, not a
+# threshold, and 33% is nowhere near the 85% a net end earns.
 TRUSTED_REASONS = {"net", "out"}
 
 
