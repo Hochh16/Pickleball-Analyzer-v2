@@ -78,7 +78,8 @@ METRIC_DISPLAY = {
     "dink_count": ("Dinks detected", "int"),
     "volley_rate": ("Your shots that were volleys", "pct"),
     "n_volley": ("Net volleys detected", "int"),
-    "serve_fault_rate": ("Serves that faulted", "pct"),
+    # serve_fault_rate is rendered by serve_fault_line() instead: a bare percentage
+    # claims we watched every serve land, and mostly we did not.
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
@@ -264,6 +265,37 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
             f'as sessions accumulate.</span>')
     return (f'<div class="metric">Third shots you played as a soft drop: '
             f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}</div>')
+
+
+def serve_fault_line(drivers: dict) -> str:
+    """Serve faults, said as what we saw rather than as a rate.
+
+    A fault is a rally that ended on its own serve. Stage 7 confirms one against the
+    serve's landing bounce where that bounce exists, and where it does not the fault
+    rests on the point simply ending early -- which a return we failed to detect looks
+    exactly like. Worse, the gap is not random: the only serve fault in the operator's
+    truth was hit long, and a serve hit long lands off court where bounces go undetected.
+    So "0% faulted" would be a claim about serves nobody watched land. Say the count, say
+    how much of it was measured, and let a low number read as "we cannot see these yet"
+    rather than as a clean serve.
+    """
+    n = drivers.get("n_serve_faults")
+    n_meas = drivers.get("n_serve_faults_measured")
+    n_serves = drivers.get("n_serves")
+    if not isinstance(n, int) or not isinstance(n_serves, int) or n_serves <= 0:
+        return ""
+    if n == 0:
+        return ('<div class="metric">Serve faults seen: <b>none</b> '
+                f'<span class="muted small">&mdash; across {n_serves} rallies you served. '
+                'A serve hit long lands off court, where we often cannot see it come '
+                'down, so treat this as a floor rather than a clean sheet.</span></div>')
+    tail = ""
+    if isinstance(n_meas, int) and n_meas < n:
+        tail = (f' <span class="muted small">&mdash; {n_meas} of them confirmed by '
+                f'watching the serve land; the other {n - n_meas} ended the point on the '
+                'serve without a landing we could read</span>')
+    return (f'<div class="metric">Serve faults seen: <b>{n}</b> of {n_serves} rallies '
+            f'you served{tail}</div>')
 
 
 def fmt_metric(fmt: str, val) -> Optional[str]:
@@ -757,6 +789,10 @@ def build_html(folder: Path) -> str:
                                    match_counts.get("n_third_shots")
                                    or match_counts.get("n_third_decisions"),
                                    max(1, n_vids))
+            if line:
+                nums.append(line)
+        if c == "serve_return":
+            line = serve_fault_line(drivers)
             if line:
                 nums.append(line)
         for k, (label, fmt) in METRIC_DISPLAY.items():

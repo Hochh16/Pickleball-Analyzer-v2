@@ -900,6 +900,19 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
 
     n_serves = len(rallies)
     n_serve_faults = by_end_reason.get("serve-fault", 0)
+
+    # How many of those faults we actually SAW land. Stage 7 adjudicates a serve fault
+    # against the serve's landing bounce on the receiver's side, and where that bounce is
+    # missing the fault rests on timing alone. The two are not the same claim, and the
+    # gap is not random: the one serve fault in the operator's truth (court C, 39.7s,
+    # "serve was out. Hit long.") has no bounce after it at all, because a serve hit long
+    # lands off court where bounces go undetected. So the fault rate is biased LOW, and
+    # the report has to be able to say how much of it is measurement.
+    def _fault_is_measured(r):
+        return (r.get("end_signals") or {}).get("serve_landing_bounce_id") is not None
+
+    _faults = [r for r in rallies if r.get("end_reason") == "serve-fault"]
+    n_serve_faults_measured = sum(1 for r in _faults if _fault_is_measured(r))
     # per-rally end_reason confidence (source for by_end_reason + serve)
     end_reason_confs = _confs(rallies, "end_reason_confidence")
 
@@ -1118,6 +1131,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # 67 rallies against 55 detected contacts on the operator's six videos.
             "n_serves_detected": sum(1 for s in shots if s.get("is_serve")),
             "n_serve_faults": n_serve_faults,
+            "n_serve_faults_measured": n_serve_faults_measured,
             "serve_fault_rate": round(n_serve_faults / n_serves, 4) if n_serves else 0.0,
             "depth": _depth_block(_serves_all),
         }, end_reason_confs, len(rallies)),
@@ -1264,9 +1278,11 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         n_attributed_shots += len(rshots)
         rserves = [s for s in rshots if s.get("is_serve")]
         # role serve-faults: rallies this role served AND end_reason serve-fault
-        rsf = sum(1 for ra in rallies
-                  if role_of(ra.get("server_track_id")) == r
-                  and ra["end_reason"] == "serve-fault")
+        _rfaults = [ra for ra in rallies
+                    if role_of(ra.get("server_track_id")) == r
+                    and ra["end_reason"] == "serve-fault"]
+        rsf = len(_rfaults)
+        rsf_measured = sum(1 for ra in _rfaults if _fault_is_measured(ra))
         speeds = [s["features"]["post_speed_ftps"] for s in rshots
                   if not s.get("is_serve") and s.get("features", {}).get("post_speed_ftps") is not None]
         rconf = role_confidence.get(r, 0.0)
@@ -1302,6 +1318,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                          if s.get("is_serve")
                                          and int(s.get("track_id", -1)) in tids),
                 "n_serve_faults": rsf,
+                "n_serve_faults_measured": rsf_measured,
                 "serve_fault_rate": round(rsf / len(rserves), 4) if rserves else 0.0,
                 # Depth for THIS player's own serves. The rating is per-player, so a match
                 # -level depth would rate everyone by the group's average.

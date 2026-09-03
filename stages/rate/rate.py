@@ -323,6 +323,12 @@ def score_serve_return(user: dict) -> Tuple[float, dict]:
     s_depth = serve.get("depth") or {}
     r_depth = user.get("return_depth") or {}
     drivers = {"serve_fault_rate": rate, "n_serves": n_serves,
+               # How many of the faults we watched land, against how many are inferred
+               # from the point simply ending on the serve. Faults we CAN see are the
+               # minority, and the ones we cannot are biased toward real faults: a serve
+               # hit long lands off court, where bounces go undetected.
+               "n_serve_faults": serve.get("n_serve_faults"),
+               "n_serve_faults_measured": serve.get("n_serve_faults_measured"),
                # What we actually FOUND, beside the structural count. n_serves is one per
                # rally by construction, so on its own it hides every serve we missed.
                "n_serves_detected": serve.get("n_serves_detected"),
