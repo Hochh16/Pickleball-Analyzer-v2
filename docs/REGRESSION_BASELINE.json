@@ -8,7 +8,7 @@
    "bounces": 72,
    "identity_gap": 26,
    "rallies": 16,
-   "rating": 3.9,
+   "rating": 3.88,
    "rating_confidence": 0.43,
    "shots_truth": 98,
    "volleys_truth": 17,
@@ -121,7 +121,7 @@
    "bounces": 59,
    "identity_gap": 36,
    "rallies": 19,
-   "rating": 3.66,
+   "rating": 3.76,
    "rating_confidence": 0.44
   }
  }

@@ -53,9 +53,11 @@ CATEGORY_ELEMENTS = {
                  ("Ready position (paddle up)", "live"), ("Stacking", "planned"),
                  ("Targeting weakness", "planned"), ("Resets under pressure", "planned"),
                  ("Unforced errors", "planned")],
+    # Transition success is position-only -- no ball, no bounce -- so it is measured at
+    # full coverage where the ball-derived half of this category is not.
     "third_shot": [("How often you play the 3rd shot", "live"),
                    ("Drop-vs-drive choice", "partial"),
-                   ("Drop landing depth", "planned"), ("Transition success", "planned")],
+                   ("Transition success", "live"), ("Drop landing depth", "planned")],
     "dink": [("How much you dink", "partial"), ("Dink-rally length", "partial"),
              ("Knee bend (staying low)", "live"),
              ("Pop-up rate", "planned"), ("Height & depth control", "planned")],
@@ -97,6 +99,7 @@ METRIC_DISPLAY = {
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
+    "transition": ("Getting to the kitchen from mid-court", "transition"),
     "serve_in_play": ("Serves that landed in", "in_play"),
     "return_in_play": ("Returns that landed in", "in_play"),
     "serve_depth": ("Serves landing deep", "depth"),
@@ -275,10 +278,13 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
                f'{"s" if match_total != 1 else ""} {whose}, by all four players'
                f'</span>')
     pct = f' ({n_drop / n:.0%})' if n >= MIN_THIRD_DECISIONS else ""
+    # The category is no longer rated on this rate alone -- closing the transition zone is
+    # measured from position and rates it too -- so a short sample here is a gap in ONE
+    # element, not a placeholder level. Saying "the level shown is a placeholder" when it
+    # is not would be the same overclaim in reverse.
     warn = ("" if n >= MIN_THIRD_DECISIONS else
-            f' <span class="muted small">&mdash; too few to rate yet '
-            f'(needs {MIN_THIRD_DECISIONS}); the level shown is a placeholder. It sharpens '
-            f'as sessions accumulate.</span>')
+            f' <span class="muted small">&mdash; too few to read a drop rate from yet '
+            f'(needs {MIN_THIRD_DECISIONS}). It sharpens as sessions accumulate.</span>')
     return (f'<div class="metric">Third shots you played as a soft drop: '
             f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}</div>')
 
@@ -333,6 +339,15 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "transition":
+            # val = {n, n_measured, n_arrived, arrived_frac, coverage}. Says the count,
+            # not just a rate: with a handful of mid-court balls in a session "40%" alone
+            # reads as a verdict when it is two shots out of five.
+            if not isinstance(val, dict) or not val.get("n_measured"):
+                return None
+            nm, na = int(val["n_measured"]), int(val.get("n_arrived") or 0)
+            pct = int(round((val.get("arrived_frac") or 0) * 100))
+            return f"{na} of {nm} ({pct}%)"
         if fmt == "in_play":
             # val = {n, n_measured, n_in, n_out, in_frac, coverage}. The operator's rule:
             # a serve must land past the kitchen line and inside the far court, a return

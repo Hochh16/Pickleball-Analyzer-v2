@@ -136,6 +136,7 @@ def _unwrap_user(uw: dict) -> dict:
         "third_shot": _v(uw.get("third_shot")) or {},
         "n_returns": _v(uw.get("n_returns")) or 0,
         "return_depth": _v(uw.get("return_depth")) or {},
+        "transition": _v(uw.get("transition")) or {},
         "return_in_play": _v(uw.get("return_in_play")) or {},
         "ready_position": _v(uw.get("ready_position")) or {},
         "position": _v(uw.get("position")) or {},
@@ -230,6 +231,7 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
 
 
 MIN_THIRD_DECISIONS = 4   # fewer typed 3rd shots than this = too few to rate on
+TRANSITION_MIN_N = 4      # mid-court balls we could watch afterwards, before it scores
 
 def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
     """THIRD-SHOT DROPS, for the rated user.
@@ -245,6 +247,7 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
     be a guess -- while the first tells the report how much third-shot play there was at all.
     Too few typed -> neutral and low confidence, so we never coach off a 1-in-N rate."""
     ts = user.get("third_shot", {}) or {}
+    trans = user.get("transition") or {}
     n = ts.get("n_third_decisions", 0) or 0
     drop = ts.get("drop_rate")
     enough = drop is not None and n >= MIN_THIRD_DECISIONS
@@ -260,10 +263,25 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
         # the report can distinguish "you hardly play third shots" from "we cannot read the
         # ones you play yet" -- they call for completely different responses.
         "n_third_unmeasurable": ts.get("n_third_unmeasurable", 0) or 0,
+        # CLOSING THE TRANSITION ZONE, the other half of this category and until now the
+        # only element of it with nothing behind it. Measured from position alone, so it
+        # is available where the ball-derived third-shot rate is not -- and it is scored
+        # even when too few third shots could be typed, which is most of the time.
+        "transition": trans or None,
         "per_user": True}
-    if not enough:
+
+    parts = []
+    if enough:
+        parts.append(clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)))
+    # Getting to the kitchen after a mid-court ball is what the transition zone asks. A
+    # player who closes on most of them is doing what 4.0 describes; one who closes on few
+    # is the 3.5 stuck in no-man's land.
+    if trans and (trans.get("n_measured", 0) >= TRANSITION_MIN_N
+                  and trans.get("arrived_frac") is not None):
+        parts.append(clamp_level(lin(trans["arrived_frac"], 0.10, 2.6, 0.70, 4.4)))
+    if not parts:
         return NEUTRAL_PRIOR_LEVEL, drivers
-    return clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)), drivers
+    return clamp_level(sum(parts) / len(parts)), drivers
 
 
 def score_dink(user: dict, match: dict) -> Tuple[float, dict]:

@@ -620,3 +620,63 @@ def test_no_landing_and_an_own_side_bounce_are_both_NOT_ADJUDICATED():
     assert in_play_verdict(_serve(4.0), [_bounce(30, 4.0, -1.0)], fps, True) is None
     # and with no side to judge from there is nothing to say
     assert in_play_verdict({"frame": 0}, [_bounce(30, 16.0, 36.0)], fps, True) is None
+
+
+from stages.compute_metrics.compute_metrics import transition_success
+
+
+def _mid_shot(frame):
+    """A ball played from the transition zone."""
+    return {"frame": frame, "features": {"contact_zone": "transition"}}
+
+
+def _walk(start, frame_from, frame_to, y_from, y_to, fps=60.0):
+    """Positions marching from y_from to y_to over the frame range."""
+    n = frame_to - frame_from
+    return {frame_from + k: (10.0, y_from + (y_to - y_from) * k / max(1, n))
+            for k in range(n + 1)}
+
+
+def test_closing_to_the_kitchen_has_to_be_SUSTAINED():
+    """"Within the kitchen depth at ANY frame in the next four seconds" is a max over ~240
+    noisy samples, decided by the worst one. Off the bbox foot -- which places a far-side
+    player ~10 ft closer to the net than they are -- that read 81% for the far pair against
+    29% for the near one, a skill gap that was pure projection bias.
+    """
+    fps = 60.0
+    # walks in from 14 ft out (y=36) to the kitchen line and stays: arrived
+    closed = transition_success([_mid_shot(0)], _walk(None, 1, 200, 36.0, 28.0), fps)
+    assert closed["n_arrived"] == 1 and closed["arrived_frac"] == 1.0
+
+    # one stray sample at the kitchen, then back out: NOT arrived
+    pos = {f: (10.0, 36.0) for f in range(1, 200)}
+    pos[100] = (10.0, 28.0)
+    assert transition_success([_mid_shot(0)], pos, fps)["n_arrived"] == 0
+
+    # ...and half a second of it IS arrival
+    for f in range(100, 100 + int(0.5 * fps) + 2):
+        pos[f] = (10.0, 28.0)
+    assert transition_success([_mid_shot(0)], pos, fps)["n_arrived"] == 1
+
+
+def test_a_ball_we_cannot_watch_afterwards_is_not_a_FAILURE():
+    """The rally may simply have ended. Counting that as "did not close" would score a
+    player down for winning the point, so it carries its own denominator like depth does."""
+    fps = 60.0
+    brief = {f: (10.0, 36.0) for f in range(1, 30)}         # half a second, then nothing
+    r = transition_success([_mid_shot(0)], brief, fps)
+    assert (r["n"], r["n_measured"], r["arrived_frac"]) == (1, 0, None)
+    assert r["coverage"] == 0.0
+    # no position at all is the same story
+    assert transition_success([_mid_shot(0)], {}, fps)["n_measured"] == 0
+
+
+def test_only_MID_COURT_balls_are_asked_the_question():
+    """A ball played from the kitchen is already there, and one from the baseline is a
+    different question -- neither is a transition."""
+    fps = 60.0
+    pos = _walk(None, 1, 200, 36.0, 28.0)
+    for zone in ("kitchen", "baseline", None):
+        s = {"frame": 0, "features": {"contact_zone": zone}}
+        assert transition_success([s], pos, fps)["n"] == 0, zone
+    assert transition_success([_mid_shot(0)], pos, fps)["n"] == 1

@@ -92,6 +92,14 @@ DEEP_LANDING_MIN_FT = 15.0
 NET_Y_FT = 22.0               # net line (= length_ft / 2)            [Stage 6]
 KITCHEN_MAX_DIST_FT = 9.0     # effective kitchen depth from net      [Stage 6]
 BASELINE_MIN_DIST_FT = 17.0   # within ~5ft of own baseline -> baseline [Stage 6]
+# Closing to the kitchen after a mid-court ball (see transition_success). 4s is long enough
+# to cover the approach and short enough not to run into the next point; half a second of
+# standing there is what separates arriving from a noisy sample passing through; and a shot
+# we can watch for under a second afterwards is not counted either way, because the rally
+# may simply have ended.
+TRANSITION_ARRIVE_LOOK_S = 4.0
+TRANSITION_ARRIVE_SUSTAIN_S = 0.5
+TRANSITION_MIN_OBSERVE_S = 1.0
 POSE_ANKLE_MIN_VIS = 0.3      # ankle-landmark visibility floor for front-foot depth
 COURT_LEN_FT = 44.0
 COURT_WID_FT = 20.0
@@ -249,6 +257,61 @@ def count_by(items, key) -> Dict[str, int]:
         v = key(it)
         out[v] = out.get(v, 0) + 1
     return out
+
+
+def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
+                       fps: float) -> dict:
+    """Of the balls you played from mid-court, how often did you get to the kitchen line?
+
+    The transition zone is where a point is won or lost at 3.5-4.0: you have hit a ball
+    from no-man's land and now have to close, or you get caught there and get dinked at
+    your feet. USA Pickleball rates it, and it was the last unbuilt element of the
+    third-shot category.
+
+    It is measured off POSITION ONLY -- no ball, no bounce, no speed -- which is why it is
+    reachable when so much else is not: the front foot is available for every one of the
+    operator's 28 mid-court shots across six videos.
+
+    Two things it has to get right, both learned the hard way:
+
+    THE POSITION SOURCE. `fpos` must be the merged POSE front foot, not the bbox foot from
+    players.parquet, which places a far-side player about 10 ft closer to the net than
+    they are (measured: a far player on their own baseline reads 33-35 against a true 44).
+    Off the bbox this metric read 81% for the far pair against 29% for the near pair --
+    pure projection bias, and it would have been reported as a skill gap.
+
+    SUSTAINED, NOT EVER. "Was the player within the kitchen depth at ANY frame in the next
+    four seconds" is a max over ~240 noisy samples and is decided by the worst one. They
+    have to still be there half a second later.
+
+    A shot we cannot watch for at least TRANSITION_MIN_OBSERVE_S afterwards is NOT counted
+    as a failure -- the rally may simply have ended -- so the block carries its own
+    denominator the way the depth and in-play ones do.
+    """
+    look = int(TRANSITION_ARRIVE_LOOK_S * fps)
+    need_s = TRANSITION_ARRIVE_SUSTAIN_S
+    n = n_measured = n_arrived = 0
+    for s in shots:
+        if ((s.get("features") or {}).get("contact_zone")) != "transition":
+            continue
+        n += 1
+        f = int(s["frame"])
+        seen = sorted(g for g in fpos if f < g <= f + look)
+        if len(seen) < TRANSITION_MIN_OBSERVE_S * fps:
+            continue
+        n_measured += 1
+        start = None
+        for g in seen:
+            if abs(fpos[g][1] - NET_Y_FT) <= KITCHEN_MAX_DIST_FT:
+                start = g if start is None else start
+                if (g - start) / fps >= need_s:
+                    n_arrived += 1
+                    break
+            else:
+                start = None
+    return {"n": n, "n_measured": n_measured, "n_arrived": n_arrived,
+            "arrived_frac": round(n_arrived / n_measured, 3) if n_measured else None,
+            "coverage": round(n_measured / n, 3) if n else 0.0}
 
 
 def in_play_verdict(shot: dict, bounces: List[dict], fps: float, is_serve: bool,
@@ -1415,6 +1478,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "return_depth": mv_sample_size(
                 _depth_block([s for s in returns if int(s["track_id"]) in tids]),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
+            # Closing the transition zone: position only, so it is measurable where the
+            # ball-derived third-shot metrics are not. Uses role_fpos -- the POSE front
+            # foot -- for the reason in transition_success.
+            "transition": mv_sample_size(
+                transition_success(rshots, role_fpos.get(r, {}), float(fps)),
+                sum(1 for s in rshots
+                    if ((s.get("features") or {}).get("contact_zone")) == "transition")),
             "return_in_play": mv_sample_size(
                 _in_play_block([s for s in returns if int(s["track_id"]) in tids], False),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),
