@@ -244,6 +244,19 @@ def net_crossing_speed(ball_y: Dict[int, float], f: int, side: str, hitter_y: fl
     """
     if not ball_y or side not in ("near", "far") or hitter_y is None:
         return None
+
+    # The ball must START on the hitter's side. If it already reads as past the net when
+    # the shot is struck -- the reconstruction placing an airborne ball across it -- then
+    # the crossing fires on the first frame and the distance is divided by nearly zero.
+    # That is where every absurd speed came from: of the 12 net-crossing speeds above 100
+    # ft/s, 8 begin on the wrong side, against 2 of the 29 plausible ones. The worst read
+    # 2310 ft/s, which is 1575 mph.
+    at_contact = [ball_y[g] for g in range(f - 2, f + 3) if g in ball_y]
+    if at_contact:
+        y0 = sum(at_contact) / len(at_contact)
+        if (y0 > NET_Y_FT) if side == "near" else (y0 < NET_Y_FT):
+            return None
+
     run, first = 0, None
     for g in range(f + 1, f + int(look_s * fps)):
         v = ball_y.get(g)

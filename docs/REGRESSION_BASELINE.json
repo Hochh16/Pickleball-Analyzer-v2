@@ -4,7 +4,7 @@
   "pb_5_minute_outdoor-7": {
    "shots": 121,
    "volleys": 21,
-   "dinks": 34,
+   "dinks": 33,
    "bounces": 74,
    "identity_gap": 26,
    "rallies": 18,
@@ -44,7 +44,7 @@
   "pb_3_min_indoor_1_court_b": {
    "shots": 80,
    "volleys": 16,
-   "dinks": 16,
+   "dinks": 17,
    "bounces": 47,
    "identity_gap": 17,
    "rallies": 10,
