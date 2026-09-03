@@ -184,6 +184,10 @@ VOLLEY_REBOUND_MIN_PX = 20.0  # min upward rebound after the low point to call a
 VOLLEY_DESCENT_MIN_PX = 14.0  # min descent into the low point (ball clearly came down)
 SIDE_CONF_FLOOR = 0.35
 KITCHEN_MAX_DIST_FT = 9.0   # effective kitchen depth from net (court_zones)
+# "At the net" for the no-landing path, measured to the FRONT FOOT. Wider than the kitchen
+# itself: the operator's dinks reach 8.7 ft at p75 and their drives start well behind, and
+# scored over the no-landing shots this value separates them best.
+NET_ZONE_MAX_FT = 11.0
 BASELINE_MIN_DIST_FT = 17.0  # within ~5ft of the 22ft baseline
 BOUNCE_MIN_TURN_DEG = 40.0   # single-frame turn between shots => ground bounce
 LANDMARK_VIS_FLOOR = 0.5
@@ -863,7 +867,8 @@ def bounced_between(by, bknown, f0: int, f1: int,
 def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
                   is_return=False,
                   landing_y=None, receiver_zone=None, is_volley=False,
-                  drive_min=DRIVE_MIN_SPEED_FTPS, dink_max=DINK_MAX_SPEED_FTPS):
+                  drive_min=DRIVE_MIN_SPEED_FTPS, dink_max=DINK_MAX_SPEED_FTPS,
+                  contact_dist_from_net=None):
     """Fused rule classifier for the TACTICAL shot type. The airborne ball's
     pixel-speed is depth-corrupted (a drive hit down-court reads slow) and its
     court projection explodes, so when a real bounce LANDING is available
@@ -944,13 +949,39 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
         # that lands deep is a LOB (from the net) or a DRIVE, never a dink.
 
     # --- Fallback (no landing): arc + speed, lower confidence --------------------
-    # A drive is fast AND FLAT together in the operator's definition, and requiring both
-    # HERE was tried and reverted: it drops the score from 97/142 to 85/142, because a
-    # fast arced ball then falls past every remaining branch and lands on "unknown" -- 20
-    # of them. The arc test belongs where there is somewhere for the loser to go, not as
-    # an extra gate on the first branch of a chain that ends in nothing.
-    if post_ftps is not None and post_ftps >= drive_min:
+    # POSITION, THEN ARC, THEN SPEED -- and always an answer.
+    #
+    # This path types 19 of the operator's 23 drops (the landing branch sees only 4), and
+    # it used to ask speed first and alone: `if speed >= drive_min: drive`. That sent every
+    # hard-struck drop to "drive" -- they reach 43 ft/s against 41 for real drives, so
+    # speed cannot separate them -- and never asked where the hitter stood, which is the
+    # criterion the operator names for dink against drop and the strongest signal we have
+    # (front foot 7.6 ft from the net for dinks against 20.0 for drops, from
+    # players.parquet, which is ground truth rather than reconstruction).
+    #
+    # The result was a nearly degenerate classifier: on the no-landing shots it got 25 of
+    # 30 drives and 1 of 8 dinks, 5 of 18 drops. Asking position first gives 18/30, 5/8,
+    # 9/18 -- one more correct overall, and a usable answer for the two categories that
+    # were being thrown away.
+    #
+    # A drive must be fast AND FLAT, which is the operator's definition. Where the arc
+    # cannot be measured speed alone stands in, because every branch here must have an
+    # exit: requiring both without that let a fast arced ball fall past everything onto
+    # "unknown" -- 20 of them, and the score went from 97/142 to 85/142.
+    # Speed still decides DRIVE on its own here. Requiring it to be flat as well -- the
+    # operator's definition, and correct in principle -- was measured twice and costs more
+    # than it returns: drive recall falls from 71% to 47% at every net-zone width tried,
+    # because an arced hard ball then leaves this branch and is typed by position instead.
+    # What position fixes is everything AFTER that test, which used to fall through a
+    # speed-banded chain and out onto "unknown".
+    _fast = post_ftps is not None and post_ftps >= drive_min
+    _at_net = contact_dist_from_net is not None and contact_dist_from_net <= NET_ZONE_MAX_FT
+    if _fast:
         return "drive", FB_DRIVE
+    if _at_net:
+        return "dink", FB_DINK
+    if contact_dist_from_net is not None:
+        return "drop", FB_DROP
     # (The old "reset" branch lived here: fast ball in, slow ball out, not from the
     # baseline. That is a real pattern, but it is a DROP or a DINK -- which one depends on
     # where it was struck, exactly as the rules below already decide. Whether it is also a
@@ -1200,11 +1231,24 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                          and int(prev.get("shot_id", -1)) not in really_returns
                          and prev.get("hitter_side") and s.get("hitter_side")
                          and prev["hitter_side"] != s["hitter_side"])
+        # Distance from the net to the FRONT FOOT -- the operator's own reference ("kitchen
+        # out to 2 feet beyond (front leg)"), and the tighter of the two: dinks sit at 8.7
+        # ft at p75 by the front foot against 11.3 by the body centre. Falls back to the
+        # body when no pose is available.
+        _ff = (s.get("features") or {}).get("contact_front_foot_y")
+        if _ff is None:
+            _ff = locals().get("front_foot_y")
+        _hxy = s.get("hitter_court_xy_ft") or [None, None]
+        _cy = _ff if _ff is not None else (_hxy[1] if _hxy[1] is not None else None)
+        _contact_dist_net = (abs(float(_cy) - _court_len / 2.0)
+                             if _cy is not None else None)
+
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
                                              speed_for_type, pre_ftps, zone,
                                              is_return, landing_y,
                                              receiver_zone, is_volley,
-                                             drive_min=d_min, dink_max=d_max)
+                                             drive_min=d_min, dink_max=d_max,
+                                             contact_dist_from_net=_contact_dist_net)
 
         # stroke side: forehand/backhand for the user (handedness known); an
         # above-the-head contact is an 'overhead' stroke regardless of handedness.
