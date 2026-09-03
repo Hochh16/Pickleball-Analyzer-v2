@@ -550,3 +550,44 @@ def test_only_the_FIRST_bounce_after_the_contact_is_the_landing():
     # no bounces at all, and no side to judge from, are both "no evidence", not "at feet"
     assert make_own_feet_bounce([], 22.0, fps)(shot) is False
     assert make_own_feet_bounce([late_feet], 22.0, fps)({"frame": 0}) is None
+
+
+def test_a_weak_contact_needs_all_three_doubts():
+    """Of 191 emitted shots the operator calls 30 not-a-shot, and their notes say what
+    those mostly are: a ball PASSING someone who never touched it -- "Ball passed by
+    opponent's partner near the net on its way to near side", "Ball was not hit by anyone
+    yet and heading to opp_b", "opponent swung and missed".
+
+    No single cue separates those from a soft touch. Measured, each threshold alone trades
+    real play for junk one for one: direction change < 10 deg removes 8 and loses 9 real,
+    distance > 110 px removes 11 and loses 20, confidence < 0.60 removes 15 and loses 13.
+    So all three have to fail together, and each threshold is loose because none of them is
+    meant to be decisive on its own.
+    """
+    from stages.detect_shots.detect_shots import reject_weak_contacts
+
+    def shot(frame, dchg, dist, conf):
+        return {"frame": frame, "direction_change_deg": dchg,
+                "player_distance_px": dist, "confidence": conf}
+
+    weak = shot(10, 20.0, 200.0, 0.4)          # all three doubts
+    ok_turn = shot(20, 150.0, 200.0, 0.4)      # the ball really did change direction
+    ok_near = shot(30, 20.0, 30.0, 0.4)        # ...they were right on top of it
+    ok_conf = shot(40, 20.0, 200.0, 0.9)       # ...the impact was a clean one
+    kept, dropped = reject_weak_contacts([weak, ok_turn, ok_near, ok_conf], 100.0)
+    assert [s["frame"] for s in dropped] == [10]
+    assert [s["frame"] for s in kept] == [20, 30, 40]
+
+
+def test_a_contact_missing_any_of_the_three_is_never_weak():
+    """A missing value is not a doubt. Early shots carry no direction change at all, and
+    treating None as "barely turned" would delete the opening of every rally."""
+    from stages.detect_shots.detect_shots import reject_weak_contacts
+
+    for missing in ("direction_change_deg", "player_distance_px", "confidence"):
+        s = {"frame": 1, "direction_change_deg": 20.0,
+             "player_distance_px": 200.0, "confidence": 0.4}
+        s[missing] = None
+        kept, dropped = reject_weak_contacts([s], 100.0)
+        assert dropped == [], f"{missing}=None must not count as a doubt"
+        assert kept == [s]

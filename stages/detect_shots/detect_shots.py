@@ -211,6 +211,30 @@ GROUND_PLAUSIBLE_MARGIN_FT = 8.0
 COURT_WIDTH_FT = 20.0
 COURT_LENGTH_FT = 44.0
 REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresholds scale by frame_width/this
+
+# --- Weak contacts: three doubts, and only all three together ------------------------
+# Of the 191 shots emitted on the two reviewed clips the operator calls 30 not-a-shot, and
+# their notes say what those are: mostly a ball PASSING a player who never touched it ("Ball
+# passed by opponent's partner near the net on its way to near side", "Ball was not hit by
+# anyone yet and heading to opp_b", "opponent swung and missed"), plus feeds and dead-ball
+# handling between points.
+#
+# NO SINGLE CUE SEPARATES THEM. Measured, every threshold on its own is a one-for-one trade
+# of junk against real play:
+#
+#     direction change < 10 deg     removes  8    loses  9 real
+#     player distance > 110 px      removes 11    loses 20
+#     confidence < 0.60             removes 15    loses 13
+#
+# ...which is what you would expect: a ball that passes close to a player looks exactly
+# like a soft touch on any one axis. Requiring ALL THREE doubts at once is the only
+# combination measured to clear a real ratio -- 6 removed for 2 real lost, 3:1 -- and the
+# thresholds are deliberately loose, because they are not each meant to be decisive.
+# A real shot lost costs more than a junk one kept: it breaks `shots = volleys + bounces`
+# and deletes play, while junk only inflates a count.
+WEAK_TURN_MAX_DEG = 70.0      # the ball barely changed direction
+WEAK_DIST_MIN_PX = 100.0      # ref px @1920, scaled by frame_width/1920: nobody was near it
+WEAK_CONF_MAX = 0.55          # and the impact itself was a poor one
 REFERENCE_FPS = 30.0  # fps the frame-count windows were tuned at; they scale by fps/this
 
 EPS = 1e-9
@@ -902,6 +926,27 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
 OWN_FEET_BOUNCE_S = 1.5
 
 
+def reject_weak_contacts(shots: List[dict], dist_min_px: float,
+                         turn_max_deg: float = WEAK_TURN_MAX_DEG,
+                         conf_max: float = WEAK_CONF_MAX):
+    """Drop contacts that fail ALL THREE of the weak tests. See WEAK_TURN_MAX_DEG.
+
+    Each test on its own trades real play for junk one for one, so none of them gates
+    anything alone; a shot has to look wrong on the ball's path AND on who was near it AND
+    on the impact itself. Returns (kept, dropped).
+    """
+    kept, dropped = [], []
+    for s in shots:
+        dchg = s.get("direction_change_deg")
+        dist = s.get("player_distance_px")
+        conf = s.get("confidence")
+        weak = (dchg is not None and dchg < turn_max_deg
+                and dist is not None and dist > dist_min_px
+                and conf is not None and conf < conf_max)
+        (dropped if weak else kept).append(s)
+    return kept, dropped
+
+
 def load_own_feet_bounce(folder: Path, net_y_ft: float, fps: float, log):
     """Stage 5.5's bounces, if they exist yet.
 
@@ -1459,6 +1504,18 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
     #     (catch / hold / bounce between points) that the synthetic placeholder
     #     never produces. Gated to real ball because the synthetic generator does
     #     not model strict net-crossing alternation.
+    # Weak contacts, before the same-side filter: a ball passing a player it never touched
+    # is not ball-handling, so the alternation rule has no reason to catch it.
+    n_weak = 0
+    if params.get("handling_filter"):
+        shots, _weak = reject_weak_contacts(shots, params["weak_dist_min_px"])
+        n_weak = len(_weak)
+        for w in _weak:
+            discard(w["frame"], "weak_contact",
+                    direction_change_deg=w.get("direction_change_deg"),
+                    player_distance_px=w.get("player_distance_px"),
+                    confidence=w.get("confidence"))
+
     if params.get("handling_filter"):
         shots, n_handling, handling_discards, handling_trace = reject_same_side_runs(
             shots, side_by_track or {}, params["handling_reset_frames"],
@@ -1676,6 +1733,7 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         "n_rejected_low_speed": n_low_speed,
         "n_merged_duplicates": suppressed,
         "n_teleport_dropped": n_teleport_dropped,
+        "n_weak_contacts_dropped": n_weak,
         "n_rejected_handling": n_handling,
         "n_serves_restored": n_restored,
         "n_rejected_serve_blip": n_rejected_serve_blip,
@@ -1763,6 +1821,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     same_side_excursion = (args.same_side_excursion_px
                            if args.same_side_excursion_px is not None
                            else SAME_SIDE_EXCURSION_PX * res_scale)
+    weak_dist_min_px = WEAK_DIST_MIN_PX * res_scale
     if abs(res_scale - 1.0) > 1e-6:
         log.info(f"resolution scale {res_scale:.3f} (frame_width {fw} / "
                  f"{REFERENCE_WIDTH_PX:.0f}); px thresholds scaled accordingly")
@@ -1820,6 +1879,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         "net_y_ft": court["net_y_ft"],
         "resolution_scale": round(res_scale, 4),
         "reference_width_px": REFERENCE_WIDTH_PX,
+        "weak_dist_min_px": weak_dist_min_px,
         "fps_scale": round(fps_scale, 4),
         "reference_fps": REFERENCE_FPS,
     }
