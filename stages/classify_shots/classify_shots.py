@@ -1241,6 +1241,29 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             d_min, d_max = DRIVE_MIN_SPEED_HORIZ_FTPS, DINK_MAX_SPEED_HORIZ_FTPS
             speed_source = "net_crossing"
         else:
+            # The pixel speed, which is KNOWN NOISE and is kept anyway. Measured against
+            # the operator's drives vs dinks+drops, each signal alone at its own best
+            # threshold:
+            #
+            #     anchored speed (bounce/next contact)   72%   vs 51% guessing   +21
+            #     arc height                             60%   vs 50%            +10
+            #     PIXEL SPEED                            54%   vs 50%            + 4
+            #     contact distance from the net          52%   vs 50%            + 2
+            #
+            # And the pixel and anchored speeds disagree about the SAME shot by a median
+            # of 60% of the larger reading, correlation -0.08 over 171 shots. At most one
+            # of them is measuring the ball.
+            #
+            # DROPPING IT WAS TRIED AND REVERTED. Letting these 55 shots fall through to
+            # arc and position gained one shot type (69/101 -> 70/101, drops 11 -> 13) and
+            # cost three DINKS: position says "at the net -> dink", so outdoor-7 went 33 to
+            # 36 against an operator count of 32. The count is what the report shows and
+            # what the ledger accepts changes against, so +1 type does not buy +3 dinks.
+            #
+            # The way out is not a threshold here. It is a speed measurement worth
+            # believing on the 55 shots that have none: 20 have no anchored speed at all,
+            # 19 are volleys whose bounce anchor is a phantom, 16 sit below the trajectory
+            # confidence floor.
             speed_for_type = post_ftps
             d_min, d_max = DRIVE_MIN_SPEED_FTPS, DINK_MAX_SPEED_FTPS
             speed_source = "ppf_instantaneous"
