@@ -196,6 +196,32 @@ def bounce_in_receivers_kitchen(bounce_court_y: Optional[float],
     return None
 
 
+def serve_landing(post: List[dict], server_side: Optional[str]) -> Optional[dict]:
+    """The first bounce after the serve that is ON THE RECEIVER'S SIDE, or None.
+
+    A serve's landing is the only bounce that can say whether it was good, and it is on
+    the far side of the net by definition. Bounces on the SERVER's own side are the ball
+    being bounced at their feet before the strike, the ball coming back between points,
+    or a bad projection -- measured: of 29 detected serves across the scored clips, 7 had
+    a first post-serve bounce on the server's own side and every one of them was flagged
+    `is_at_feet` within a couple of feet of the server's own position.
+
+    That mattered: court C's serve at 178.32s was called a fault at confidence 0.9 on the
+    strength of a bounce at [-2.1, 0.5] -- out of court, but out of court BEHIND THE
+    SERVER, which says nothing at all about where the serve went.
+    """
+    if server_side not in ("near", "far"):
+        return None
+    for b in post:
+        xy = b.get("court_xy_ft") or [None, None]
+        if not xy or xy[1] is None:
+            continue
+        side = side_of_net(xy[1])
+        if side is not None and side != server_side:
+            return b
+    return None
+
+
 # --- Boundary segmentation ---------------------------------------------------
 
 def _starts_from_deep(shot: dict) -> bool:
@@ -543,33 +569,41 @@ def classify_rally(rally_shots: List[dict], bounces: List[dict],
         "frames_to_next_serve": frames_to_next_serve,
     }
 
-    # Rule 1: serve-fault (n_shots == 1).
+    # Rule 1: the rally ended on its own serve.
+    #
+    # "Only one shot" is evidence that the point ended early, NOT that the serve faulted:
+    # a return we failed to detect looks exactly the same. The serve's LANDING is what
+    # separates them, and it has to be a bounce on the receiver's side (see
+    # serve_landing) -- reading the first post-serve bounce whichever side it fell on is
+    # what produced a 0.9-confidence fault off a bounce behind the server's own baseline.
+    #
+    # Where the landing exists this is a MEASUREMENT in both directions: out of court or
+    # short into the kitchen is a fault, and in-court past the kitchen line REFUTES one.
+    # Where it does not, the old timing evidence stands at the confidence it earns --
+    # which is low, and honestly so. The residue is real: the one serve fault in the
+    # operator's truth (court C, 39.7s, "serve was out. Hit long.") has no bounce at all
+    # after it, because a serve hit long lands off court where bounces go undetected. So
+    # the measured fault rate is biased LOW and cannot be read as a complete count.
     if n_shots == 1:
-        # First post-serve bounce gives the strongest signal.
-        first_post = post[0] if post else None
-        if first_post is not None and first_post.get("is_in_court") is False:
-            return ("serve-fault", 0.9, int(first_post["bounce_id"]), end_signals)
-        if first_post is not None and first_post is last_bounce \
-                and last_bounce_in_kitchen is True:
-            return ("serve-fault", 0.9, int(first_post["bounce_id"]), end_signals)
-        # Check the kitchen flag on the first bounce too (not just last)
-        if first_post is not None:
-            first_bounce_court_xy = (first_post.get("court_xy_ft")
-                                      or [None, None])
-            first_in_kitchen = bounce_in_receivers_kitchen(
-                first_bounce_court_xy[1] if first_bounce_court_xy else None,
-                server_side)
-            if first_in_kitchen is True:
-                return ("serve-fault", 0.9,
-                        int(first_post["bounce_id"]), end_signals)
+        landing = serve_landing(post, server_side)
+        end_signals["serve_landing_bounce_id"] = (int(landing["bounce_id"])
+                                                  if landing is not None else None)
+        if landing is not None:
+            lid = int(landing["bounce_id"])
+            land_y = (landing.get("court_xy_ft") or [None, None])[1]
+            if landing.get("is_in_court") is False:
+                return ("serve-fault", 0.9, lid, end_signals)
+            if bounce_in_receivers_kitchen(land_y, server_side) is True:
+                return ("serve-fault", 0.9, lid, end_signals)
+            # The serve landed in, past the kitchen line: it was good. Whatever ended
+            # this point, it was not the server. Charging it to them as a fault is the
+            # one error here we can prove, and it is also an ERROR ATTRIBUTION bug --
+            # metrics credits every serve-fault against the server.
+            return ("ball-not-returned", 0.8, lid, end_signals)
         if (frames_to_next_serve is not None and 0 < frames_to_next_serve
                 <= serve_fault_max_frames):
-            return ("serve-fault", 0.7,
-                    int(first_post["bounce_id"]) if first_post else None,
-                    end_signals)
-        return ("serve-fault", 0.5,
-                int(first_post["bounce_id"]) if first_post else None,
-                end_signals)
+            return ("serve-fault", 0.7, None, end_signals)
+        return ("serve-fault", 0.5, None, end_signals)
 
     # Rule 2: double-bounce.
     if n_post >= 2:

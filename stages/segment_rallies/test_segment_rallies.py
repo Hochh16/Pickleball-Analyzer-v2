@@ -446,3 +446,60 @@ def test_the_serving_side_is_the_one_with_two_players_behind_the_baseline():
     # nobody behind either baseline: mid-rally, not a serve
     assert sr.serving_side_from_formation(_formation([10.0, 20.0], [30.0, 35.0]),
                                           100, L) is None
+
+
+def _serve_rally(server_side="near"):
+    return [{"shot_id": 0, "frame": 60, "t_sec": 1.0, "is_serve": True,
+             "hitter_side": server_side}]
+
+
+def _bounce(bid, frame, y, in_court=True, x=10.0):
+    return {"bounce_id": bid, "frame": frame, "between_shots": [0, None],
+            "court_xy_ft": [x, y], "is_in_court": in_court}
+
+
+def test_a_serve_fault_needs_evidence_from_the_RECEIVERS_side():
+    """A bounce behind the SERVER says nothing about where the serve went.
+
+    Court C's serve at 178.32s was called a fault at confidence 0.9 because its first
+    post-serve bounce was out of court -- at [-2.1, 0.5], flagged at-feet, behind the
+    server's own baseline. Measured: 7 of 29 detected serves have a first post-serve
+    bounce on the server's own side, and every one is the ball being bounced at their
+    feet. It also stretched that rally's window 9.3s past the serve, counting dead time
+    as rally time.
+    """
+    near_serve = _serve_rally("near")
+    own_side = [_bounce(1, 70, y=0.5, in_court=False, x=-2.1)]
+    reason, conf, bid, _sig = sr.classify_rally(near_serve, own_side, None)
+    assert (reason, bid) == ("serve-fault", None), "own-side bounce must not be evidence"
+    assert conf <= 0.5, "with no landing the fault is unproven, and must say so"
+
+    # ...and the same bounce on the RECEIVER's side is the landing, so it decides.
+    out_long = [_bounce(1, 70, y=46.0, in_court=False)]
+    assert sr.classify_rally(near_serve, out_long, None)[:3] == ("serve-fault", 0.9, 1)
+
+    in_kitchen = [_bounce(1, 70, y=25.0, in_court=True)]
+    assert sr.classify_rally(near_serve, in_kitchen, None)[:3] == ("serve-fault", 0.9, 1)
+
+
+def test_a_serve_that_landed_in_REFUTES_the_fault():
+    """One shot in the rally is evidence the point ended early, not that the SERVER ended
+    it -- a return we failed to detect looks identical. Where the serve is measured to
+    land in and past the kitchen line the fault is disproved, and charging it to the
+    server (metrics counts every serve-fault as their error) is wrong."""
+    good = [_bounce(1, 70, y=36.0, in_court=True)]
+    assert sr.classify_rally(_serve_rally("near"), good, None)[0] == "ball-not-returned"
+    # far-side server: the receiver's half is the low-y one, and depth mirrors
+    good_far = [_bounce(1, 70, y=8.0, in_court=True)]
+    assert sr.classify_rally(_serve_rally("far"), good_far, None)[0] == "ball-not-returned"
+    kitchen_far = [_bounce(1, 70, y=18.0, in_court=True)]
+    assert sr.classify_rally(_serve_rally("far"), kitchen_far, None)[0] == "serve-fault"
+
+
+def test_serve_landing_skips_bounces_until_it_crosses_the_net():
+    """The server often bounces the ball once or twice before striking it; those land on
+    their own side and must be stepped over, not taken as the landing."""
+    post = [_bounce(1, 62, y=-1.0), _bounce(2, 65, y=-0.5), _bounce(3, 90, y=34.0)]
+    assert sr.serve_landing(post, "near")["bounce_id"] == 3
+    assert sr.serve_landing(post, None) is None
+    assert sr.serve_landing([_bounce(1, 62, y=-1.0)], "near") is None
