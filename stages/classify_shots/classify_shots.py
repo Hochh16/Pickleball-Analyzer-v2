@@ -71,6 +71,11 @@ TRAJ_SPEED_CONF_MIN = 0.6
 # Ratio of the anchored drive median to the net-crossing drive median
 # (37.0 / 57.8), so the two speeds share the drive/dink thresholds.
 NET_CROSS_SPEED_SCALE = 0.64
+# No pickleball shot travels this fast. A hard drive is about 60 mph (88 ft/s) and a pro
+# serve less; anything past this is a failed measurement, not a fast ball, and 8% of shots
+# have one -- up to 438 ft/s, which is 300 mph. Treated as MISSING rather than trusted, so
+# the shot is typed by position instead of by a number that cannot be true.
+MAX_PLAUSIBLE_BALL_FTPS = 100.0
 
 # Height-based volley test. The ball is 1-6 ft up in flight and reads 0.17-0.38 ft at a
 # detected bounce across all four clips, so the two cases are far apart -- but `bias` scales
@@ -1263,6 +1268,13 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         _cy = _ff if _ff is not None else (_hxy[1] if _hxy[1] is not None else None)
         _contact_dist_net = (abs(float(_cy) - _court_len / 2.0)
                              if _cy is not None else None)
+
+        # A speed no pickleball can reach is not a measurement. Dropping it here rather
+        # than trusting it lets the shot fall through to position, which is the signal
+        # that does not have this failure mode.
+        if speed_for_type is not None and speed_for_type > MAX_PLAUSIBLE_BALL_FTPS:
+            speed_for_type = None
+            speed_source = "implausible_discarded"
 
         shot_type, type_conf = classify_type(is_serve, arc_frac, contact_h,
                                              speed_for_type, pre_ftps, zone,
