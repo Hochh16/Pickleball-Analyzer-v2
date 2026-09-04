@@ -671,15 +671,28 @@ def test_a_ball_we_cannot_watch_afterwards_is_not_a_FAILURE():
     assert transition_success([_mid_shot(0)], {}, fps)["n_measured"] == 0
 
 
-def test_only_MID_COURT_balls_are_asked_the_question():
-    """A ball played from the kitchen is already there, and one from the baseline is a
-    different question -- neither is a transition."""
+def test_every_ball_from_DEEP_is_asked_the_question_but_never_a_serve():
+    """Operator, 2026-09-04: "does getting to the kitchen line numbers include if the
+    person goes directly there from the baseline area without stopping in the transition
+    zone?" It did not, and that was wrong -- closing all the way in one move is the right
+    play, and asking only about mid-court balls made it invisible. Measured, the two read
+    the same (baseline 10 of 24, transition 7 of 17), so including baseline does not shift
+    the number; it more than doubles the sample.
+
+    A SERVE is still excluded, on the rules rather than a threshold: you have to stay back
+    for the double bounce, so it is not an opportunity to close. A ball played from the
+    kitchen is already there.
+    """
     fps = 60.0
     pos = _walk(None, 1, 200, 36.0, 28.0)
-    for zone in ("kitchen", "baseline", None):
+    for zone in ("transition", "baseline"):
+        s = {"frame": 0, "features": {"contact_zone": zone}}
+        assert transition_success([s], pos, fps)["n"] == 1, zone
+    for zone in ("kitchen", None):
         s = {"frame": 0, "features": {"contact_zone": zone}}
         assert transition_success([s], pos, fps)["n"] == 0, zone
-    assert transition_success([_mid_shot(0)], pos, fps)["n"] == 1
+    serve = {"frame": 0, "is_serve": True, "features": {"contact_zone": "baseline"}}
+    assert transition_success([serve], pos, fps)["n"] == 0
 
 
 def test_a_reset_is_a_soft_ball_answering_a_DRIVE_and_a_block_is_the_volleyed_one():

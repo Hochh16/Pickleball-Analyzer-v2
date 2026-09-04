@@ -333,7 +333,21 @@ def reset_block(shots: List[dict]) -> dict:
 
 def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
                        fps: float) -> dict:
-    """Of the balls you played from mid-court, how often did you get to the kitchen line?
+    """Of the balls you played from DEEP, how often did you get to the kitchen line?
+
+    Operator, 2026-09-04: "does getting to the kitchen line numbers include if the person
+    goes directly there from the baseline area without stopping in the transition zone?"
+
+    It did not, and that was wrong: a player who drops from the baseline and closes all the
+    way in one move is doing exactly the right thing, and asking only about balls struck
+    from mid-court made them invisible. Now every ball struck from OUTSIDE the kitchen
+    counts -- baseline or transition. Measured, the two read the same (baseline 10 of 24,
+    transition 7 of 17), so this does not shift the number; it more than doubles the sample
+    it rests on.
+
+    SERVES ARE EXCLUDED, on the rules rather than on a threshold: after a serve you have to
+    stay back for the double bounce, so it is not an opportunity to close. A return, a third
+    shot and anything later from deep all are.
 
     The transition zone is where a point is won or lost at 3.5-4.0: you have hit a ball
     from no-man's land and now have to close, or you get caught there and get dinked at
@@ -364,7 +378,9 @@ def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
     need_s = TRANSITION_ARRIVE_SUSTAIN_S
     n = n_measured = n_arrived = 0
     for s in shots:
-        if ((s.get("features") or {}).get("contact_zone")) != "transition":
+        if s.get("is_serve"):
+            continue
+        if ((s.get("features") or {}).get("contact_zone")) not in ("transition", "baseline"):
             continue
         n += 1
         f = int(s["frame"])
@@ -1586,8 +1602,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # foot -- for the reason in transition_success.
             "transition": mv_sample_size(
                 transition_success(rshots, role_fpos.get(r, {}), float(fps)),
-                sum(1 for s in rshots
-                    if ((s.get("features") or {}).get("contact_zone")) == "transition")),
+                sum(1 for s in rshots if not s.get("is_serve")
+                    and ((s.get("features") or {}).get("contact_zone"))
+                    in ("transition", "baseline"))),
             "return_in_play": mv_sample_size(
                 _in_play_block([s for s in returns if int(s["track_id"]) in tids], False),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),

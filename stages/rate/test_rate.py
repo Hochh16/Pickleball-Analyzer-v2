@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import sys
+
+import pytest
 from pathlib import Path
 
 from stages.detect_shots.detect_shots import main as detect_main
@@ -410,3 +412,38 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+def test_the_third_shot_drop_rate_maps_to_the_operators_LEVEL_BANDS():
+    """Operator, 2026-09-04: "for 2.0 to 3.0 players it should be 10 to 20% of 3rd shots.
+    for 3.5 players 30 to 40%. for 4.0 to 4.5 50 to 60%. 5.0+ should be 55 to 70%."
+
+    That is what makes the rate scorable at all. It had been a straight line -- more drops,
+    higher rating -- whose implied ideal was dropping 100% of third shots, which no level
+    does. The bands are unevenly spaced, so a single `lin` would misplace every level
+    between the two ends.
+    """
+    from stages.rate.rate import piecewise, THIRD_DROP_BANDS as B
+
+    assert piecewise(0.10, B) == pytest.approx(2.0)
+    assert piecewise(0.20, B) == pytest.approx(3.0)
+    assert piecewise(0.35, B) == pytest.approx(3.5)     # centre of his 30-40% band
+    assert piecewise(0.50, B) == pytest.approx(4.0)
+    assert piecewise(0.60, B) == pytest.approx(4.5)
+    assert piecewise(0.70, B) == pytest.approx(5.0)
+    # his 30-40% band has to land on 3.5, not merely pass through it
+    assert 3.3 <= piecewise(0.30, B) <= 3.7
+    assert 3.3 <= piecewise(0.40, B) <= 3.7
+    # ...and 50-60% inside 4.0-4.5
+    assert 4.0 <= piecewise(0.55, B) <= 4.5
+
+
+def test_piecewise_is_clamped_and_monotonic():
+    """Dropping more than the top band is not a 6.0, and dropping none is not a 0."""
+    from stages.rate.rate import piecewise, THIRD_DROP_BANDS as B
+
+    assert piecewise(0.95, B) == pytest.approx(5.0)
+    assert piecewise(0.0, B) == pytest.approx(2.0)
+    assert piecewise(None, B) is None
+    vals = [piecewise(x / 100.0, B) for x in range(0, 101)]
+    assert all(b >= a for a, b in zip(vals, vals[1:])), "must never go down"

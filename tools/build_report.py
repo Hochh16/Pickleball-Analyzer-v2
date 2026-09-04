@@ -101,7 +101,7 @@ METRIC_DISPLAY = {
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
-    "transition": ("Getting to the kitchen from mid-court", "transition"),
+    "transition": ("Getting to the kitchen after a ball from deep", "transition"),
     "dink_control": ("Dinks landing in the kitchen", "kitchen"),
     "popup": ("Dinks the opponent took above the waist", "popup"),
     "reset": ("Resets off an opponent's drive", "reset"),
@@ -290,14 +290,14 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
     warn = ("" if n >= MIN_THIRD_DECISIONS else
             f' <span class="muted small">&mdash; too few to read a drop rate from yet '
             f'(needs {MIN_THIRD_DECISIONS}). It sharpens as sessions accumulate.</span>')
-    # Operator, 2026-09-03: "I don't think you can score it, BUT is valuable to know how
-    # many are drops. In general, the higher level players will drop more but difficult to
-    # put a number to that." So: the count, the share, and that sentence -- and no target,
-    # because he declined to name one and inventing a number here would be a coaching claim
-    # we cannot support.
-    trend = (' <span class="muted small">&mdash; there is no target here: whether a drop '
-             'or a drive is right depends on the return you get. In general players drop '
-             'a higher share of third shots as they move up.</span>')
+    # The operator's own calibration, 2026-09-04. It replaces "there is no target here":
+    # he first declined to name one, then gave the bands, which is what makes this
+    # coachable rather than just countable. Kept as a range per level, because that is how
+    # he stated it -- a single target number would be a precision he did not claim.
+    trend = (' <span class="muted small">&mdash; for reference, players around 3.0 drop '
+             'about 10&ndash;20% of third shots, 3.5 about 30&ndash;40%, and 4.0&ndash;4.5 '
+             'about 50&ndash;60%. Which ball is right on the day still depends on the '
+             'return you get.</span>')
     return (f'<div class="metric">Third shots you played as a soft drop: '
             f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}{trend}</div>')
 

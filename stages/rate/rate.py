@@ -170,6 +170,24 @@ def lin(v: Optional[float], x0: float, y0: float, x1: float, y1: float
     return y0 + t * (y1 - y0)
 
 
+def piecewise(v: Optional[float], anchors: List[Tuple[float, float]]) -> Optional[float]:
+    """Clamped piecewise-linear map through (input, level) anchors, ascending by input.
+
+    `lin` fits one straight line, which is fine for a made-up scale and wrong for a
+    calibrated one: real skill bands are not evenly spaced, and forcing them onto a line
+    moves every level except the two ends.
+    """
+    if v is None:
+        return None
+    if v <= anchors[0][0]:
+        return anchors[0][1]
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        if v <= x1:
+            t = (v - x0) / (x1 - x0) if x1 != x0 else 0.0
+            return y0 + t * (y1 - y0)
+    return anchors[-1][1]
+
+
 def clamp_level(x: float) -> float:
     return max(LEVEL_MIN, min(LEVEL_MAX, x))
 
@@ -234,6 +252,11 @@ def score_strategy(user: dict, team_near: dict, n_rallies: int) -> Tuple[float, 
 
 
 MIN_THIRD_DECISIONS = 4   # fewer typed 3rd shots than this = too few to rate on
+# (share of third shots played as a drop, level) -- the operator's calibration, 2026-09-04.
+# See score_third_shot. Read as: 10% is a 2.0, 20% a 3.0, 35% a 3.5, 50-60% the 4.0-4.5
+# band, 70% a 5.0.
+THIRD_DROP_BANDS = [(0.10, 2.0), (0.20, 3.0), (0.35, 3.5),
+                    (0.50, 4.0), (0.60, 4.5), (0.70, 5.0)]
 DINK_CONTROL_MIN_N = 5    # dink landings before WHERE they land moves the dink score
 TRANSITION_MIN_N = 4      # mid-court balls we could watch afterwards, before it scores
 
@@ -274,21 +297,25 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
         "transition": trans or None,
         "per_user": True}
 
-    # THE DROP RATE NO LONGER SCORES. Operator, 2026-09-03, asked when a drive is the
-    # right third shot instead of a drop: "It depends so may be tough to do. depends on
-    # height, opponent location, depth, ... I don't think you can score it, BUT is valuable
-    # to know how many are drops. In general, the higher level players will drop more but
-    # difficult to put a number to that."
+    # THE DROP RATE SCORES AGAIN, on the operator's own calibration. He first declined to
+    # put a number on it (2026-09-03: "I don't think you can score it"), then supplied one
+    # (2026-09-04):
     #
-    # So the count and the share stay in the report with that context attached, and the
-    # rate stops driving the level. It had been scored `lin(drop, 0.1 -> 2.8, 0.7 -> 4.3)`
-    # -- more drops, higher rating, monotonically -- which encodes "a drop is always the
-    # better ball". A drive off a short or high return is the correct choice, and we cannot
-    # see the height, the return's placement or where the opponents were standing.
+    #     2.0-3.0 players   10-20% of third shots are drops
+    #     3.5               30-40%
+    #     4.0-4.5           50-60%
+    #     5.0+              55-70%
     #
-    # The category is not left empty by that: closing the transition zone is measured from
-    # position and rates it, which is why this could be removed now and not before.
+    # That is what makes it scorable: not "more drops is better" -- the old straight line,
+    # which said a 100% drop rate was the ideal -- but a rate that MATCHES a level. The
+    # bands are uneven, so a single `lin` would misplace every level between the ends;
+    # THIRD_DROP_BANDS anchors them and `piecewise` interpolates between.
+    #
+    # Note his top two bands overlap (50-60 and 55-70). That is real: above about 4.0 the
+    # drop rate stops separating players, and the curve flattens there accordingly.
     parts = []
+    if enough:
+        parts.append(clamp_level(piecewise(drop, THIRD_DROP_BANDS)))
     # Getting to the kitchen after a mid-court ball is what the transition zone asks. A
     # player who closes on most of them is doing what 4.0 describes; one who closes on few
     # is the 3.5 stuck in no-man's land.
