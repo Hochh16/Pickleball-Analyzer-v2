@@ -699,3 +699,54 @@ def test_a_reset_is_a_soft_ball_answering_a_DRIVE_and_a_block_is_the_volleyed_on
              {"is_reset": False, "is_volley": False}]
     assert blk(shots) == {"n_resets": 3, "n_blocked": 2, "n_off_the_bounce": 1}
     assert blk([]) == {"n_resets": 0, "n_blocked": 0, "n_off_the_bounce": 0}
+
+
+def test_a_popup_is_judged_by_where_the_OPPONENT_took_it():
+    """Operator, 2026-09-03, on what makes a dink a pop-up: "If the ball can be hit above
+    the opponents waist (and is not a speed up hit hard at the opponent)."
+
+    So it is not the ball's own peak -- it is the height of the ANSWER. Stage 6's
+    contact_height uses the hip line, so above the waist is its `mid` or `high`.
+    """
+    from stages.compute_metrics.compute_metrics import popup_block
+
+    def dink(frame, side="near", tid=1):
+        return {"frame": frame, "track_id": tid, "shot_type": "dink", "hitter_side": side}
+
+    def answer(frame, height, known=True, side="far"):
+        return {"frame": frame, "track_id": 9, "shot_type": "dink", "hitter_side": side,
+                "features": {"contact_height": height, "contact_height_known": known}}
+
+    fps = 60.0
+    mine = {1}
+    # taken at the shins: the dink did its job
+    r = popup_block([dink(0), answer(60, "low")], mine, fps)
+    assert (r["n"], r["n_measured"], r["n_popped"]) == (1, 1, 0)
+    # taken between hip and shoulder, and above the shoulder: both are pop-ups
+    for h in ("mid", "high"):
+        r = popup_block([dink(0), answer(60, h)], mine, fps)
+        assert r["n_popped"] == 1, h
+
+    # a hip line we could not read is not counted either way -- contact_height says "mid"
+    # both for a real waist-high ball and for a pose it could not resolve
+    r = popup_block([dink(0), answer(60, "mid", known=False)], mine, fps)
+    assert (r["n"], r["n_measured"], r["popup_frac"]) == (1, 0, None)
+
+
+def test_a_dink_that_ends_the_rally_has_no_answer_to_read():
+    """Six of the user's nine dinks on outdoor-12 are of this kind, the next opposite-side
+    contact arriving 4 to 16 seconds later. Counting them as clean would flatter the rate;
+    counting them as pop-ups would be worse. They are simply not measured."""
+    from stages.compute_metrics.compute_metrics import popup_block
+
+    fps = 60.0
+    mine = {1}
+    dink = {"frame": 0, "track_id": 1, "shot_type": "dink", "hitter_side": "near"}
+    far_late = {"frame": int(9.0 * fps), "track_id": 9, "hitter_side": "far",
+                "features": {"contact_height": "high", "contact_height_known": True}}
+    r = popup_block([dink, far_late], mine, fps)
+    assert (r["n"], r["n_measured"]) == (1, 0)
+    # ...and a reply from the SAME side is not an answer either
+    same = {"frame": 60, "track_id": 2, "hitter_side": "near",
+            "features": {"contact_height": "high", "contact_height_known": True}}
+    assert popup_block([dink, same], mine, fps)["n_measured"] == 0

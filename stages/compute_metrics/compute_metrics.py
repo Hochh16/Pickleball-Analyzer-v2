@@ -97,6 +97,9 @@ BASELINE_MIN_DIST_FT = 17.0   # within ~5ft of own baseline -> baseline [Stage 6
 # standing there is what separates arriving from a noisy sample passing through; and a shot
 # we can watch for under a second afterwards is not counted either way, because the rally
 # may simply have ended.
+# How long the opponent has to answer a dink before it is a different exchange. A dink is
+# played back inside a second; beyond three the ball has gone somewhere else.
+POPUP_ANSWER_LOOK_S = 3.0
 TRANSITION_ARRIVE_LOOK_S = 4.0
 TRANSITION_ARRIVE_SUSTAIN_S = 0.5
 TRANSITION_MIN_OBSERVE_S = 1.0
@@ -257,6 +260,56 @@ def count_by(items, key) -> Dict[str, int]:
         v = key(it)
         out[v] = out.get(v, 0) + 1
     return out
+
+
+def popup_block(all_shots: List[dict], tids: set, fps: float,
+                look_s: float = POPUP_ANSWER_LOOK_S) -> dict:
+    """Dinks the opponent got to hit ABOVE THE WAIST -- the operator's pop-up.
+
+    Operator, 2026-09-03, asked what makes a dink a pop-up: "If the ball can be hit above
+    the opponents waist (and is not a speed up hit hard at the opponent)."
+
+    So it is not judged on the ball's own peak height, which is what an arc fraction would
+    have given: it is judged on WHERE THE OPPONENT TOOK IT. Stage 6's contact_height uses
+    the hip line as its boundary, so "above the waist" is exactly its `mid` or `high`, and
+    a ball taken `low` is the dink doing its job.
+
+    The parenthesis is satisfied by construction: only shots typed `dink` are asked, and a
+    dink is soft by definition, so a speed-up driven hard at someone is never in this
+    sample.
+
+    A dink that ENDS THE RALLY has no answer to read and is not counted either way --
+    measured, 6 of the user's 9 dinks on outdoor-12 are of that kind, the next opposite-side
+    contact arriving 4 to 16 seconds later. That cuts both ways and is worth knowing: a dink
+    nobody could return does not appear here, so the rate is over dinks that CAME BACK.
+
+    A contact whose HIP LINE could not be read is not counted either way -- contact_height
+    answers "mid" both for a real waist-high ball and for a pose it could not resolve, and
+    a pop-up rate cannot afford to confuse those.
+    """
+    ss = sorted(all_shots, key=lambda s: int(s["frame"]))
+    n = n_measured = n_popped = 0
+    for i, s in enumerate(ss):
+        if s.get("shot_type") != "dink" or int(s.get("track_id", -1)) not in tids:
+            continue
+        n += 1
+        side = s.get("hitter_side")
+        answer = None
+        for x in ss[i + 1:]:
+            if int(x["frame"]) - int(s["frame"]) > look_s * fps:
+                break
+            if side and x.get("hitter_side") and x["hitter_side"] != side:
+                answer = x
+                break
+        fe = (answer or {}).get("features") or {}
+        if not answer or not fe.get("contact_height_known"):
+            continue
+        n_measured += 1
+        if fe.get("contact_height") in ("mid", "high"):
+            n_popped += 1
+    return {"n": n, "n_measured": n_measured, "n_popped": n_popped,
+            "popup_frac": round(n_popped / n_measured, 3) if n_measured else None,
+            "coverage": round(n_measured / n, 3) if n else 0.0}
 
 
 def reset_block(shots: List[dict]) -> dict:
@@ -1524,6 +1577,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             "dink_control": mv_sample_size(
                 _dink_control_block([s for s in rshots if s.get("shot_type") == "dink"]),
                 sum(1 for s in rshots if s.get("shot_type") == "dink")),
+            "popup": mv_sample_size(popup_block(shots, tids, float(fps)),
+                                    sum(1 for s in rshots if s.get("shot_type") == "dink")),
             "reset": mv_structural(reset_block(rshots),
                                    sum(1 for s in rshots if s.get("is_reset"))),
             # Closing the transition zone: position only, so it is measurable where the

@@ -62,7 +62,7 @@ CATEGORY_ELEMENTS = {
     # because a pop-up needs a height the operator has not put a number on yet.
     "dink": [("How much you dink", "partial"), ("Dink-rally length", "partial"),
              ("Knee bend (staying low)", "live"), ("Depth control", "live"),
-             ("Height control & pop-ups", "planned")],
+             ("Pop-ups", "live")],
     "volley": [("How often you volley at the net", "partial"),
                ("Block / reset", "live"), ("Put-aways", "planned"),
                ("Speed-ups & counters", "planned")],
@@ -103,6 +103,7 @@ METRIC_DISPLAY = {
     "n_returns": ("Returns of serve detected", "int"),
     "transition": ("Getting to the kitchen from mid-court", "transition"),
     "dink_control": ("Dinks landing in the kitchen", "kitchen"),
+    "popup": ("Dinks the opponent took above the waist", "popup"),
     "reset": ("Resets off an opponent's drive", "reset"),
     "serve_in_play": ("Serves that landed in", "in_play"),
     "return_in_play": ("Returns that landed in", "in_play"),
@@ -289,8 +290,16 @@ def third_shot_line(drivers: dict, match_total, n_videos: int = 1) -> str:
     warn = ("" if n >= MIN_THIRD_DECISIONS else
             f' <span class="muted small">&mdash; too few to read a drop rate from yet '
             f'(needs {MIN_THIRD_DECISIONS}). It sharpens as sessions accumulate.</span>')
+    # Operator, 2026-09-03: "I don't think you can score it, BUT is valuable to know how
+    # many are drops. In general, the higher level players will drop more but difficult to
+    # put a number to that." So: the count, the share, and that sentence -- and no target,
+    # because he declined to name one and inventing a number here would be a coaching claim
+    # we cannot support.
+    trend = (' <span class="muted small">&mdash; there is no target here: whether a drop '
+             'or a drive is right depends on the return you get. In general players drop '
+             'a higher share of third shots as they move up.</span>')
     return (f'<div class="metric">Third shots you played as a soft drop: '
-            f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}</div>')
+            f'<b>{n_drop} of {n}</b>{pct}{waiting}{ctx}{warn}{trend}</div>')
 
 
 def serve_fault_line(drivers: dict) -> str:
@@ -343,6 +352,17 @@ def fmt_metric(fmt: str, val) -> Optional[str]:
             return f"{int(val)}"
         if fmt == "shots":
             return f"{val:.1f} shots"
+        if fmt == "popup":
+            # val = {n, n_measured, n_popped, popup_frac, coverage}. Only dinks that came
+            # BACK can be read -- one nobody returned has no answer to measure -- so the
+            # denominator matters more here than anywhere.
+            if not isinstance(val, dict) or not val.get("n_measured"):
+                return None
+            nm, np_ = int(val["n_measured"]), int(val.get("n_popped") or 0)
+            pct = int(round((val.get("popup_frac") or 0) * 100))
+            # A literal dash, not an entity: fmt_metric's return is escaped by the caller.
+            return (f"{np_} of {nm} ({pct}%) of the dinks that came back — a ball "
+                    f"they can take above the waist is one you can be attacked on")
         if fmt == "kitchen":
             # val = {n, n_measured, median_depth_ft, n_in_kitchen, in_kitchen_frac, ...}.
             # A dink landing past the kitchen sits up to be attacked, so this is the

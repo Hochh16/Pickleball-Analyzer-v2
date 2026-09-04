@@ -516,6 +516,21 @@ def contact_height(impact_y: float, pose: Optional[dict]) -> str:
     return "mid"
 
 
+def contact_height_known(pose: Optional[dict]) -> bool:
+    """Was the HIP LINE actually visible -- the boundary between a ball taken low and one
+    taken above the waist?
+
+    contact_height() returns "mid" both for a genuine waist-to-chest contact and for a pose
+    it could not read, and a pop-up rate cannot tell those apart: the operator's definition
+    of a pop-up is a ball the opponent "can be hit above the waist", so an unreadable hip
+    would silently count as one.
+    """
+    if pose is None:
+        return False
+    return any(vis >= LANDMARK_VIS_FLOOR and not _nan(v)
+               for v, vis in ((pose["lhy"], pose["lhv"]), (pose["rhy"], pose["rhv"])))
+
+
 def _nan(v) -> bool:
     try:
         return math.isnan(float(v))
@@ -1342,6 +1357,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 "pre_speed_ftps": round(pre_ftps, 2) if pre_ftps is not None else None,
                 "arc_height_frac": round(arc_frac, 3) if arc_frac is not None else None,
                 "contact_height": contact_h,
+                "contact_height_known": contact_height_known(pose),
                 # technique: paddle-wrist net-ward of body at contact (+ in front,
                 # - late), normalised by shoulder width. Interpreted per shot type.
                 "contact_front": round(contact_front, 3) if contact_front is not None else None,

@@ -137,6 +137,7 @@ def _unwrap_user(uw: dict) -> dict:
         "n_returns": _v(uw.get("n_returns")) or 0,
         "return_depth": _v(uw.get("return_depth")) or {},
         "dink_control": _v(uw.get("dink_control")) or {},
+        "popup": _v(uw.get("popup")) or {},
         "reset": _v(uw.get("reset")) or {},
         "transition": _v(uw.get("transition")) or {},
         "return_in_play": _v(uw.get("return_in_play")) or {},
@@ -273,9 +274,21 @@ def score_third_shot(user: dict, match: dict) -> Tuple[float, dict]:
         "transition": trans or None,
         "per_user": True}
 
+    # THE DROP RATE NO LONGER SCORES. Operator, 2026-09-03, asked when a drive is the
+    # right third shot instead of a drop: "It depends so may be tough to do. depends on
+    # height, opponent location, depth, ... I don't think you can score it, BUT is valuable
+    # to know how many are drops. In general, the higher level players will drop more but
+    # difficult to put a number to that."
+    #
+    # So the count and the share stay in the report with that context attached, and the
+    # rate stops driving the level. It had been scored `lin(drop, 0.1 -> 2.8, 0.7 -> 4.3)`
+    # -- more drops, higher rating, monotonically -- which encodes "a drop is always the
+    # better ball". A drive off a short or high return is the correct choice, and we cannot
+    # see the height, the return's placement or where the opponents were standing.
+    #
+    # The category is not left empty by that: closing the transition zone is measured from
+    # position and rates it, which is why this could be removed now and not before.
     parts = []
-    if enough:
-        parts.append(clamp_level(lin(drop, 0.1, 2.8, 0.6, 4.3)))
     # Getting to the kitchen after a mid-court ball is what the transition zone asks. A
     # player who closes on most of them is doing what 4.0 describes; one who closes on few
     # is the 3.5 stuck in no-man's land.
@@ -298,6 +311,7 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
     mean_len = (match.get("rally_length_shots", {}) or {}).get("mean")
     knee = (sm.get("technique", {}) or {}).get("knee_bend_dink")   # {n, pct_good, ...}
     control = user.get("dink_control") or {}
+    popup = user.get("popup") or {}
     drivers = {"dink_count": dink_n,
                "dink_frac": round(dink_frac, 4) if dink_frac is not None else None,
                "mean_rally_length": mean_len,
@@ -305,7 +319,10 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
                # WHERE the dinks land, which is the quality half of this category. A dink
                # past the kitchen sits up to be attacked; the operator's own definition
                # puts the target at the kitchen line plus two feet.
-               "dink_control": control or None}
+               "dink_control": control or None,
+               # Dinks the opponent got to take above the waist -- the operator's own test
+               # for a pop-up, read off THEIR contact height rather than the ball's peak.
+               "popup": popup or None}
     if dink_frac is None:
         return NEUTRAL_PRIOR_LEVEL, drivers
     base = lin(dink_frac, 0.0, 2.8, 0.4, 4.3)          # more dinking -> softer game
@@ -315,6 +332,10 @@ def score_dink(user: dict, match: dict) -> Tuple[float, dict]:
             and control.get("in_kitchen_frac") is not None):
         base = (base + clamp_level(lin(control["in_kitchen_frac"],
                                        0.25, 2.6, 0.85, 4.5))) / 2.0
+    # Popping the ball up is the thing a dink is supposed to avoid, so it scores DOWN.
+    if (popup.get("n_measured", 0) >= DINK_CONTROL_MIN_N
+            and popup.get("popup_frac") is not None):
+        base = (base + clamp_level(lin(popup["popup_frac"], 0.15, 4.4, 0.70, 2.6))) / 2.0
     sustain = lin(mean_len, 3.0, 0.0, 10.0, 0.3) or 0.0
     # getting low enough on dinks (knee bend in the operator's 35-50 deg band) = a bump
     stance = 0.0
