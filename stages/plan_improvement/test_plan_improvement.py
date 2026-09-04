@@ -424,3 +424,49 @@ def run_smoke_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_smoke_test())
+
+
+def test_the_third_shot_is_coachable_on_EITHER_of_its_halves():
+    """Operator, 2026-09-04: "if you can coach on it then the 3rd shot needs to be from not
+    coached yet to a coachable section."
+
+    The gate counted only the drop-or-drive decisions we could type from a landing -- 3 of
+    the user's 8 third shots -- so the whole category sat in "not coached yet" while its
+    other half was measured, scoring, and had nothing wrong with it. Closing to the kitchen
+    needs no landing and no shot type: it is the pose front foot and a clock, watchable on
+    7 of those same 8.
+    """
+    from stages.plan_improvement.plan_improvement import (_category_events,
+                                                          MIN_EVENTS_FOR_COACHING)
+
+    # too few typed decisions on their own -> not coachable
+    thin = {"n_third_decisions": 3, "transition": {"n_measured": 0}}
+    assert _category_events("third_shot", thin) < MIN_EVENTS_FOR_COACHING
+    # ...but enough watched third shots rescues the category
+    with_trans = {"n_third_decisions": 3, "transition": {"n_measured": 7}}
+    assert _category_events("third_shot", with_trans) >= MIN_EVENTS_FOR_COACHING
+    # and it is a MAX, not a sum: two thin halves do not add up to a coachable whole
+    both_thin = {"n_third_decisions": 3, "transition": {"n_measured": 3}}
+    assert _category_events("third_shot", both_thin) == 3
+    # a missing transition block must not crash the count
+    assert _category_events("third_shot", {"n_third_decisions": 5}) == 5
+
+
+def test_third_shot_coaching_LEADS_with_the_half_we_can_stand_behind():
+    """The drop rate reaches the player through a classifier that finds 43% of their drops.
+    Closing is measured from position. So when both are present the finding opens on
+    closing, and when the drop rate is unreadable it is simply not mentioned."""
+    from stages.plan_improvement.plan_improvement import finding_and_drills
+
+    dr = {"transition": {"n_measured": 7, "n_arrived": 3, "arrived_frac": 0.43},
+          "third_shot_drop_rate": None}
+    finding, drills = finding_and_drills("third_shot", dr)
+    assert "3 of your 7 third shots" in finding
+    assert "drop about" not in finding, "an unreadable drop rate must not be coached"
+    assert any(d["name"] == "Get-to-the-line" for d in drills)
+
+    dr["third_shot_drop_rate"] = 0.25
+    finding, _ = finding_and_drills("third_shot", dr)
+    assert finding.index("third shots (43%)") < finding.index("drop about 25%"), \
+        "closing is the half we can stand behind, so it leads"
+    assert "3.5 drop 30-40%" in finding, "the operator's bands give the number meaning"

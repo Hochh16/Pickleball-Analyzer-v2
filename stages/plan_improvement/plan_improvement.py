@@ -52,6 +52,10 @@ OPERATOR_CONF_FLOOR = 0.6        # real-data dim confidence below this = limiter
 # indication"; below this bar a category is routed to developing_capability ("not
 # enough seen yet") rather than presented as a weakness to fix or a strength.
 MIN_EVENTS_FOR_COACHING = 6
+# Third shots we watched the player away from, before closing to the kitchen is coached.
+# Lower than MIN_EVENTS_FOR_COACHING because there is no classifier in this path: it is
+# the pose front foot and a clock, so the count is the only thing limiting it.
+MIN_TRANSITION_FOR_COACHING = 4
 ASSESS_CONF_FLOOR = 0.1          # real-data dim confidence below this = a DATA GAP, not a
                                  # coaching signal -> routed to developing_capability
 UNMEASURED_REASON = {
@@ -298,16 +302,38 @@ def finding_and_drills(dim: str, dr: dict) -> Tuple[str, List[dict]]:
             keys.append("paddle_ready")
         keys.append("split_step_recover")     # court coverage is part of strategy
     elif dim == "third_shot":
+        # CLOSING comes first when it is measured. It is the half of this category that
+        # rests on position rather than on shot typing, so it is the half we can actually
+        # stand behind -- the drop rate reaches the player through a classifier that finds
+        # 43% of their drops, and understates it by a known amount.
+        trans = dr.get("transition") or {}
+        arrived = trans.get("arrived_frac")
+        parts = []
+        if arrived is not None and (trans.get("n_measured") or 0) >= MIN_TRANSITION_FOR_COACHING:
+            na, nm = trans.get("n_arrived", 0), trans["n_measured"]
+            tv = _verdict(arrived, 0.35, 0.65,
+                          "so you are usually still back when the next ball comes",
+                          "so you get up about half the time",
+                          "so you are closing on most of them")
+            parts.append(f"You reached the kitchen line after {na} of your {nm} third "
+                         f"shots ({_pct(arrived)}), {tv}. The third shot is what buys "
+                         f"that trip; if you are not making it, the drop is not doing "
+                         f"its job.")
+            keys.append("get_to_line")
         drop = dr.get("third_shot_drop_rate")
         dv = _verdict(drop, 0.35, 0.65,
                       "so you drive far more third shots than you drop them",
                       "so it's roughly a coin-flip rather than a drop you rely on",
                       "so you're favouring the drop, which is what higher levels do")
-        finding = ((f"On the third shot you drop the ball about {_pct(drop)} of the "
-                    f"time, {dv}.")
-                   if dv else
-                   ("A third-shot drop you can trust — used by choice, not chance — "
-                    "is the skill that moves 3.5 players to 4.0."))
+        if dv:
+            # Operator's calibration, 2026-09-04: 3.0 players drop 10-20% of third shots,
+            # 3.5 30-40%, 4.0-4.5 50-60%.
+            parts.append(f"You drop about {_pct(drop)} of third shots, {dv} — players "
+                         f"around 3.5 drop 30-40% and 4.0s 50-60%.")
+        if not parts:
+            parts.append("A third-shot drop you can trust — used by choice, not chance — "
+                         "is the skill that moves 3.5 players to 4.0.")
+        finding = " ".join(parts)
         # Third-shot-specific drills only. transition_resets belongs to Strategy and
         # soft_game_targets to Dink (operator) -- they were duplicated here.
         keys.append("third_shot_drop_reps")
@@ -443,9 +469,15 @@ def _category_events(name: str, drivers: dict) -> Optional[int]:
         "serve_return": drivers.get("n_serves"),
         "forehand": drivers.get("forehand_count"),
         "backhand": drivers.get("backhand_count"),
-        # third shot: the user's own deep drop-or-drive decisions (a 5-min clip
-        # yields only a handful -- coaching a rate off 1 is meaningless).
-        "third_shot": drivers.get("n_third_decisions"),
+        # Third shot: EITHER of its two halves is enough to coach on, so the count is
+        # whichever we have more of. The drop-or-drive decisions are the ones we could
+        # type from a landing, and a 5-min clip yields a handful -- coaching a rate off 1
+        # is meaningless. But closing to the kitchen after the third ball is measured from
+        # POSITION, needs no landing at all, and is watchable on nearly every third shot
+        # (7 of the operator's 8). Counting only the decisions held the whole category in
+        # "not coached yet" while half of it was measured and scoring.
+        "third_shot": max(drivers.get("n_third_decisions") or 0,
+                          ((drivers.get("transition") or {}).get("n_measured") or 0)),
     }.get(name)
 
 
