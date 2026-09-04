@@ -333,38 +333,29 @@ def reset_block(shots: List[dict]) -> dict:
 
 def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
                        fps: float) -> dict:
-    """Of the balls you played from DEEP, how often did you get to the kitchen line?
+    """Of the shots given, how often did the player then get to the kitchen line?
 
-    Operator, 2026-09-04: "does getting to the kitchen line numbers include if the person
-    goes directly there from the baseline area without stopping in the transition zone?"
+    The caller decides WHICH shots to ask about. It asks the player's THIRD SHOTS --
+    operator, 2026-09-04, correcting an earlier scope of "any ball from deep": "It's
+    getting to the kitchen after any 3rd shot from anywhere." That is the third shot's
+    whole purpose. You drop (or drive) the third ball so that you can close; whether you
+    closed IS whether the third shot succeeded, which is why it belongs in this category
+    and scores it.
 
-    It did not, and that was wrong: a player who drops from the baseline and closes all the
-    way in one move is doing exactly the right thing, and asking only about balls struck
-    from mid-court made them invisible. Now every ball struck from OUTSIDE the kitchen
-    counts -- baseline or transition. Measured, the two read the same (baseline 10 of 24,
-    transition 7 of 17), so this does not shift the number; it more than doubles the sample
-    it rests on.
-
-    SERVES ARE EXCLUDED, on the rules rather than on a threshold: after a serve you have to
-    stay back for the double bounce, so it is not an opportunity to close. A return, a third
-    shot and anything later from deep all are.
-
-    The transition zone is where a point is won or lost at 3.5-4.0: you have hit a ball
-    from no-man's land and now have to close, or you get caught there and get dinked at
-    your feet. USA Pickleball rates it, and it was the last unbuilt element of the
-    third-shot category.
+    "From anywhere" is meant literally -- no zone filter. A player already at the kitchen
+    when they play the third ball has, by definition, made the transition; 11 of the 51
+    third shots across the operator's videos are struck from there.
 
     It is measured off POSITION ONLY -- no ball, no bounce, no speed -- which is why it is
-    reachable when so much else is not: the front foot is available for every one of the
-    operator's 28 mid-court shots across six videos.
+    reachable when so much else is not. All 8 of the user's third shots are watchable.
 
     Two things it has to get right, both learned the hard way:
 
     THE POSITION SOURCE. `fpos` must be the merged POSE front foot, not the bbox foot from
-    players.parquet, which places a far-side player about 10 ft closer to the net than
-    they are (measured: a far player on their own baseline reads 33-35 against a true 44).
-    Off the bbox this metric read 81% for the far pair against 29% for the near pair --
-    pure projection bias, and it would have been reported as a skill gap.
+    players.parquet, which places a far-side player about 10 ft closer to the net than they
+    are (measured: a far player on their own baseline reads 33-35 against a true 44). Off
+    the bbox this read 81% for the far pair against 29% for the near pair -- pure
+    projection bias, and it would have been reported as a skill gap.
 
     SUSTAINED, NOT EVER. "Was the player within the kitchen depth at ANY frame in the next
     four seconds" is a max over ~240 noisy samples and is decided by the worst one. They
@@ -378,10 +369,6 @@ def transition_success(shots: List[dict], fpos: Dict[int, Tuple[float, float]],
     need_s = TRANSITION_ARRIVE_SUSTAIN_S
     n = n_measured = n_arrived = 0
     for s in shots:
-        if s.get("is_serve"):
-            continue
-        if ((s.get("features") or {}).get("contact_zone")) not in ("transition", "baseline"):
-            continue
         n += 1
         f = int(s["frame"])
         seen = sorted(g for g in fpos if f < g <= f + look)
@@ -1538,6 +1525,9 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         n_attributed_shots += len(rshots)
         rserves = [s for s in rshots if s.get("is_serve")]
         # role serve-faults: rallies this role served AND end_reason serve-fault
+        # THIS role's third shots -- the shot after the return, whoever served. The
+        # transition question is asked of these and nothing else (see transition_success).
+        _role_thirds = [s for s in all_third_shots if int(s.get("track_id", -1)) in tids]
         _rfaults = [ra for ra in rallies
                     if role_of(ra.get("server_track_id")) == r
                     and ra["end_reason"] == "serve-fault"]
@@ -1601,10 +1591,8 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
             # ball-derived third-shot metrics are not. Uses role_fpos -- the POSE front
             # foot -- for the reason in transition_success.
             "transition": mv_sample_size(
-                transition_success(rshots, role_fpos.get(r, {}), float(fps)),
-                sum(1 for s in rshots if not s.get("is_serve")
-                    and ((s.get("features") or {}).get("contact_zone"))
-                    in ("transition", "baseline"))),
+                transition_success(_role_thirds, role_fpos.get(r, {}), float(fps)),
+                len(_role_thirds)),
             "return_in_play": mv_sample_size(
                 _in_play_block([s for s in returns if int(s["track_id"]) in tids], False),
                 sum(1 for s in returns if int(s["track_id"]) in tids)),

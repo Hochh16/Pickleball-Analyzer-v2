@@ -101,7 +101,7 @@ METRIC_DISPLAY = {
     "n_serves": ("Rallies served", "int"),
     "n_serves_detected": ("Serve contacts detected", "int"),
     "n_returns": ("Returns of serve detected", "int"),
-    "transition": ("Getting to the kitchen after a ball from deep", "transition"),
+    "transition": ("Third shots after which you got to the kitchen", "transition"),
     "dink_control": ("Dinks landing in the kitchen", "kitchen"),
     "popup": ("Dinks the opponent took above the waist", "popup"),
     "reset": ("Resets off an opponent's drive", "reset"),
