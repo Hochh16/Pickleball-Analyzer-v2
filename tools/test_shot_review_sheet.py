@@ -240,3 +240,60 @@ def test_correcting_only_the_hitter_keeps_our_side(tmp_path):
         rows = list(csv.DictReader(f))
     assert rows[0]["hitter_role"] == "opp_a"
     assert rows[0]["hitter_side"] == ours_side
+
+
+def _disputed_clip(tmp_path):
+    """A clip whose stored truth disagrees with our type on one shot and agrees on another."""
+    import json as _json
+    c = _clip(tmp_path)
+    cl = _json.loads((c / "classified.json").read_text(encoding="utf-8"))
+    shots = sorted(cl["shots"], key=lambda s: s["frame"])
+    store = {"schema_version": 1, "video": "x.mp4", "false_positives": [],
+             "shots": [{"t_sec": float(shots[0]["t_sec"]),
+                        "type": "drop" if shots[0].get("shot_type") != "drop" else "drive",
+                        "source": "test", "authority": 3},
+                       {"t_sec": float(shots[1]["t_sec"]),
+                        "type": shots[1].get("shot_type") or "drive",
+                        "source": "test", "authority": 3}]}
+    return c, store
+
+
+def test_a_disputed_sheet_ships_PREFILLED_and_is_not_mistaken_for_your_work(tmp_path,
+                                                                            monkeypatch):
+    """Two rules that fight each other unless the guard knows about the prefill.
+
+    A disputed row carries the operator's OWN stored label in CORRECT_TYPE, because on the
+    full sheet a blank means "you are right" and every row here is one where he has already
+    said we are not. But the overwrite guard counts any content in a CORRECT_ column as his
+    work -- so a freshly written sheet reported "40 filled-in rows" and refused to
+    regenerate itself. Untouched means CORRECT_TYPE still equals what ALREADY KNOWN shows.
+    """
+    from openpyxl import load_workbook
+    c, store = _disputed_clip(tmp_path)
+    monkeypatch.setattr(srs, "rows_for", srs.rows_for)   # keep the real one
+    import tools.truth_store as ts
+    monkeypatch.setattr(ts, "known", lambda clip: store)
+    monkeypatch.setattr(srs, "disputed_only",
+                        lambda rows, clip: [dict(r, their_type=store["shots"][0]["type"])
+                                            for r in rows[:1]])
+    out = c / "_labeling" / "shot_review_disputed.xlsx"
+    srs.main([str(c), "--disputed"])
+    ws = load_workbook(out).active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    assert "why we said that" in col, "the operator adjudicates, so show our reasoning"
+    assert str(ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"]).value or "").strip(), \
+        "a disputed row must ship with his own label already in it"
+
+    # regenerating an UNTOUCHED prefilled sheet must be allowed
+    srs.main([str(c), "--disputed"])
+
+    # ...and changing one must still be protected
+    wb = load_workbook(out)
+    ws = wb.active
+    ws.cell(row=hdr + 2, column=col["CORRECT_TYPE"], value="lob")
+    wb.save(out)
+    with pytest.raises(SystemExit) as e:
+        srs.main([str(c), "--disputed"])
+    assert "Refusing to overwrite" in str(e.value)

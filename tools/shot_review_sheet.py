@@ -550,12 +550,33 @@ def main(argv=None) -> int:
                         if str(ws.cell(row=r, column=1).value or "").strip() == "#"), None)
             filled = 0
             if hdr:
+                def _col(name):
+                    return next((c for c in range(1, ws.max_column + 1)
+                                 if str(ws.cell(row=hdr, column=c).value or "").strip()
+                                 == name), None)
                 cols = [c for c in range(1, ws.max_column + 1)
                         if "CORRECT" in str(ws.cell(row=hdr, column=c).value or "").upper()]
                 cols += [c for c in range(1, ws.max_column + 1)
                          if str(ws.cell(row=hdr, column=c).value or "").strip() == "notes"]
+                # A DISPUTED sheet ships with CORRECT_TYPE prefilled (the operator's own
+                # stored label), so "has content" is not evidence of his work -- a freshly
+                # written sheet looked 40 rows reviewed and refused to regenerate itself.
+                # A prefilled row is one whose CORRECT_TYPE still equals the label printed
+                # in ALREADY KNOWN and whose other edit columns are empty.
+                c_type, c_known = _col("CORRECT_TYPE"), _col("ALREADY KNOWN")
+                others = [c for c in cols if c != c_type]
                 for r in range(hdr + 2, ws.max_row + 1):
-                    if any(str(ws.cell(row=r, column=c).value or "").strip() for c in cols):
+                    if any(str(ws.cell(row=r, column=c).value or "").strip()
+                           for c in others):
+                        filled += 1
+                        continue
+                    t = str(ws.cell(row=r, column=c_type).value or "").strip().lower()                         if c_type else ""
+                    if not t:
+                        continue
+                    known_txt = (str(ws.cell(row=r, column=c_known).value or "").lower()
+                                 if c_known else "")
+                    # untouched iff it still matches what we prefilled from the store
+                    if not known_txt.split("  ")[0].strip() == t:
                         filled += 1
             if filled:
                 msg = (f"{out} already has {filled} filled-in row(s). "
