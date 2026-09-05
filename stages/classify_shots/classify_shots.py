@@ -969,6 +969,33 @@ def classify_type(is_serve, arc_frac, contact_h, post_ftps, pre_ftps, zone,
             lofted = high_lob = (post_ftps is not None and post_ftps <= dink_max)
         if zone == "baseline":
             # from DEEP: a soft ball landing at the net is the third-shot drop.
+            # ARC WAS ADDED HERE AND REMOVED AGAIN, 2026-09-05. A lofted ball from deep
+            # that lands short of the kitchen is a drop that did not get there, which is
+            # the operator's own class -- a FAILED drop is still a drop -- and this branch
+            # reads landing zone alone, so every such ball is a drive.
+            #
+            # Arc is the better cue it looked like. On his CORRECTED labels it ranks a drop
+            # above a drive 75% of the time against 66% for the anchored speed, and orders
+            # the types properly: lob 0.42, drop 0.30, dink 0.16, drive 0.14. (An earlier
+            # session measured arc as "too little to pay" -- against the labels before his
+            # 9 not-a-shot removals and 4 corrections, so that reading is superseded.)
+            #
+            # It still does not pay, for two measured reasons:
+            #
+            # 1. Swept through this branch on the real stage, the whole gain is ONE shot at
+            #    ONE threshold: 0.27 -> 98/134, 0.29 -> 98, 0.31 -> 99, 0.33 -> 98. A
+            #    single-point spike with dips either side is a threshold fitted to noise.
+            #    Below 0.27 drop recall rises to 42% but drive falls 73% -> 69%: the
+            #    straight trade this repo keeps finding.
+            #
+            # 2. Arc and speed are NOT independent cues to combine -- they correlate at
+            #    r = -0.47 on the same shot (a slow ball arcs more). Measured on the 59
+            #    drop/drive shots carrying both: arc alone 78%, arc AND slow 78%, arc OR
+            #    slow 78%. Combining adds exactly nothing.
+            #
+            # 78% against 66% for guessing is the ceiling for this decision from trajectory
+            # shape, and the branch structure cannot reach it with a threshold. What is
+            # left is the swing, which the operator names and the camera cannot see.
             return ("drop", 0.78) if land_zone == "kitchen" else ("drive", 0.78)
         # hitter at/near the net (kitchen or transition)
         if land_zone == "kitchen":
