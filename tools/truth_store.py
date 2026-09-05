@@ -513,10 +513,26 @@ def _has_operator_marks(ws, hdr: int, col: dict) -> bool:
 
 
 def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
-    """A filled-in shot_review.xlsx: corrections, confirmations, and missed shots."""
+    """Every filled-in review sheet for this clip, oldest first so the newest wins.
+
+    There is more than one now. `--disputed` writes shot_review_disputed.xlsx, holding only
+    the shots the operator had already typed and we disagreed with -- 40 rows instead of
+    119 -- and importing only the full sheet silently ignored the one he actually filled
+    in. A PARTIAL sheet is safe here by construction: each row is matched to a stored shot
+    and anything absent from the sheet is left alone.
+    """
+    sheets = sorted((clip / "_labeling").glob("shot_review*.xlsx"),
+                    key=lambda q: q.stat().st_mtime)         if (clip / "_labeling").is_dir() else []
+    got: Counter = Counter()
+    for sheet in sheets:
+        got.update(_import_review_sheet(doc, clip, sheet))
+    return dict(got)
+
+
+def _import_review_sheet(doc: dict, clip: Path, p: Path) -> Dict[str, int]:
+    """One filled-in review sheet: corrections, confirmations, and missed shots."""
     from openpyxl import load_workbook
-    from tools.shot_review_sheet import OUT_NAME, parse_clock
-    p = clip / "_labeling" / OUT_NAME
+    from tools.shot_review_sheet import parse_clock
     if not p.exists():
         return {}
     ws = load_workbook(p, data_only=True).active
@@ -531,7 +547,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         col.setdefault(need, {"CORRECT_TYPE": 7, "CORRECT_VOLLEY": 8, "notes": 9}[need])
     c = Counter()
     claimed: set = set()
-    src = f"shot_review.xlsx / {clip.name}"
+    src = f"{p.name} / {clip.name}"
     if not _has_operator_marks(ws, hdr, col):
         # A blank row means "the operator looked at this and agreed" -- but ONLY in a sheet
         # the operator actually worked through. An untouched, freshly built sheet is all
@@ -539,7 +555,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
         # highest authority and every accuracy figure for that clip would then be us scoring
         # ourselves. This is the same class of bug as the label file that shadowed a fuller
         # set: it does not error, it just quietly turns into a good score.
-        print(f"  {clip.name}: shot_review.xlsx has no operator marks -- not imported "
+        print(f"  {clip.name}: {p.name} has no operator marks -- not imported "
               f"(a prepopulated sheet is our output, not truth)")
         return {}
     parsed = []
