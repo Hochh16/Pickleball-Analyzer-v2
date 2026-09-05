@@ -232,6 +232,10 @@ REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresho
 # thresholds are deliberately loose, because they are not each meant to be decisive.
 # A real shot lost costs more than a junk one kept: it breaks `shots = volleys + bounces`
 # and deletes play, while junk only inflates a count.
+# The ball did not REVERSE through this contact. A real one turns it a median 141 degrees,
+# a ball that merely flew past a player 6. Loose on purpose: it is the SAME-SIDE next
+# contact that carries the decision (see reject_pass_by_contacts), not this.
+PASS_BY_TURN_MAX_DEG = 90.0
 WEAK_TURN_MAX_DEG = 70.0      # the ball barely changed direction
 WEAK_DIST_MIN_PX = 100.0      # ref px @1920, scaled by frame_width/1920: nobody was near it
 WEAK_CONF_MAX = 0.55          # and the impact itself was a poor one
@@ -924,6 +928,66 @@ def restore_serves(shots, discards, side_by_track, formation, players_px, bx, by
 # has one inside 2.0s -- so the cut holds anywhere from 0.75s to 2.0s. 1.5s sits in the
 # middle of that band rather than on either edge of it.
 OWN_FEET_BOUNCE_S = 1.5
+
+
+def reject_pass_by_contacts(shots: List[dict],
+                            turn_max_deg: float = PASS_BY_TURN_MAX_DEG):
+    """MEASURED AND NOT WIRED IN -- kept because the SIGNAL is real and the next attempt
+    should start from here rather than from the idea.
+
+    Drop a contact the ball PASSED, when the next contact is on the same side.
+
+    The operator's own account of what these are, from his review: "Confusing opp_a with
+    ball moving towards opp_b before shot is taken." "Ball passed by opponent's partner
+    near the net on its way to near side." "Ball was not hit by anyone yet and heading to
+    opp_b." One ball, two detections: a phantom at the player it flew past, then the real
+    contact at the player who actually played it.
+
+    So the tell is STRUCTURAL, not a threshold on the phantom itself -- which is why every
+    threshold tried on its own features traded one for one. Every rally shot crosses the
+    net, so consecutive contacts alternate sides. Two in a row on the SAME side means the
+    ball never went across between them, and the first is the one that did not happen.
+
+    The turn bound only has to say the ball did not REVERSE: a real contact turns it a
+    median 141 degrees, these a median 6. Measured over the two reviewed clips, and stable
+    rather than fitted -- 20, 45 and 90 degrees all lose nothing:
+
+        turn < 20 deg   5 junk removed, 0 real lost
+        turn < 45 deg   6 junk removed, 0 real lost
+        turn < 90 deg   7 junk removed, 0 real lost
+
+    A SERVE is never dropped here: a serve followed by a same-side contact is a return we
+    missed, not a ball that flew past someone.
+
+    WHY IT IS NOT WIRED IN. Those numbers are from the two clips that HAVE his shot-by-shot
+    review. Run through the pipeline on all four harness clips it loses real play:
+
+        before the filter chain   -5 real shots kept, serve recall 0.86 -> 0.79,
+                                  shot types -2 and -3, junk_in_rallies UP
+        after the filter chain    -4 real shots kept, shot types +1 and -2
+
+    Two separate lessons in that. The measurement was taken on shots as they reach
+    classified.json, and applying it BEFORE the filters is a different, larger population --
+    dropping from it changes which contacts the later filters and the serve structure ever
+    see. And moving it to the end fixed that but not the rest, because the cost lands on
+    outdoor-7 and court A, the two clips with no review to measure against.
+
+    What would make it shippable is more reviewed clips, not a better threshold: the rule
+    has no free parameter to tune (20, 45 and 90 degrees all give 0 real lost on the
+    measured clips).
+    """
+    kept, dropped = [], []
+    for i, s in enumerate(shots):
+        nxt = shots[i + 1] if i + 1 < len(shots) else None
+        turn = s.get("direction_change_deg")
+        if (nxt is not None and not s.get("is_serve")
+                and s.get("hitter_side") and nxt.get("hitter_side")
+                and s["hitter_side"] == nxt["hitter_side"]
+                and turn is not None and turn < turn_max_deg):
+            dropped.append(s)
+        else:
+            kept.append(s)
+    return kept, dropped
 
 
 def reject_weak_contacts(shots: List[dict], dist_min_px: float,

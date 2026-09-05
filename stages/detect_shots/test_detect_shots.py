@@ -591,3 +591,33 @@ def test_a_contact_missing_any_of_the_three_is_never_weak():
         kept, dropped = reject_weak_contacts([s], 100.0)
         assert dropped == [], f"{missing}=None must not count as a doubt"
         assert kept == [s]
+
+
+def test_a_ball_that_flew_past_someone_is_identified_by_the_NEXT_contact():
+    """Operator's account of what these are: "Confusing opp_a with ball moving towards
+    opp_b before shot is taken." One ball, two detections -- a phantom at the player it
+    flew past, then the real contact at the player who played it.
+
+    Every rally shot crosses the net, so consecutive contacts alternate sides; two in a row
+    on the same side means the ball never went across between them. Not wired into the
+    stage -- see the docstring for what it costs on the clips without a review -- but the
+    rule itself has to keep working, because it is where the next attempt starts.
+    """
+    from stages.detect_shots.detect_shots import reject_pass_by_contacts
+
+    def sh(frame, side, turn, serve=False):
+        return {"frame": frame, "hitter_side": side, "direction_change_deg": turn,
+                "is_serve": serve}
+
+    # near, near: the ball never crossed, and the first one did not turn it -> phantom
+    kept, dropped = reject_pass_by_contacts([sh(0, "near", 5.0), sh(60, "near", 150.0)])
+    assert [s["frame"] for s in dropped] == [0]
+    # alternating sides is normal play, whatever the turn
+    assert reject_pass_by_contacts([sh(0, "near", 5.0), sh(60, "far", 150.0)])[1] == []
+    # same side but the ball REVERSED: a real contact, e.g. a shot we missed in between
+    assert reject_pass_by_contacts([sh(0, "near", 150.0), sh(60, "near", 150.0)])[1] == []
+    # a SERVE followed by a same-side contact is a return we missed, not a fly-past
+    assert reject_pass_by_contacts([sh(0, "near", 5.0, serve=True),
+                                    sh(60, "near", 150.0)])[1] == []
+    # the last shot has no successor to judge it by
+    assert reject_pass_by_contacts([sh(0, "near", 5.0)])[1] == []
