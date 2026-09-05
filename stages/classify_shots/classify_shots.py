@@ -1131,7 +1131,22 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
         _b3full = pd.read_parquet(b3p, columns=["frame", "z_ft", "court_y_ft"])
         court_y_by_frame = {int(f): float(y) for f, y in
                             zip(_b3full["frame"], _b3full["court_y_ft"]) if y == y}
-        b3 = pd.read_parquet(b3p, columns=["frame", "z_ft"])
+        # A CLIPPED k IS A FAILED MEASUREMENT, NOT A BALL ON THE GROUND. build_ball_3d
+        # computes z = H(1 - 1/k) and clips k at 1.0, so z collapses to exactly 0 whenever
+        # the size measurement falls out of range. bounced_between_3d takes the MINIMUM
+        # over 30-60 samples, so one of these turns a volley into a ground shot -- its own
+        # docstring names this as the largest single cause of the missed volleys.
+        #
+        # k identifies them exactly: of the frames reading z == 0, 100% have k clipped, and
+        # of the frames reading z > 0, 0% do (12-13% of all frames, both reviewed clips).
+        # So drop them rather than believe them. This is NOT the threshold change that was
+        # tried and reverted -- that argued about where the ground is; this stops reading
+        # samples that never measured anything.
+        cols = ["frame", "z_ft"] + (["k"] if "k" in pd.read_parquet(
+            b3p).columns else [])
+        b3 = pd.read_parquet(b3p, columns=cols)
+        if "k" in b3.columns:
+            b3 = b3[b3["k"] > 1.0 + 1e-9]
         z_by_frame = {int(f): float(z) for f, z in zip(b3["frame"], b3["z_ft"])
                       if z == z}
         log.info(f"ball height available for {len(z_by_frame)} frames; "

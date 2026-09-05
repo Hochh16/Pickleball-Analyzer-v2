@@ -76,6 +76,9 @@ POST_STAGES = [
 # corrected 2026-08-01). Keyed by source video, not by clip folder, because several analysed
 # folders share one video and the truth belongs to the video.
 VIDEO_TRUTH = {
+    # volleys_truth 17 and dinks_truth 18 are the 2026-07-22 acceptance figures. BOTH are
+    # superseded per-clip by the operator's shot-by-shot review where one exists (see
+    # below); they remain only as the fallback for a clip he has not reviewed.
     "PB 5 minute outdoor.mp4": {"shots_truth": 98, "volleys_truth": 17, "bounces_truth": 81,
                                 # dinks_truth is the 2026-07-22 acceptance figure for
                                 # pb_5_minute_outdoor-2. The operator's own shot-by-shot
@@ -277,6 +280,14 @@ def measure(clip: Path) -> Dict[str, object]:
             if whole_clip:
                 for field, ty in (("dinks_truth", "dink"), ("serves_truth", "serve")):
                     m[field] = sum(1 for s in typed if s.get("type") == ty)
+                # VOLLEYS the same way, and for the same reason dinks are done this way.
+                # The table carried volleys_truth = 17 from the 2026-07-22 acceptance run
+                # while the operator's own shot-by-shot review of this video judges every
+                # one of its 103 live shots and counts 23. Scoring a volley change against
+                # 17 made a move toward his count look like an over-count away from it.
+                judged = [s for s in typed if s.get("volley") is not None]
+                if judged:
+                    m["volleys_truth"] = sum(1 for s in judged if s.get("volley"))
             # What the rally gate is actually for: keeping known junk OUT of the rally
             # stream while leaving real play in. Neither `fp_emitted` nor `in_rally_shots`
             # could see it -- the first reads classified.json, which the gate never
