@@ -1773,6 +1773,14 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             kept_sa.append(s)
         shots = kept_sa
 
+    n_pass_by = 0
+    if params.get("contamination_filter"):
+        shots, _pb = reject_pass_by_contacts(shots)
+        n_pass_by = len(_pb)
+        for w in _pb:
+            discard(w["frame"], "passed_by",
+                    direction_change_deg=w.get("direction_change_deg"))
+
     for s in shots:
         s.setdefault("is_between_point", False)
     for i, s in enumerate(shots):
