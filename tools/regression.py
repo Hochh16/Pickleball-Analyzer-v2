@@ -164,6 +164,21 @@ def measure(clip: Path) -> Dict[str, object]:
         m["wrong_player"] = sc.get("wrong_player")
         m["real_shots_kept"] = len(shots) - sc["false_positives"]
 
+    # ...but prefer the TRUTH STORE when it has adjudicated this clip. shot_review.json is
+    # a per-clip snapshot that stops being written once the store exists: outdoor-7's is
+    # dated 2026-08-18 and lists 34 false positives against the store's 54, so
+    # real_shots_kept = len(shots) - 34 counted the removal of junk the snapshot had never
+    # heard of as the loss of real play -- and it did, on a filter that provably removed
+    # none. Third stale-truth trap in this table after dinks_truth and volleys_truth.
+    try:
+        from tools.shot_precision_score import score_clip as _prec
+        _rows = _prec(clip)["rows"]
+        if any(r["kind"] != "unexplained" for r in _rows):
+            m["real_shots_kept"] = sum(1 for r in _rows if r["kind"] == "real")
+            m["fp_emitted"] = sum(1 for r in _rows if r["kind"] == "known junk")
+    except (OSError, ValueError, KeyError, StopIteration):
+        pass
+
     # --- operator point windows (in-rally vs between-point) --------------------
     if (clip / "truth.json").exists():
         try:

@@ -932,8 +932,8 @@ OWN_FEET_BOUNCE_S = 1.5
 
 def reject_pass_by_contacts(shots: List[dict],
                             turn_max_deg: float = PASS_BY_TURN_MAX_DEG):
-    """MEASURED AND NOT WIRED IN -- kept because the SIGNAL is real and the next attempt
-    should start from here rather than from the idea.
+    """MEASURED AND NOT WIRED IN -- kept because the signal is real and the next attempt
+    should start from these numbers rather than from the idea again.
 
     Drop a contact the ball PASSED, when the next contact is on the same side.
 
@@ -959,22 +959,18 @@ def reject_pass_by_contacts(shots: List[dict],
     A SERVE is never dropped here: a serve followed by a same-side contact is a return we
     missed, not a ball that flew past someone.
 
-    WHY IT IS NOT WIRED IN. Those numbers are from the two clips that HAVE his shot-by-shot
-    review. Run through the pipeline on all four harness clips it loses real play:
+    WHY IT IS NOT WIRED IN. Applied as a post-hoc filter on the finished shot list it
+    removes 14 junk detections and NO real play, on all four clips carrying his labels --
+    that part held up under every check. PLACEMENT was a red herring twice: before the
+    filter chain it cost 5 real shots and 7 points of serve recall, and before
+    structure_points 4 more, both CASCADE losses from a shorter list changing what the
+    later filters and the serve structure see. Applied last, after the point structure,
+    real_shots_kept does not move at all.
 
-        before the filter chain   -5 real shots kept, serve recall 0.86 -> 0.79,
-                                  shot types -2 and -3, junk_in_rallies UP
-        after the filter chain    -4 real shots kept, shot types +1 and -2
-
-    Two separate lessons in that. The measurement was taken on shots as they reach
-    classified.json, and applying it BEFORE the filters is a different, larger population --
-    dropping from it changes which contacts the later filters and the serve structure ever
-    see. And moving it to the end fixed that but not the rest, because the cost lands on
-    outdoor-7 and court A, the two clips with no review to measure against.
-
-    What would make it shippable is more reviewed clips, not a better threshold: the rule
-    has no free parameter to tune (20, 45 and 90 degrees all give 0 real lost on the
-    measured clips).
+    What it costs is SHOT TYPES: 73% -> 71%, three correctly typed shots for five junk
+    detections. A removed detection that was standing in for a labelled shot takes that
+    shot's type with it. Since the whole reason to want this is that removing junk should
+    LIFT the types, a change that lowers them fails on its own terms.
     """
     kept, dropped = [], []
     for i, s in enumerate(shots):
