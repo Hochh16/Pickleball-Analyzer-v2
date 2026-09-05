@@ -236,6 +236,13 @@ REFERENCE_WIDTH_PX = 1920.0  # resolution the px defaults were tuned at; thresho
 # a ball that merely flew past a player 6. Loose on purpose: it is the SAME-SIDE next
 # contact that carries the decision (see reject_pass_by_contacts), not this.
 PASS_BY_TURN_MAX_DEG = 90.0
+# ...and the same test looking BACK, which needs its own bound. The operator: "I clearly
+# see the shot before and after and there is noone hitting the ball on the not-a-shot
+# between those correct shots." A ball hit from the far side that flies past the far
+# partner gives far(real), far(phantom), near(real) -- the same-side neighbour is the one
+# BEFORE, and a forward-only test sees textbook alternation and passes it. Tied to the
+# forward bound at a single value it costs shot types; measured separately it does not.
+PASS_BY_PREV_TURN_MAX_DEG = 45.0
 WEAK_TURN_MAX_DEG = 70.0      # the ball barely changed direction
 WEAK_DIST_MIN_PX = 100.0      # ref px @1920, scaled by frame_width/1920: nobody was near it
 WEAK_CONF_MAX = 0.55          # and the impact itself was a poor one
@@ -931,7 +938,8 @@ OWN_FEET_BOUNCE_S = 1.5
 
 
 def reject_pass_by_contacts(shots: List[dict],
-                            turn_max_deg: float = PASS_BY_TURN_MAX_DEG):
+                            turn_max_deg: float = PASS_BY_TURN_MAX_DEG,
+                            prev_turn_max_deg: float = PASS_BY_PREV_TURN_MAX_DEG):
     """MEASURED AND NOT WIRED IN -- kept because the signal is real and the next attempt
     should start from these numbers rather than from the idea again.
 
@@ -974,15 +982,18 @@ def reject_pass_by_contacts(shots: List[dict],
     """
     kept, dropped = [], []
     for i, s in enumerate(shots):
-        nxt = shots[i + 1] if i + 1 < len(shots) else None
         turn = s.get("direction_change_deg")
-        if (nxt is not None and not s.get("is_serve")
-                and s.get("hitter_side") and nxt.get("hitter_side")
-                and s["hitter_side"] == nxt["hitter_side"]
-                and turn is not None and turn < turn_max_deg):
-            dropped.append(s)
-        else:
-            kept.append(s)
+        side = s.get("hitter_side")
+        nxt = shots[i + 1] if i + 1 < len(shots) else None
+        prv = shots[i - 1] if i else None
+
+        def same(n):
+            return n is not None and side and n.get("hitter_side") == side
+
+        gone = (turn is not None and not s.get("is_serve")
+                and ((same(nxt) and turn < turn_max_deg)
+                     or (same(prv) and turn < prev_turn_max_deg)))
+        (dropped if gone else kept).append(s)
     return kept, dropped
 
 
