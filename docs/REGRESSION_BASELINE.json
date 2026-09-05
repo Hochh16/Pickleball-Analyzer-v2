@@ -37,8 +37,8 @@
    "rally_end_truth": 17,
    "rally_end_within_2s": 13,
    "rally_end_median_err_s": 1.17,
-   "shot_type_correct": 62,
-   "shot_type_labelled": 103,
+   "shot_type_correct": 63,
+   "shot_type_labelled": 104,
    "shot_type_sample_was_missed": 19
   },
   "pb_3_min_indoor_1_court_b": {

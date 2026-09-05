@@ -1514,7 +1514,7 @@
   },
   {
    "t_sec": 204.32,
-   "type": null,
+   "type": "drive",
    "hitter": "user",
    "side": "near",
    "volley": true,
@@ -1525,7 +1525,7 @@
    "seq": 1788317978,
    "key": "shot_review.xlsx / pb_5_minute_outdoor-7#77",
    "not_a_shot": true,
-   "notes": ""
+   "notes": "operator: shot (drive/volley) at 3:24.5 by the user"
   },
   {
    "t_sec": 204.75,
@@ -2785,5 +2785,5 @@
    "superseded_by": "the review sheet covering this span"
   }
  ],
- "updated_at_utc": "2026-09-05T13:23:29.212874+00:00"
+ "updated_at_utc": "2026-09-05T19:04:58.889323+00:00"
 }
