@@ -97,6 +97,70 @@ def parse_clock(s) -> Optional[float]:
     return None
 
 
+def disputed_only(rows: List[dict], clip: Path) -> List[dict]:
+    """Keep only the shots the operator has ALREADY typed and where we disagree.
+
+    A full sheet is 120+ rows and asks him to re-watch a whole video. The question that
+    actually matters is much smaller: the drop rate now feeds his rating, and it is read
+    through a classifier that finds 43% of his drops. Of his 23 drops we call 11 of them
+    drives -- and measured, those 11 sit with the DRIVES on speed (39.6 ft/s against 41.1
+    for agreed drives and 25.8 for agreed drops) while sitting with the DROPS on where
+    they were struck from (20.3 ft from the net against 20.1 and 13.0).
+
+    So they are hit from the baseline at drive pace, which is exactly the shot he said he
+    judges on the swing: "A bad drop vs a drive can be a bit fuzzy at times and I would
+    have looked at body mechanics to distinguish them." Only he can settle those, and
+    there are about 15 of them rather than 120.
+
+    Each row carries WHY we disagreed, so he is not guessing at our reasoning, and
+    CORRECT_TYPE is PREFILLED with his own stored label -- see build(). In the full sheet a
+    blank row means "you are right"; here that would silently flip the very labels being
+    checked.
+    """
+    try:
+        from tools.truth_store import known as _known, MATCH_TOL_S as _TOL
+        store = _known(clip)
+    except Exception:                                    # noqa: BLE001 - optional input
+        return []
+    labelled = [t for t in store.get("shots", [])
+                if t.get("type") and not t.get("not_a_shot")]
+    out = []
+    for r in rows:
+        near = [t for t in labelled if abs(float(t["t_sec"]) - r["t"]) <= _TOL]
+        if not near:
+            continue
+        t = min(near, key=lambda x: abs(float(x["t_sec"]) - r["t"]))
+        if (t.get("type") or "").lower() == (r["our_type"] or "").lower():
+            continue
+        r = dict(r, their_type=t.get("type"))
+        out.append(r)
+    return out
+
+
+def _why(s: dict) -> str:
+    """The measurements behind our call, in the operator's own units."""
+    fe = s.get("features") or {}
+    bits = []
+    spd = fe.get("speed_used_ftps")
+    if spd is not None:
+        bits.append(f"{spd:.0f} ft/s")
+    ff = fe.get("contact_front_foot_y")
+    hx = (s.get("hitter_court_xy_ft") or [None, None])[1]
+    cy = ff if ff is not None else hx
+    if cy is not None:
+        bits.append(f"struck {abs(float(cy) - 22.0):.0f} ft from the net")
+    land = fe.get("landing_court_y")
+    if land is not None and s.get("hitter_side") in ("near", "far"):
+        d = (float(land) - 22.0) if s["hitter_side"] == "near" else (22.0 - float(land))
+        bits.append(f"landed {d:.0f} ft past the net" if d > 0 else "no landing across")
+    else:
+        bits.append("no landing found")
+    arc = fe.get("arc_height_frac")
+    if arc is not None:
+        bits.append(f"arc {arc:.2f}")
+    return "; ".join(bits)
+
+
 def rows_for(clip: Path) -> List[dict]:
     """One row per detected shot, numbered exactly as tools/annotate_full numbers them."""
     shots = json.loads((clip / "classified.json").read_text(encoding="utf-8"))["shots"]
@@ -117,16 +181,24 @@ def rows_for(clip: Path) -> List[dict]:
             "side": s.get("hitter_side") or "?",
             "our_type": (s.get("shot_type") or "?"),
             "our_volley": "yes" if s.get("is_volley") else "no",
+            # Why we said what we said -- only rendered on the disputed sheet, where the
+            # operator is being asked to adjudicate rather than to label.
+            "why": _why(s),
         })
     return out
 
 
-def build(clip: Path, out_path: Path) -> Path:
+def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.worksheet.datavalidation import DataValidation
 
     rows = rows_for(clip)
+    if disputed:
+        rows = disputed_only(rows, clip)
+        if not rows:
+            raise SystemExit(f"{clip.name}: nothing disputed -- we agree with every label "
+                             f"you have given for this video.")
     wb = Workbook()
     ws = wb.active
     ws.title = "shots"
@@ -141,12 +213,20 @@ def build(clip: Path, out_path: Path) -> Path:
     thin = Side(style="thin", color="BBBBBB")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    ws["A1"] = f"Shot review — {clip.name}"
+    ws["A1"] = (f"Disputed shots — {clip.name}" if disputed
+                else f"Shot review — {clip.name}")
     ws["A1"].font = title
-    ws["A2"] = ("Watch _labeling/<clip>_annotated.mp4. Each shot is numbered on screen and "
-                "labelled with the type we assigned.")
-    ws["A3"] = ("Fill CORRECT_TYPE only where we are WRONG. A BLANK row is recorded as you "
-                "CONFIRMING we are right — so if you stop part-way, say where you stopped.")
+    ws["A2"] = (("These are shots you have ALREADY typed where our reading disagrees. "
+                 "CORRECT_TYPE is prefilled with YOUR label -- leave it to confirm, change "
+                 "it if the video says otherwise.")
+                if disputed else
+                ("Watch _labeling/<clip>_annotated.mp4. Each shot is numbered on screen and "
+                 "labelled with the type we assigned."))
+    ws["A3"] = (("The 'why we said' column is our measurement, so you can see what we were "
+                 "going on. It is not an argument -- if the swing says drop, it is a drop.")
+                if disputed else
+                ("Fill CORRECT_TYPE only where we are WRONG. A BLANK row is recorded as you "
+                 "CONFIRMING we are right — so if you stop part-way, say where you stopped."))
     ws["A6"] = ("Rows with a green ALREADY KNOWN value have been reviewed before — SKIP THEM "
                 "unless that stored answer is wrong.")
     ws["A4"] = ("Missed a shot entirely? Use the blank rows at the bottom: time + "
@@ -209,6 +289,10 @@ def build(clip: Path, out_path: Path) -> Path:
     headers = ["#", "time", "your rally", "hitter", "side", "our_type", "our_volley",
                "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "CORRECT_TYPE",
                "CORRECT_VOLLEY", "CORRECT_HITTER", "CORRECT_SIDE", "notes"]
+    if disputed:
+        # What we were going on, so the operator is adjudicating rather than guessing at
+        # our reasoning. Placed right after our type, where it explains it.
+        headers.insert(headers.index("our_volley") + 1, "why we said that")
     if rally_truth:
         # The operator counted the shots in each rally. Showing their count against ours says
         # exactly which rally to hunt in for a shot we missed -- the alternative is watching
@@ -257,8 +341,17 @@ def build(clip: Path, out_path: Path) -> Path:
             n_known += 1
             kn = prev["type"] + ("  (agrees)" if prev["type"] == r["our_type"]
                                  else f"  (you said {prev['type']})")
-        vals = [r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
-                r["our_type"], r["our_volley"], kn, "", "", "", "", ""]
+        # On a disputed sheet CORRECT_TYPE is PREFILLED with the operator's own stored
+        # label. Blank means "you are right" to the reader, and every row here is one where
+        # he has already said we are not -- so a blank would silently flip the very labels
+        # being checked, and skipping a row he could not judge would be indistinguishable
+        # from adjudicating against himself.
+        vals = ([r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
+                 r["our_type"], r["our_volley"], r.get("why", ""), kn, "", "",
+                 r.get("their_type", ""), "", "", ""]
+                if disputed else
+                [r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
+                 r["our_type"], r["our_volley"], kn, "", "", "", "", ""])
         for c, v in enumerate(vals, start=1):
             cell = ws.cell(row=rr, column=c, value=v)
             cell.font = body
@@ -434,10 +527,15 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--force", action="store_true",
                     help="overwrite an existing sheet even if it has been filled in")
+    ap.add_argument("--disputed", action="store_true",
+                    help="only the shots you have already typed where our reading "
+                         "disagrees, with the measurement behind our call and your own "
+                         "label prefilled (about 15 rows instead of 120)")
     a = ap.parse_args(argv)
     if not a.clip.is_dir():
         raise SystemExit(f"not a folder: {a.clip}")
-    out = a.out or a.clip / "_labeling" / OUT_NAME
+    out = a.out or a.clip / "_labeling" / (
+        OUT_NAME.replace(".xlsx", "_disputed.xlsx") if a.disputed else OUT_NAME)
     if a.score:
         return score(a.clip, out)
     if not (a.clip / "classified.json").exists():
@@ -469,9 +567,19 @@ def main(argv=None) -> int:
             raise
         except Exception:                                # noqa: BLE001
             pass
-    p = build(a.clip, out)
-    n = len(rows_for(a.clip))
-    print(f"wrote {p}  ({n} shots prepopulated, {N_BLANK_ROWS} blank rows for missed ones)")
+    p = build(a.clip, out, disputed=a.disputed)
+    if a.disputed:
+        d = disputed_only(rows_for(a.clip), a.clip)
+        print(f"wrote {p}  ({len(d)} disputed shot(s); your own label is prefilled, so "
+              f"leaving a row alone CONFIRMS it)")
+        from collections import Counter
+        pairs = Counter(f"you said {r['their_type']}, we say {r['our_type']}" for r in d)
+        for k, n in pairs.most_common():
+            print(f"    {n:>3}  {k}")
+    else:
+        n = len(rows_for(a.clip))
+        print(f"wrote {p}  ({n} shots prepopulated, {N_BLANK_ROWS} blank rows for missed "
+              f"ones)")
     try:
         from tools.truth_store import known as _k
         kn = sum(1 for s in _k(a.clip).get("shots", []) if s.get("type"))
