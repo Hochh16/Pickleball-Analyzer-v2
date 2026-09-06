@@ -243,6 +243,13 @@ PASS_BY_TURN_MAX_DEG = 90.0
 # BEFORE, and a forward-only test sees textbook alternation and passes it. Tied to the
 # forward bound at a single value it costs shot types; measured separately it does not.
 PASS_BY_PREV_TURN_MAX_DEG = 45.0
+# The player barely moved their wrist through the contact -- they did not swing. Measured
+# over the operator's adjudications: real contacts peak at a median 0.093 body-heights per
+# frame, the ones he calls not-a-shot at 0.061, and below 0.020 it is 15 junk against 4
+# real. Used as one DOUBT among several, never alone, for the reason every other single cue
+# here failed: on its own it is a one-for-one trade.
+WEAK_WRIST_MAX = 0.020        # measured; not currently used to drop anything
+WRIST_WINDOW_FRAMES = 4
 WEAK_TURN_MAX_DEG = 70.0      # the ball barely changed direction
 WEAK_DIST_MIN_PX = 100.0      # ref px @1920, scaled by frame_width/1920: nobody was near it
 WEAK_CONF_MAX = 0.55          # and the impact itself was a poor one
@@ -997,6 +1004,48 @@ def reject_pass_by_contacts(shots: List[dict],
     return kept, dropped
 
 
+def wrist_motion(poses, players_by_frame, frame: int, tid: int,
+                 half_window: int = WRIST_WINDOW_FRAMES):
+    """Peak per-frame wrist displacement around a contact, as a fraction of the player's
+    own height in pixels. None when the pose cannot be read.
+
+    This is the operator's own test made measurable. Asked why he can tell a non-shot at a
+    glance: "I clearly see the shot before and after and there is noone hitting the ball on
+    the not-a-shot between those correct shots." A human reads the SWING, and a phantom is
+    a player standing still while the ball goes past them.
+
+    Normalised by bbox height so a far player is not judged by being small in frame -- the
+    same trap that made a positional metric read 81% for the far pair.
+
+    An earlier session measured wrist speed as unable to separate a DRIVE from a dink. That
+    is a far finer question than "did they swing at all", so it does not settle this one:
+    measured over the operator's adjudications, real contacts peak at a median 0.093 body-
+    heights per frame against 0.061 for the ones he calls not-a-shot.
+    """
+    best = None
+    h = []
+    for g in range(frame - half_window, frame + half_window + 1):
+        for p in players_by_frame.get(g, ()):
+            if int(p["track_id"]) == tid:
+                x1, y1, x2, y2 = p["bbox"]
+                if abs(y2 - y1) > 1:
+                    h.append(abs(y2 - y1))
+    if not h:
+        return None
+    height = sorted(h)[len(h) // 2]
+    prev = None
+    for g in range(frame - half_window, frame + half_window + 1):
+        pts = poses.get((g, tid))
+        if not pts:
+            prev = None
+            continue
+        if prev is not None:
+            d = max(math.hypot(a[0] - b[0], a[1] - b[1]) for a in pts for b in prev)
+            best = d if best is None else max(best, d)
+        prev = pts
+    return (best / height) if (best is not None and height) else None
+
+
 def reject_weak_contacts(shots: List[dict], dist_min_px: float,
                          turn_max_deg: float = WEAK_TURN_MAX_DEG,
                          conf_max: float = WEAK_CONF_MAX):
@@ -1011,6 +1060,19 @@ def reject_weak_contacts(shots: List[dict], dist_min_px: float,
         dchg = s.get("direction_change_deg")
         dist = s.get("player_distance_px")
         conf = s.get("confidence")
+        # WRIST MOTION WAS ADDED HERE AS A FOURTH DOUBT AND REMOVED AGAIN. It is recorded
+        # on every shot (see wrist_motion) because the signal is real and the next attempt
+        # should start from it, but it does not pay as the stage measures it:
+        #
+        #   * as a fourth doubt, 3-of-4, it fires on ONE shot across the harness.
+        #   * leading, wrist<0.020 plus any one other doubt, it is 1 junk for 1 real.
+        #
+        # And it is much weaker HERE than in the lab that found it, which is the lead
+        # worth following: the lab read wrist positions straight out of poses.parquet and
+        # got 15 junk for 4 real, while index_poses drops any wrist under
+        # WRIST_VISIBILITY_FLOOR, leaving the measurement on 247 of 365 shots and the
+        # signal at 3 junk for 1 real. The floor is discarding the frames that carry it --
+        # a still wrist and an unseen wrist are not the same thing.
         weak = (dchg is not None and dchg < turn_max_deg
                 and dist is not None and dist > dist_min_px
                 and conf is not None and conf < conf_max)
@@ -1569,6 +1631,10 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
             "turn_rate_deg": round(float(turn[f]), 1),
             "speed_change_ratio": round(float(sratio[f]), 3),
             "confidence": round(conf, 3),
+            "wrist_motion": (round(_wm, 4)
+                             if (_wm := wrist_motion(poses, players_by_frame, int(f),
+                                                     int(p["track_id"]))) is not None
+                             else None),
         })
 
     # --- Net-side alternation filter (real ball only). Rejects ball-handling
