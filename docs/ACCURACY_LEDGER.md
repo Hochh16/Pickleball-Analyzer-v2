@@ -1563,3 +1563,59 @@ from **ball speed + receiver location + where it WOULD have landed**:
 - ball taken out of the air from **transition/baseline** → **drive**
 - if a player started at the baseline, the ball went **over their head**, and they
   ran back to hit it out of the air from deep → the PRIOR shot was a **lob**.
+
+---
+
+## FUTURE CAPABILITY — DETECT THE PADDLE (deferred, 2026-09-05)
+
+**Why it is on the list.** Junk detections are the largest remaining accuracy cost: they
+inflate every count in the report and every shot type. The operator, on why he can spot
+them instantly: *"I clearly see the shot before and after and there is noone hitting the
+ball on the not-a-shot between those correct shots."* He is reading a paddle. We are not —
+pose gives wrists, shoulders and ankles, and **there is no paddle landmark anywhere in the
+pipeline**, so "did the ball touch a paddle" has no direct measurement to make.
+
+Seven substitutes have been measured against the operator's own adjudications and all sit
+at roughly a one-for-one trade of real play for junk:
+
+| substitute | junk cut : real lost |
+|---|---|
+| ball-to-wrist distance, absolute px | 1.1 |
+| ball-to-wrist distance, in body-heights | 0.6–1.0 |
+| ball direction change at the contact | 1.1–1.3 |
+| impact confidence | 1.0 |
+| ball height at the contact | 1.2 (and junk sits HIGHER than real play) |
+| a bounce coincident with the contact | inert — Stage 5.5 suppresses these by construction |
+| the ball retracing its incoming line | 0.1–0.4, worse than chance |
+| wrist motion (did they swing) | strong on the pre-filter population, nothing left after it |
+
+Proximity cannot work **in principle**, and the numbers say so plainly: junk detections sit
+a median 0.171 body-heights from the wrist against 0.205 for real shots — the junk is
+CLOSER. A ball passing near a player is exactly what manufactures the false positive, so
+the cue that would reject it is the cue that created it.
+
+**It is feasible.** A paddle is about 0.23 body-heights long, which in this footage is:
+
+| clip | near-side paddle | far-side paddle | ball, for scale |
+|---|---|---|---|
+| pb_5_minute_outdoor-12 | ~86 px | ~35 px | 6–14 px |
+| pb_3_min_indoor_1_court_c | ~162 px | ~65 px | 10–26 px |
+
+So a paddle is roughly **6x the size of the ball**, and TrackNet already locates the ball to
+a 4.9 px median. Resolution is not the obstacle.
+
+**What it would cost.** A second detector (paddle bounding boxes) and the labelled data to
+train it — which is different work from the shot review the operator already does, since it
+needs boxes rather than timestamps. Inference is added to a pipeline where build_ball_3d is
+already ~98% of local post-processing, so throughput has to be part of the design.
+
+**What it would buy.** A direct answer to the one question every substitute is trying to
+approximate, and with it the residue of junk that no ball-side rule can reach. It would also
+give the swing a rigid object to track, which the wrist alone does not provide at this
+distance.
+
+**Do it as its own stage, after the current accuracy work settles.** Note that the
+association radius today is 0.5 body-heights (ASSOC_BBOX_HEIGHT_FRAC), more than twice a
+paddle's actual reach — deliberately generous to absorb tracking error. Tightening it toward
+real paddle reach was measured as part of the table above and does not pay on its own; it
+would only pay alongside an actual paddle position.
