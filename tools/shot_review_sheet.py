@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -313,6 +314,27 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
                     "marked 'between points' falls outside every rally you described — those "
                     "are the likeliest NOT_A_SHOT rows.")
         ws["A9"].font = note
+
+    # WHICH SHOT LIST THIS SHEET NUMBERS, and whether the video agrees with it. The `#`
+    # column is a position in the sorted shot list, so any change to detection renumbers
+    # every row after it -- and the operator hit exactly that: a sheet built from a 77-shot
+    # list against a video rendered from 74, "the shot numbers and times off for all".
+    # Neither artefact said which list it came from, so the mismatch was only discoverable
+    # by trying to use them together. Row hr-1 is free in both header layouts.
+    _cls = clip / "classified.json"
+    _vid = clip / "_labeling" / f"{clip.name}_annotated.mp4"
+    if _cls.exists():
+        _when = dt.datetime.fromtimestamp(_cls.stat().st_mtime)
+        _msg = (f"Numbered against the {len(rows_for(clip))}-shot list in classified.json "
+                f"({_when:%Y-%m-%d %H:%M}). ")
+        if not _vid.exists():
+            _msg += f"No annotated video yet — python -m tools.annotate_full {clip}"
+        elif _vid.stat().st_mtime < _cls.stat().st_mtime:
+            _msg += ("WARNING: the annotated video is OLDER than that list, so its numbers "
+                     "will NOT match this sheet — go by the TIME column, or re-render it.")
+        else:
+            _msg += "The annotated video matches, so its numbers line up with this sheet."
+        ws.cell(row=hr - 1, column=1, value=_msg).font = note
 
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=hr, column=c, value=h)
