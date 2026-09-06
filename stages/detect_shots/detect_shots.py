@@ -1067,12 +1067,18 @@ def reject_weak_contacts(shots: List[dict], dist_min_px: float,
         #   * as a fourth doubt, 3-of-4, it fires on ONE shot across the harness.
         #   * leading, wrist<0.020 plus any one other doubt, it is 1 junk for 1 real.
         #
-        # And it is much weaker HERE than in the lab that found it, which is the lead
-        # worth following: the lab read wrist positions straight out of poses.parquet and
-        # got 15 junk for 4 real, while index_poses drops any wrist under
-        # WRIST_VISIBILITY_FLOOR, leaving the measurement on 247 of 365 shots and the
-        # signal at 3 junk for 1 real. The floor is discarding the frames that carry it --
-        # a still wrist and an unseen wrist are not the same thing.
+        # THE VISIBILITY FLOOR WAS THE SUSPECT AND IS NOT THE CAUSE. index_poses drops any
+        # wrist under WRIST_VISIBILITY_FLOOR, which left the measurement on 247 of 365
+        # shots, so the swing was given its own unfiltered read of poses.parquet: coverage
+        # 68% -> 99% and the signal DISAPPEARED (real p10 0.172 against junk 0.165). The
+        # floor was discarding noise, not signal -- a low-visibility wrist jitters, and the
+        # jitter reads as motion. All four combinations of floor on/off against bbox-height
+        # and pose-height normalisation were measured; the best is 3 junk for 2 real.
+        #
+        # The real explanation is the population. The lab that found 15 junk for 4 real ran
+        # over 140 not-real detections BEFORE the pass-by rules shipped; the same clips now
+        # hold 48, and the junk the swing test was finding is largely the junk those rules
+        # already remove. There is no independent signal left for it to add.
         weak = (dchg is not None and dchg < turn_max_deg
                 and dist is not None and dist > dist_min_px
                 and conf is not None and conf < conf_max)
