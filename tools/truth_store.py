@@ -500,7 +500,7 @@ def _has_operator_marks(ws, hdr: int, col: dict) -> bool:
     added by hand (a time with no row number, i.e. a shot we missed entirely).
     """
     marks = [col[k] for k in ("CORRECT_TYPE", "CORRECT_VOLLEY", "NOT_A_SHOT", "RALLY_END",
-                              "notes") if k in col]
+                              "END_REASON", "notes") if k in col]
     for r in range(hdr + 1, ws.max_row + 1):
         n = ws.cell(row=r, column=1).value
         if isinstance(n, str) and not str(n).strip().isdigit():
@@ -532,7 +532,7 @@ def import_review_xlsx(doc: dict, clip: Path) -> Dict[str, int]:
 def _import_review_sheet(doc: dict, clip: Path, p: Path) -> Dict[str, int]:
     """One filled-in review sheet: corrections, confirmations, and missed shots."""
     from openpyxl import load_workbook
-    from tools.shot_review_sheet import parse_clock
+    from tools.shot_review_sheet import END_REASON_CODES, parse_clock
     if not p.exists():
         return {}
     ws = load_workbook(p, data_only=True).active
@@ -618,6 +618,32 @@ def _import_review_sheet(doc: dict, clip: Path, p: Path) -> Dict[str, int]:
         if "RALLY_END" in col and str(ws.cell(row=r, column=col["RALLY_END"]).value
                                       or "").strip().lower().startswith("y"):
             flags["rally_end"] = True
+        # HOW the point ended, from its own dropdown. The reason used to live in the notes,
+        # where rally_end_score regexed it back out. A reason is only ever given on the
+        # ending shot, so giving one marks the end as well.
+        end_reason = None
+        if "END_REASON" in col:
+            er = str(ws.cell(row=r, column=col["END_REASON"]).value or "").strip().lower()
+            if er:
+                flags["rally_end"] = True
+                end_reason = END_REASON_CODES.get(er)
+        if flags["rally_end"]:
+            # Recorded BEFORE the row's type is resolved: an ending shot the operator adds in
+            # the blank rows may carry RALLY_END and END_REASON but no CORRECT_TYPE, and the
+            # type logic below skips an untyped row -- which silently dropped the end.
+            ends = doc.setdefault("rally_ends", [])
+            ex_end = next((x for x in ends if abs(float(x["t_sec"]) - t) < 0.5), None)
+            if ex_end is None:
+                entry = {"t_sec": round(t, 2), "source": src, "notes": notes}
+                if end_reason:
+                    entry["reason"] = end_reason
+                ends.append(entry)
+                c["rally_end"] += 1
+            elif end_reason and ex_end.get("reason") != end_reason:
+                # sheets import oldest first, so the latest review's reason is the one kept
+                ex_end["reason"] = end_reason
+                ex_end["reason_source"] = src
+                c["rally_end_reason"] += 1
         detected_row = n not in (None, "")
         row_key = (f"{src}#{str(n).strip()}" if detected_row else f"{src}@{t:.2f}")
         ty = corr or (known_prev.split("  ")[0] if known_prev else "") or ours
@@ -642,11 +668,6 @@ def _import_review_sheet(doc: dict, clip: Path, p: Path) -> Dict[str, int]:
         if vol is None and not corr and str(ws.cell(row=r, column=c_ov).value or "").strip():
             vol = str(ws.cell(row=r, column=c_ov).value).strip().lower() == "yes"
         detected = n not in (None, "")
-        if flags["rally_end"]:
-            if not any(abs(x["t_sec"] - t) < 0.5 for x in doc.setdefault("rally_ends", [])):
-                doc["rally_ends"].append({"t_sec": round(t, 2), "source": src,
-                                          "notes": notes})
-                c["rally_end"] += 1
         if flags["third_shot_drop"]:
             doc.setdefault("third_shot_drops", [])
             if not any(abs(x - t) < 0.5 for x in doc["third_shot_drops"]):

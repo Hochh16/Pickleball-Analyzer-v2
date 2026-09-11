@@ -140,10 +140,16 @@ Field notes:
 
 - `rallies` is **ordered by `start_frame` ascending**; `rally_id` is the
   index in that order.
-- `start_frame` = the serve shot's frame. `end_frame` = `max(last shot's
-  frame, ending bounce's frame)` — extends through the rally-ending bounce
-  if one exists, so the rally's frame span covers the visible
-  end-of-point event.
+- `start_frame` = the serve shot's frame. `end_frame` = the last shot's
+  frame, extended to the ending bounce's frame by **at most
+  `ENDING_BOUNCE_MAX_SEC` (2.0 s)** — `rally_end_frame()`. A bounce later
+  than that is almost never the ending ball: after the last shot, the last
+  detected bounce is usually a player bouncing the ball between points
+  (across nine clips 65% of ends reached >1.5 s past the last shot to it,
+  27% >5 s). The cap is load-bearing downstream — this window scopes every
+  Stage 8 positional metric, so uncapped it counted post-point walking as
+  live play. Court C end time vs the operator's rally-over: +2.98 s ->
+  +0.41 s. Operator decision, 2026-09-11.
 - `shot_ids`: shot_ids belonging to this rally, in frame order. Always
   contains the serve as the first element.
 - `serve_shot_id`: the `shot_id` of the rally's serve (always
@@ -289,6 +295,23 @@ Apply rules in order (first match wins):
 - The single bounce for `net-or-short` and `ball-not-returned`;
 - `null` for `ball-off-frame`, `unknown`, and `serve-fault` (no-bounce
   signal branches).
+
+**Override — a measured NET end (real ball only).** When `rally_ends.json`
+(tools/detect_rally_ends.py) holds a trusted `net` end whose `by_shot_t` is
+a shot in this rally (`net_end_for_rally`: joined on the shot, not a time
+window; the latest match wins), the reason from rules 2-7 is replaced with
+`net-or-short` — or `serve-fault` on a one-shot rally with no measured
+landing — at confidence `NET_END_CONFIDENCE` (0.85). A measured serve
+landing (rule 1) is never overridden, and `ending_bounce_id` is kept so
+`end_frame` does not move. `end_signals` records `reason_source`
+(`"bounces"` | `"rally_ends_net"`), `reason_before_net_end`, `net_end_t_sec`
+and `net_end_by_shot_id`. Stage 8 charges a hitter error to
+`net_end_by_shot_id` when present rather than to the rally's last shot: a
+contact detected after a dead ball is not the shot that lost the point.
+Why: rule 3 calls a net ball from the side of the last bounce relative to
+the last hitter, and that bounce is the one most often missed at a rally's
+end; the net detector found 9 of the operator's 10 net ends where rules
+2-7 found 2. End reason 8/23 -> 14/23 (2026-09-10).
 
 > **DECISION (split zero-bounce from one-bounce).** Per review,
 > zero-bounce-no-return (`ball-off-frame`) and one-bounce-no-return

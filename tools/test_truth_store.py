@@ -304,3 +304,38 @@ def test_both_rally_end_facts_are_kept_but_counted_once():
     assert "not-returned" in shot_end["notes"]
     # a rally-level end with no shot mark near it still stands on its own
     assert any(e["t_sec"] == 40.00 for e in doc["rally_ends"])
+
+
+def test_the_end_reason_dropdown_lands_as_a_structured_reason(tmp_path):
+    """HOW a point ended used to go in the notes and be regexed back out; END_REASON stores it
+    as a field. Two guards besides: a reason on its own marks the end, and an ending shot the
+    operator ADDS in the blank rows with no type is still recorded -- the type logic skips an
+    untyped row, which silently dropped exactly that case."""
+    import tools.shot_review_sheet as srs
+    from tools.test_shot_review_sheet import _clip
+    from openpyxl import load_workbook
+    clip = _clip(tmp_path)
+    sheet = clip / "_labeling" / srs.OUT_NAME
+    srs.build(clip, sheet)
+    wb = load_workbook(sheet)
+    ws = wb.active
+    hdr = next(r for r in range(1, 30) if ws.cell(row=r, column=1).value == "#")
+    col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
+           for i in range(1, ws.max_column + 1)}
+    assert "END_REASON" in col
+    # detected shot #2 (5.0s): a reason alone, RALLY_END left blank
+    ws.cell(row=hdr + 3, column=col["END_REASON"], value="into net")
+    # an ending shot we never detected, added at the bottom with no CORRECT_TYPE
+    blank = next(r for r in range(hdr, ws.max_row + 1)
+                 if str(ws.cell(row=r, column=1).value or "").startswith("SHOTS WE MISSED"))
+    ws.cell(row=blank + 1, column=col["time"], value="0:09.50")
+    ws.cell(row=blank + 1, column=col["RALLY_END"], value="y")
+    ws.cell(row=blank + 1, column=col["END_REASON"], value="winner")
+    wb.save(sheet)
+
+    doc = ts.empty("v.mp4")
+    ts.import_review_xlsx(doc, clip)
+    ends = {round(float(e["t_sec"]), 1): e for e in doc["rally_ends"]}
+    assert ends[5.0]["reason"] == "net"
+    assert 9.5 in ends, "an added ending shot with no type was dropped"
+    assert ends[9.5]["reason"] == "not-returned"

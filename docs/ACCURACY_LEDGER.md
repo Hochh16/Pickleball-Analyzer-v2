@@ -1783,3 +1783,83 @@ Plus 2 truth ends with no detected rally and 4 spurious rallies — boundary pro
 
 **Next levers:** the net detector's false fires on short winners (did the ball die on the
 hitter's side of the net, or just over it?), and out ends (2 missed, 1 unknown).
+
+---
+
+## NET BALL vs WINNER BY RESTING SIDE — measured and rejected (2026-09-11)
+
+Operator's framing: separate a ball that hits the net and falls back on the hitter's side
+(an error) from one that just clears and dies on the receiver's side (a winner). The net
+detector asks only whether the ball went dead near the net, not on which side.
+
+**Test.** For every trusted net end at a true rally end (court C + outdoor-12: 12 rows,
+9 net, 2 not-returned, 1 out), the median ball position over the 0.5s after the ball goes
+dead, compared with the side of the shot it followed.
+
+| position source | true net balls kept | broken | winners fixed |
+|---|---|---|---|
+| floor projection (`ground_y`) | 2/9 | **6** | 1/2 |
+| 3-D reconstruction (`court_y_ft`) | 3/9 | 5 | 1/2 |
+
+Requiring the ball to rest 3 ft past the net still breaks 3 true net balls. Positions are
+stable over the window (sd 0.2-2.4 ft) but on the wrong side: **every net ball hit from the
+near side reads 1.6-6.8 ft past the net**, which a ball that hit the net cannot do.
+
+Likely cause: a ball caught in or against the net is above the floor, and from the ~6.7 ft
+camera behind the near baseline a raised point projects past the net line (about a foot of
+height accounts for ~5 ft). Not confirmable from this data: for most of these windows the
+reconstruction reports z = 0.00 with k = 1.00, its fallback to the ground plane, so height
+is unknown rather than zero. The rejection does not depend on the explanation.
+
+Two further limits: only **2** of the 23 truth endings are winners that trigger a net end, so
+no rule for this question can be validated on current truth; and this confusion is only 2 of
+the 9 end reasons still wrong.
+
+**Do not re-propose the resting side from `ball_3d` or the ground projection.**
+
+---
+
+## RALLY END TIME — capped at 2.0s past the last shot (2026-09-11)
+
+**The harness's own rally-end metric mixes two definitions.** `rally_end_within_2s` compares
+our rally end against truth `rally_ends[].t_sec`, which is the ENDING SHOT on court C (with
+"rally over" 0.9-1.9s later), "rally over" in whole seconds on court B, and both within the
+outdoor video. The gap between the definitions is the size of the 2s tolerance. Scored
+properly — our rally's LAST SHOT against the operator's ending shot — court C is **8/10 within
+2s, median +0.22s**, not the 5/10 the harness showed. We mostly find the ending shot.
+
+**What was late was the end TIME.** `end_frame = max(last shot, ending bounce)`, and after the
+last shot the last detected bounce is usually a player bouncing the ball between points:
+across nine clips 65% of rally ends reached more than 1.5s past their last shot to it, 27%
+more than 5s. Median end time on court C sat **+2.98s** past the operator's rally-over.
+
+`segment_rallies.rally_end_frame` now extends the end to the ending bounce by at most
+`ENDING_BOUNCE_MAX_SEC = 2.0`. 2.0s rather than the 1.5s that scored best on two clips: it is
+the operator's slowest measured rally-over lag (1.9s) and about a lob's median flight to its
+first bounce (2.05s). Shot membership of rallies is unchanged — only where the window closes.
+
+| | before | after |
+|---|---|---|
+| court C end time vs rally-over, median / within 2s | +2.98s / 5 of 10 | **+0.41s / 8 of 10** |
+| outdoor-12, within 2s | 4 of 6 | 5 of 6 |
+| court B (harness) within 2s / median error | 5 / 2.34s | **6 / 1.01s** |
+| junk inside rally windows, outdoor-7 / court C | 30 / 13 | **26 / 12** |
+| real shots outside a rally | 0 | 0 |
+| end reason | 14/23 | 14/23 |
+
+Court B is the clip on which the rejected rhythm-based tail trim (see segment_rallies.py)
+reversed its gain. This change improves it.
+
+**It moves ratings, on purpose.** The rally window scopes every positional metric, so those
+seconds were counting players walking back to the baseline as live play. Removing them raised
+kitchen time on every clip — David2 37% -> 43%, outdoor-12 40% -> 50%, court A 35% -> 43% —
+and strategy with it: David2 3.91 -> **4.01**, outdoor-7 +0.11, court A +0.12, courts B/C
++0.02. Operator's decision, 2026-09-11: *"Removing time after each point makes sense and should
+not be counted."* Regression baseline re-saved with these numbers.
+
+Also on 2026-09-11: the review sheet gained an **END_REASON** dropdown (into net / out / winner /
+serve fault / unsure), imported as a structured `reason` on the rally end and preferred by
+`rally_end_score` over the notes regex. Three latent sheet bugs fixed with it: cell fills were
+set by column position (wrong on the disputed sheet), the worked example's note sat in
+CORRECT_HITTER, and an ending shot added in the blank rows with no type was silently dropped
+by the importer. Court A — the one harness clip with no truth — is out for review with it.

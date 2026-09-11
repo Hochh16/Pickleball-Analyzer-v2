@@ -571,3 +571,15 @@ def test_a_net_end_joins_its_rally_through_the_shot_it_followed():
     got = sr.net_end_for_rally(rally, [late, mid])
     assert (got["by_shot_id"], got["t_sec"]) == (2, 3.7), "a rally ends once: the latest wins"
     assert "by_shot_id" not in late, "the caller's end must not be mutated"
+
+
+def test_a_rally_ends_at_its_ending_bounce_only_if_that_bounce_could_be_the_ending_ball():
+    """After the last shot the last detected bounce is usually a player bouncing the ball
+    between points: 65% of rally ends reached more than 1.5s past their last shot to it, 27%
+    more than 5s. The window this sets scopes every positional metric, so those seconds were
+    counting walking back and ball pick-ups as live play."""
+    fps = 60.0
+    assert sr.rally_end_frame(600, None, fps) == 600
+    assert sr.rally_end_frame(600, 660, fps) == 660, "landed 1s later: that IS the ending ball"
+    assert sr.rally_end_frame(600, 1200, fps) == 600 + 120, "10s later: capped at 2.0s"
+    assert sr.rally_end_frame(600, 540, fps) == 600, "a bounce before the last shot"

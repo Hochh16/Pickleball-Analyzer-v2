@@ -19,8 +19,9 @@ node "<design-skill>/seed-canvas.mjs" --template "<design-skill>/payload.templat
   --canvas canvas.json
 ```
 
-Every number on the canvas is real `David2` output as of the 2026-09-10 rebuild
-(estimate **3.92**, band 4.0). Nothing on it is invented or illustrative — an earlier
+Every number on the canvas is real `David2` output, refreshed 2026-09-11 after the rally
+end-time cap (estimate **4.01**, band 4.0; it was 3.92 before rallies stopped counting the
+seconds after each point as play). Nothing on it is invented or illustrative — an earlier
 draft carried a placeholder "rating over time" chart and the operator cut it.
 
 ---

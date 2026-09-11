@@ -148,7 +148,7 @@ def test_every_control_lands_on_the_column_its_header_names(tmp_path):
     col = {str(ws.cell(row=hdr, column=i).value or "").strip(): i
            for i in range(1, ws.max_column + 1)}
     want = {"CORRECT_TYPE": "drive", "CORRECT_VOLLEY": "yes",
-            "NOT_A_SHOT": "y", "RALLY_END": "y"}
+            "NOT_A_SHOT": "y", "RALLY_END": "y", "END_REASON": "into net"}
     ranges = {}
     for dv in ws.data_validations.dataValidation:
         for rng in str(dv.sqref).split():

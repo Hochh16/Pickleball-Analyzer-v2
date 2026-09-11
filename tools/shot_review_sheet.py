@@ -47,6 +47,17 @@ VALID = ["serve", "return", "drive", "dink", "drop", "lob", "not a shot"]
 # an unattributed opponent is still worth more than a wrong attribution.
 HITTERS = ["user", "partner", "opp_a", "opp_b", "opponent"]
 SIDES = ["near", "far"]
+# How a point ENDED, in the operator's words, mapped to the vocabulary tools/rally_end_score
+# scores in. The reason used to go in free-text notes and be regexed back out; a dropdown
+# cannot be mis-parsed. "unsure" still marks the end -- it just carries no reason.
+END_REASON_CODES = {"into net": "net", "out": "out", "winner": "not-returned",
+                    "serve fault": "serve-fault", "unsure": None}
+END_REASONS = list(END_REASON_CODES)
+# The columns the operator types in, found by HEADER. Fills were set by column POSITION and
+# landed on the wrong columns whenever the layout gained one -- on the disputed sheet, whose
+# extra column shifts everything right, they already did.
+EDIT_COLUMNS = ("NOT_A_SHOT", "RALLY_END", "END_REASON", "CORRECT_TYPE", "CORRECT_VOLLEY",
+                "CORRECT_HITTER")
 N_BLANK_ROWS = 30          # for shots we missed entirely
 OUT_NAME = "shot_review.xlsx"
 CSV_NAME = "labels_from_review.csv"
@@ -236,8 +247,10 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
                 "we also had the wrong end of the court). Do NOT put it in notes -- notes "
                 "are read by a human, these columns are read by the app.")
     ws["A7"] = ("Put 'y' in NOT_A_SHOT for a detection that is not a shot (a feed, a "
-                "pick-up, an adjacent court), and 'y' in RALLY_END for the shot that ENDED "
-                "the point (into the net, hit out, a winner).")
+                "pick-up, an adjacent court). On the shot that ENDED each point put 'y' in "
+                "RALLY_END and choose END_REASON: into net, out, winner (nobody got it back) "
+                "or serve fault -- 'unsure' if you cannot tell. Ending shot not detected? "
+                "Add it in the blank rows at the bottom with the same two columns.")
     ws["A5"] = ("Valid types: " + ", ".join(VALID)
                 + "   —   a RESET is not a type: label it drop or dink, and we mark it a "
                   "reset automatically when it answers a drive.")
@@ -288,7 +301,7 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
     # and the importer, reading only the structured columns, kept the wrong hitter every
     # time. That corrupts exactly what server attribution is scored against.
     headers = ["#", "time", "your rally", "hitter", "side", "our_type", "our_volley",
-               "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "CORRECT_TYPE",
+               "ALREADY KNOWN", "NOT_A_SHOT", "RALLY_END", "END_REASON", "CORRECT_TYPE",
                "CORRECT_VOLLEY", "CORRECT_HITTER", "CORRECT_SIDE", "notes"]
     if disputed:
         # What we were going on, so the operator is adjudicating rather than guessing at
@@ -345,9 +358,12 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
 
     # one worked example, so the expected format is unambiguous
     ex = hr + 1
-    for c, v in enumerate([" e.g. 12", "1:03.82", "3", "user", "near", "drive", "no",
-                           "", "", "", "drop", "",
-                           "was a soft third shot, not a drive"], start=1):
+    # By header: this row was positional, and after CORRECT_HITTER/SIDE were added its note
+    # sat in CORRECT_HITTER -- the one row whose whole job is to show the format.
+    example = {"#": " e.g. 12", "time": "1:03.82", "your rally": "3", "hitter": "user",
+               "side": "near", "our_type": "drive", "our_volley": "no",
+               "CORRECT_TYPE": "drop", "notes": "was a soft third shot, not a drive"}
+    for c, v in enumerate((example.get(h, "") for h in headers), start=1):
         cell = ws.cell(row=ex, column=c, value=v)
         cell.font = note
         cell.border = box
@@ -368,23 +384,24 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
         # he has already said we are not -- so a blank would silently flip the very labels
         # being checked, and skipping a row he could not judge would be indistinguishable
         # from adjudicating against himself.
-        vals = ([r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
-                 r["our_type"], r["our_volley"], r.get("why", ""), kn, "", "",
-                 r.get("their_type", ""), "", "", ""]
-                if disputed else
-                [r["n"], clock(r["t"]), rally_of(r["t"]), r["hitter"], r["side"],
-                 r["our_type"], r["our_volley"], kn, "", "", "", "", ""])
-        for c, v in enumerate(vals, start=1):
+        by_header = {"#": r["n"], "time": clock(r["t"]), "your rally": rally_of(r["t"]),
+                     "hitter": r["hitter"], "side": r["side"], "our_type": r["our_type"],
+                     "our_volley": r["our_volley"], "ALREADY KNOWN": kn}
+        if disputed:
+            by_header["why we said that"] = r.get("why", "")
+            by_header["CORRECT_TYPE"] = r.get("their_type", "")
+        for c, h in enumerate(headers, start=1):
+            v = by_header.get(h, "")
             cell = ws.cell(row=rr, column=c, value=v)
             cell.font = body
             cell.border = box
-            if c in (6, 7):
+            if h in ("our_type", "our_volley"):
                 cell.fill = fill_ours
-            if c == 3 and v == "between points":
+            if h == "your rally" and v == "between points":
                 cell.font = note          # outside every rally they described: junk candidate
-            if c == 8 and prev:
+            if h == "ALREADY KNOWN" and prev:
                 cell.fill = fill_known
-            if c in (9, 10, 11, 12, 13) and not prev:
+            if h in EDIT_COLUMNS and not prev:
                 cell.fill = fill_edit
     last = first + len(rows) - 1
 
@@ -397,7 +414,7 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
             cell = ws.cell(row=rr, column=c, value="")
             cell.font = body
             cell.border = box
-            if c in (2, 9, 10, 11, 12, 13):
+            if headers[c - 1] == "time" or headers[c - 1] in EDIT_COLUMNS:
                 cell.fill = fill_edit
     last_blank = blank_hdr + N_BLANK_ROWS
 
@@ -409,6 +426,7 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
     letter = {h: get_column_letter(i) for i, h in enumerate(headers, start=1)}
     for name, choices in (("CORRECT_TYPE", VALID), ("CORRECT_VOLLEY", ("yes", "no")),
                           ("NOT_A_SHOT", ("y",)), ("RALLY_END", ("y",)),
+                          ("END_REASON", END_REASONS),
                           ("CORRECT_HITTER", HITTERS), ("CORRECT_SIDE", SIDES)):
         d = DataValidation(type="list", formula1='"' + ",".join(choices) + '"',
                            allow_blank=True)
@@ -417,7 +435,8 @@ def build(clip: Path, out_path: Path, disputed: bool = False) -> Path:
 
     for h, w in (("#", 7), ("time", 10), ("your rally", 13), ("hitter", 10), ("side", 7),
                  ("our_type", 12), ("our_volley", 12), ("ALREADY KNOWN", 20),
-                 ("NOT_A_SHOT", 12), ("RALLY_END", 11), ("CORRECT_TYPE", 15),
+                 ("NOT_A_SHOT", 12), ("RALLY_END", 11), ("END_REASON", 13),
+                 ("CORRECT_TYPE", 15),
                  ("CORRECT_VOLLEY", 15), ("CORRECT_HITTER", 16), ("CORRECT_SIDE", 14),
                  ("notes", 46)):
         if h in letter:

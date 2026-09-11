@@ -81,7 +81,8 @@ def truth_ends(clip: Path) -> List[dict]:
     if rows:
         return sorted(rows, key=lambda r: r["start"])
     for e in d.get("rally_ends") or []:
-        reason = note_reason(e.get("notes", ""))
+        # The review sheet's END_REASON dropdown where given; the notes regex otherwise.
+        reason = e.get("reason") or note_reason(e.get("notes", ""))
         if reason is None:
             continue
         t = float(e.get("rally_over_t_sec") or e["t_sec"])

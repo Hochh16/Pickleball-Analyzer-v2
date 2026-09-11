@@ -743,6 +743,35 @@ def net_end_for_rally(rally_shots: List[dict], net_ends: List[dict],
     return best
 
 
+# A rally ends at its last shot, or at the bounce that ended it -- but only when that bounce
+# came soon enough to BE the ending ball. Measured across nine clips, 65% of rally ends reached
+# more than 1.5s past their last shot to their "ending" bounce and 27% more than 5s: after the
+# last shot, the last detected bounce is usually a player bouncing the ball between points.
+# That put court C's rally ends a median +2.98s past the operator's rally-over time (5/10
+# within 2s). Capped at 2.0s it is +0.41s (8/10), and outdoor-12 goes 4/6 -> 5/6.
+#
+# 2.0s rather than the 1.5s that scored best on those two clips: it is the operator's slowest
+# measured rally-over lag after the ending shot (0.9-1.9s across court C's ten points) and
+# about a lob's median flight to its first bounce (2.05s), so a lob winner keeps its landing.
+ENDING_BOUNCE_MAX_SEC = 2.0
+
+
+def rally_end_frame(last_frame: int, ending_bounce_frame: Optional[int], fps: float,
+                    max_after_s: float = ENDING_BOUNCE_MAX_SEC) -> int:
+    """The frame a rally ends on: its last shot, extended to the ending bounce by at most
+    `max_after_s`. A bounce before the last shot never pulls the end earlier.
+
+    This window scopes every positional metric in Stage 8 (kitchen time, transition time,
+    movement, ready position), so frames past the true end are not only a timing error: they
+    count players walking back and picking up the ball as live play.
+    """
+    last_frame = int(last_frame)
+    if ending_bounce_frame is None:
+        return last_frame
+    cap = last_frame + int(round(float(max_after_s) * float(fps)))
+    return min(max(last_frame, int(ending_bounce_frame)), cap)
+
+
 # --- Main pipeline -----------------------------------------------------------
 
 def run(folder: Path, args, log: logging.Logger) -> dict:
@@ -876,13 +905,12 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 server_side = "far" if server_side == "near" else "near"
         elif hit_side in ("near", "far") and server_side != hit_side:
             opened_on_return = True     # struck from the receiving side: it is the return
-        # End frame is max(last shot frame, ending bounce frame).
-        if ending_bid is not None:
-            ebf = next((int(b["frame"]) for b in bounces
-                        if int(b["bounce_id"]) == ending_bid), last_frame)
-            end_frame = max(last_frame, ebf)
-        else:
-            end_frame = last_frame
+        # End frame: the last shot, or the ending bounce if it came soon enough to be the
+        # ending ball -- see rally_end_frame.
+        ebf = (next((int(b["frame"]) for b in bounces
+                     if int(b["bounce_id"]) == ending_bid), None)
+               if ending_bid is not None else None)
+        end_frame = rally_end_frame(last_frame, ebf, fps)
 
         out_rallies.append({
             "rally_id": ri,
