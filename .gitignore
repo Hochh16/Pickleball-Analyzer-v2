@@ -72,3 +72,8 @@ data/*/ball_labels.PRE_REMAP.json
 data/_*.pkl
 data/_*.png
 data/_*.npy
+
+# Seeded design canvases: ~2MB generated bundles, rebuilt from docs/design/*.dc.html
+# (see docs/REPORT_REDESIGN.md for the re-seed command)
+docs/design/*.html
+!docs/design/*.dc.html

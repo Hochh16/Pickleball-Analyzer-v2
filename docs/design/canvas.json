@@ -1,0 +1,99 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 880,
+      "h": 1040,
+      "title": "1 · Hero & how settled it is",
+      "print": "flow"
+    },
+    {
+      "file": "Categories.dc.html",
+      "x": 960,
+      "y": 0,
+      "w": 880,
+      "h": 4480,
+      "title": "2 · The seven categories",
+      "print": "flow"
+    },
+    {
+      "file": "Heatmaps.dc.html",
+      "x": 1920,
+      "y": 0,
+      "w": 880,
+      "h": 1360,
+      "title": "3 · Court & ball views (toggles work)",
+      "print": "flow",
+      "is_interactive": true
+    },
+    {
+      "file": "Points.dc.html",
+      "x": 0,
+      "y": 3720,
+      "w": 880,
+      "h": 1440,
+      "title": "4 · Watch the points",
+      "print": "flow"
+    },
+    {
+      "file": "Ladder.dc.html",
+      "x": 1920,
+      "y": 3720,
+      "w": 880,
+      "h": 1500,
+      "title": "5 · Ladder & how it's made",
+      "print": "flow"
+    },
+    {
+      "file": "Phone.dc.html",
+      "x": 3000,
+      "y": 0,
+      "w": 390,
+      "h": 2200,
+      "title": "Phone width (390)",
+      "print": "flow"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": -340,
+      "y": 0,
+      "w": 280,
+      "text": "Player report redesign — real David2 numbers throughout (6 sessions, 29–31 Aug).\n\nMatches the shipped report's design system exactly: teal #0f766e, Iowan Old Style / Palatino headings, 14px cards, 840px column.\n\nFive sections left to right, then the phone width at 390."
+    },
+    {
+      "id": "note-firming",
+      "x": -340,
+      "y": 300,
+      "w": 280,
+      "text": "HERO: the estimate plus its firming-up.\n\nThe evidence strip is real — 28, 38, 45, 55, 67, 80 of your shots across the six sessions.\n\n\"Rating over time\" is gone, per your call. Nothing on this canvas is invented now."
+    },
+    {
+      "id": "note-categories",
+      "x": 960,
+      "y": -230,
+      "w": 320,
+      "text": "EVERY measurement is here, in a table per category.\n\nThe \"worth\" column is measured, not guessed: each driver was perturbed by 10 points through the real rate.py scorers.\n\nWeight strip at the top: intended share vs share actually carried. Strategy is meant to carry 20% and is carrying 39%.\n\nCORRECTED: a row that moves nothing is now sorted into four honest buckets, and the red one is a real hole. Unforced errors sits there — USAPA rates it plainly (3.0 \"frequent\", 3.5 \"fewer\", 5.0 \"very few\") and we cannot measure it, because rally-end reason is 8/23 and the top confusion is net vs not-returned, the exact winner/error flip."
+    },
+    {
+      "id": "note-heatmaps",
+      "x": 1920,
+      "y": -230,
+      "w": 300,
+      "text": "TOGGLES ARE LIVE — click through the five views.\n\nPositioning is three zones with %, per your direction. Opponents shows an honest empty state: opp_b has zero tracked frames and opp_a reads 3% kitchen, which cannot be right.\n\nBall views are plotted marks, not density — 5 to 20 points each is far too few to shade. Blue = bounce, red = out or net, green = volley."
+    },
+    {
+      "id": "note-ladder",
+      "x": 1920,
+      "y": 3490,
+      "w": 300,
+      "text": "The measurement caveats that used to be footnotes now live here as four collapsible answers — good info, only for those interested."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

@@ -1,0 +1,599 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body{margin:0;background:#f3f6f5;color:#182421;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;}
+    a{color:#0b5a54;} a:hover{color:#0f766e;}
+    h1,h2,h3,.serif{font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;}
+    .num{font-variant-numeric:tabular-nums;}
+    .mt{width:100%; border-collapse:collapse; font-size:13.5px;}
+    .mt th{text-align:left; padding:6px 10px; color:#5f6d68; font-weight:600; font-size:10.5px;
+      text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #e2e8e5;}
+    .mt td{padding:9px 10px; border-bottom:1px solid #eef2f0; vertical-align:top;}
+    .mt tr:last-child td{border-bottom:0;}
+    .mt .v{font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap;}
+    .lev{display:flex; align-items:center; gap:7px; white-space:nowrap;}
+    .lev i{display:block; height:6px; border-radius:3px; background:#0f766e;}
+    .lev b{font-variant-numeric:tabular-nums; font-size:12.5px; color:#0b5a54;}
+    .off td{color:#6f7a83; background:#fbfcfc;}
+    .off .v{font-weight:600; color:#6f7a83;}
+    .card{background:#ffffff; border:1px solid #e2e8e5; border-radius:14px;}
+    .chip{font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+      padding:3px 9px; border-radius:20px; white-space:nowrap;}
+    .drill{font-size:13.5px; padding-left:18px; position:relative;}
+    .drill span{position:absolute; left:0; color:#0f766e;}
+    details > summary{cursor:pointer; list-style:none; color:#5f6d68; font-size:12.5px;
+      padding:8px 0 0; border-top:1px solid #e2e8e5; margin-top:14px;}
+    details > summary::-webkit-details-marker{display:none;}
+    details > summary::before{content:"▸ "; color:#0f766e;}
+    details[open] > summary::before{content:"▾ ";}
+    details > summary:hover{color:#0b5a54;}
+  </style>
+</helmet>
+
+<div style="max-width:840px; margin:0 auto; padding:30px 20px 40px;">
+
+  <h2 style="font-size:23px; margin:0 0 6px; font-weight:600;">Your seven categories</h2>
+  <div style="height:2px; background:linear-gradient(90deg,#0f766e,transparent); margin:0 0 14px;"></div>
+  <p style="color:#5f6d68; font-size:13.5px; margin:0 0 14px; text-wrap:pretty;">USA Pickleball rates players across seven categories. Every measurement we have is here &mdash; and each one says what it is actually worth, so you can see where the effort pays. Categories are ordered by their biggest available gain, not alphabetically.</p>
+
+  <div class="card" style="padding:14px 18px; margin-bottom:20px; border-left:4px solid #0f766e;">
+    <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:5px;">Reading the &ldquo;worth&rdquo; column</div>
+    <p style="margin:0 0 10px; font-size:13.5px; text-wrap:pretty;">It answers one question: if you improved <i>this one thing</i> by ten points and changed nothing else, how far would your overall rating move? A row marked <b>&mdash;</b> would not move it &mdash; and the reason matters a great deal, so every such row says which of these it is.</p>
+    <div style="display:flex; flex-direction:column; gap:9px;">
+      <div style="padding-left:14px; border-left:3px solid #c2452d;">
+        <div style="font-size:13px; font-weight:700;">USA Pickleball rates it &mdash; we cannot see it yet</div>
+        <div style="font-size:12.5px; color:#5f6d68; text-wrap:pretty;">A genuine hole. These belong in your rating and are missing from it, so read your number as incomplete in exactly these places. Unforced errors is the big one.</div>
+      </div>
+      <div style="padding-left:14px; border-left:3px solid #a9772a;">
+        <div style="font-size:13px; font-weight:700;">What we have is a stand-in</div>
+        <div style="font-size:12.5px; color:#5f6d68; text-wrap:pretty;">We can see something related, but not the thing itself &mdash; so it is shown as a coaching cue and kept out of the arithmetic.</div>
+      </div>
+      <div style="padding-left:14px; border-left:3px solid #0f766e;">
+        <div style="font-size:13px; font-weight:700;">Nothing to gain right now</div>
+        <div style="font-size:12.5px; color:#5f6d68; text-wrap:pretty;">We measure it properly, but today it cannot move you: you are already at the top of the scale, still under the point where it starts counting, or we have too few to judge you on. All three change as you add sessions.</div>
+      </div>
+      <div style="padding-left:14px; border-left:3px solid #6f7a83;">
+        <div style="font-size:13px; font-weight:700;">Context, not a skill grade</div>
+        <div style="font-size:12.5px; color:#5f6d68; text-wrap:pretty;">How many backhands you hit is worth knowing; USA Pickleball grades how well you hit them, not how often.</div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="card" style="padding:18px 20px; margin-bottom:20px;">
+    <h3 style="font-size:16px; margin:0 0 4px; font-weight:600;">How much each category is pulling</h3>
+    <p style="margin:0 0 14px; font-size:13px; color:#5f6d68; text-wrap:pretty;">Each category is meant to carry a set share of your rating. But a category we can barely measure cannot be trusted with its full share, so it gives ground to the ones we can &mdash; which is why your number leans so hard on where you stood.</p>
+    <svg viewBox="0 0 760 250" style="width:100%; height:auto; display:block;" role="img" aria-label="Intended versus actual share of the rating, by category">
+      <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#5f6d68">
+        <text x="590" y="12" font-size="10">meant to carry</text>
+        <text x="690" y="12" font-size="10" font-weight="700" fill="#0b5a54">carrying now</text>
+      </g>
+      <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#182421">
+        <text x="0" y="34">Strategy</text>
+        <text x="0" y="66">Third shot</text>
+        <text x="0" y="98">Volley</text>
+        <text x="0" y="130">Dink</text>
+        <text x="0" y="162">Forehand</text>
+        <text x="0" y="194">Serve / return</text>
+        <text x="0" y="226">Backhand</text>
+      </g>
+      <g fill="#cfdcd7">
+        <rect x="110" y="20" width="90" height="8" rx="4"></rect>
+        <rect x="110" y="52" width="81" height="8" rx="4"></rect>
+        <rect x="110" y="84" width="58.5" height="8" rx="4"></rect>
+        <rect x="110" y="116" width="67.5" height="8" rx="4"></rect>
+        <rect x="110" y="148" width="54" height="8" rx="4"></rect>
+        <rect x="110" y="180" width="54" height="8" rx="4"></rect>
+        <rect x="110" y="212" width="45" height="8" rx="4"></rect>
+      </g>
+      <g fill="#0f766e">
+        <rect x="110" y="30" width="176.4" height="14" rx="4"></rect>
+        <rect x="110" y="62" width="78.3" height="14" rx="4"></rect>
+        <rect x="110" y="94" width="54.9" height="14" rx="4"></rect>
+        <rect x="110" y="126" width="50.9" height="14" rx="4"></rect>
+        <rect x="110" y="158" width="32.4" height="14" rx="4"></rect>
+        <rect x="110" y="190" width="30.6" height="14" rx="4"></rect>
+        <rect x="110" y="222" width="27" height="14" rx="4"></rect>
+      </g>
+      <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#5f6d68" text-anchor="end">
+        <text x="640" y="28">20%</text><text x="640" y="60">18%</text><text x="640" y="92">13%</text>
+        <text x="640" y="124">15%</text><text x="640" y="156">12%</text><text x="640" y="188">12%</text>
+        <text x="640" y="220">10%</text>
+      </g>
+      <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#0b5a54" text-anchor="end">
+        <text x="740" y="28">39%</text><text x="740" y="60">17%</text><text x="740" y="92">12%</text>
+        <text x="740" y="124">11%</text><text x="740" y="156">7%</text><text x="740" y="188">7%</text>
+        <text x="740" y="220">6%</text>
+      </g>
+    </svg>
+    <div style="background:#f7efdd; border-radius:8px; padding:12px 14px; margin-top:12px;">
+      <div style="font-size:13.5px; text-wrap:pretty;"><b>So read your 3.92 as mostly a verdict on where you stood.</b> Positioning is the one thing a single camera measures almost completely &mdash; 32,487 frames of your feet &mdash; so it is carrying nearly double its intended share. The six categories that need the ball are each measured on a third to a half of what they cover, so they pull back toward the middle. As ball tracking improves, these two columns converge.</div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div style="display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:8px; margin-bottom:24px;">
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">4.1</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Strategy</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">3.6</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Third shot</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">3.6</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Volley</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">4.2</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Dink</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">3.7</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Backhand</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">3.7</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Serve / return</div></div>
+    <div class="card" style="padding:10px 6px; text-align:center;"><div class="serif num" style="font-size:20px; font-weight:600; color:#0f766e; line-height:1;">4.2</div><div style="font-size:10.5px; color:#5f6d68; margin-top:4px; line-height:1.3;">Forehand</div></div>
+  </div>
+
+  <!-- ============ 1. STRATEGY ============ -->
+  <div class="card" style="border-left:4px solid #0f766e; padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Strategy</h3>
+      <span class="chip" style="color:#0f766e; background:#e6f3ec;">Biggest single gain</span>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 20% &mdash; carrying <b>39%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">4.1</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#0f766e; line-height:1;">37<span style="font-size:26px;">%</span></div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">of each rally spent <b>at the kitchen line</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">43% at the baseline, 20% in between</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <svg viewBox="0 0 400 120" style="width:100%; height:auto; display:block;" role="img" aria-label="Your court time by zone against your partner's">
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#5f6d68">
+            <text x="0" y="24">Kitchen</text><text x="0" y="62">Mid-court</text><text x="0" y="100">Baseline</text>
+            <text x="330" y="10" font-size="10">you</text><text x="368" y="10" font-size="10">partner</text>
+          </g>
+          <g>
+            <rect x="72" y="12" width="240" height="14" rx="3" fill="#eceff1"></rect>
+            <rect x="72" y="12" width="88.8" height="14" rx="3" fill="#0f766e"></rect>
+            <rect x="72" y="50" width="240" height="14" rx="3" fill="#eceff1"></rect>
+            <rect x="72" y="50" width="48" height="14" rx="3" fill="#0f766e"></rect>
+            <rect x="72" y="88" width="240" height="14" rx="3" fill="#eceff1"></rect>
+            <rect x="72" y="88" width="103.2" height="14" rx="3" fill="#0f766e"></rect>
+          </g>
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#182421" text-anchor="middle">
+            <text x="336" y="24">37%</text><text x="336" y="62">20%</text><text x="336" y="100">43%</text>
+          </g>
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#5f6d68" text-anchor="middle">
+            <text x="382" y="24">42%</text><text x="382" y="62">18%</text><text x="382" y="100">40%</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Time at the kitchen line</td><td class="v">37% of each rally</td><td><div class="lev"><i style="width:66px;"></i><b>+0.07</b></div></td></tr>
+        <tr><td>You <b>and</b> your partner up together</td><td class="v">25% of each rally</td><td><div class="lev"><i style="width:16px;"></i><b>+0.02</b></div></td></tr>
+        <tr><td>Time stuck in mid-court<div style="font-size:12px; color:#5f6d68;">You are right on the line where this starts to cost you &mdash; it bites above 20%.</div></td><td class="v">20% of each rally</td><td><div class="lev"><i style="width:4px;"></i><b>+0.01</b></div></td></tr>
+        <tr class="off"><td>Court covered<div style="font-size:12px;"><b>What we have is a stand-in, not the thing.</b> USA Pickleball rates court <i>coverage</i> &mdash; getting to the right places &mdash; and feet per minute is not that. Strong players often move less and cover more, so this is a work-rate cue, not a grade.</div></td><td class="v">221 ft per minute</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Ready position (paddle up)<div style="font-size:12px;"><b>What we have is a stand-in, not the thing.</b> We track your hand, not the paddle tip, which is too small and too fast to follow from one camera. Good enough to coach off, not calibrated enough to score.</div></td><td class="v">low at the net</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off" style="background:#fdf4f2;"><td>Unforced errors<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> This is one of the clearest markers between 3.0, 3.5 and 5.0 on the ladder, and it is missing from your rating. Telling your error from their winner needs us to know how each rally ended, and we get that right <b>8 times in 23</b> &mdash; with the commonest mix-up being exactly the one that matters, a ball into the net read as a ball they could not return. Worse, the mistakes are not even-handed: an error we miss looks like clean play, so scoring on this would flatter you. Fixing rally-end detection is the open work that unlocks it.</div></td><td class="v">14 of 64 rallies</td><td><b style="color:#c2452d;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:6px;">What to do about it</div>
+      <p style="margin:0 0 10px; font-size:14px; text-wrap:pretty;">You get to the line, but you and your partner are up there together only a quarter of the rally &mdash; and one of you back is an invitation through the middle. Your paddle also sits as low at the net as it does at the baseline; that costs you reaction time even though it does not move the number.</p>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        <div class="drill"><span>&#9656;</span><b>Get-to-the-line:</b> after every return, sprint to the kitchen line and freeze before the next ball.</div>
+        <div class="drill"><span>&#9656;</span><b>Move as a unit:</b> shadow your partner across the kitchen keeping 8&ndash;10 ft spacing; close the middle together.</div>
+        <div class="drill"><span>&#9656;</span><b>Paddle up &amp; ready:</b> between shots, hold the paddle up in front around chest height, not down at your side.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Kitchen-line positioning</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Moving as a team</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Court coverage</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Ready position</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Stacking</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Targeting weakness</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Resets under pressure</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Unforced errors</span>
+        </div>
+        <p style="margin:0 0 6px; font-size:12.5px; color:#5f6d68;">Position is read from your front foot, during live rallies only &mdash; standing about between points is excluded. 32,487 frames of you across the six sessions, which is why this is the most solid category in the report.</p>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">Paddle height is really <i>hand</i> height: at the kitchen your hands sit around the waist, the same as at the baseline, where they should be carried higher at the net and lower as you move back.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 2. THIRD SHOT ============ -->
+  <div class="card" style="border-left:4px solid #0f766e; padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Third shot</h3>
+      <span class="chip" style="color:#0f766e; background:#e6f3ec;">The 3.5-to-4.5 gate</span>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 18% &mdash; carrying <b>17%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">3.6</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#0f766e; line-height:1;">3<span style="font-size:24px; color:#5f6d68; font-weight:500;"> of </span>7</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">third shots after which you <b>got up to the kitchen line</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">43% &mdash; and right now this is the whole category</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="font-size:12px; color:#5f6d68; margin-bottom:6px;">How you played your 8 third shots:</div>
+        <div style="display:flex; height:34px; border-radius:8px; overflow:hidden; margin-bottom:8px;">
+          <div style="width:62.5%; background:#a9772a; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12.5px; font-weight:700;">5 drives</div>
+          <div style="width:25%; background:#0f766e; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12.5px; font-weight:700;">2 drops</div>
+          <div style="width:12.5%; background:#b6d3cb; display:flex; align-items:center; justify-content:center; color:#182421; font-size:11.5px; font-weight:700;">1 dink</div>
+        </div>
+        <p style="margin:0 0 10px; font-size:12.5px; color:#5f6d68;">For reference, a 3.0 plays 10&ndash;20% of third shots as a drop, a 3.5 plays 30&ndash;40%, and a 4.0&ndash;4.5 plays 50&ndash;60%. At 2 of 8 you are driving far more than your level would.</p>
+        <div style="background:#f7efdd; border-radius:8px; padding:10px 12px;">
+          <div style="font-size:12.5px;"><b>But it is not scoring yet.</b> Only 2 of those third shots could be typed from a landing we could see, and we will not rate a drop rate on fewer than 4. So your 3.6 rests entirely on getting to the kitchen.</div>
+        </div>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Getting to the kitchen after your third shot</td><td class="v">3 of 7 (43%)</td><td><div class="lev"><i style="width:50px;"></i><b>+0.05</b></div></td></tr>
+        <tr class="off"><td>Third-shot drop rate<div style="font-size:12px;"><b>Too few to judge.</b> Typed from where the ball landed, and only 2 of your 8 could be. Four is the floor before we rate a drop rate, so it is shown and coached but not scored. More sessions fix this on their own.</div></td><td class="v">2 of 8 (25%)</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Third shots we could not read at all<div style="font-size:12px;"><b>Too few to judge.</b> Played from deep, but no bounce was detected afterwards, so we cannot say what they were.</div></td><td class="v">2</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:6px;">What to do about it</div>
+      <p style="margin:0 0 10px; font-size:14px; text-wrap:pretty;">The third shot is what buys your trip to the net. You are getting up about half the time, and you drive far more of them than a 4.0 would &mdash; so the ball is not doing its job.</p>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        <div class="drill"><span>&#9656;</span><b>Get-to-the-line:</b> after every return, sprint to the kitchen line and freeze before the next ball.</div>
+        <div class="drill"><span>&#9656;</span><b>Third-shot-drop reps:</b> from the baseline, drop the 3rd ball softly into the kitchen so you can follow it in.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> How often you play the 3rd shot</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9680;</span> Drop-vs-drive choice</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Transition success</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Drop landing depth</span>
+        </div>
+        <p style="margin:0 0 6px; font-size:12.5px; color:#5f6d68;">Getting to the kitchen is measured from your feet in the four seconds after you hit &mdash; no ball tracking needed, so it works on <b>7 of your 8</b> third shots. That is why it carries the category while the ball-derived half cannot.</p>
+        <p style="margin:0 0 6px; font-size:12.5px; color:#5f6d68;">A third shot is any ball you hit after a return, whoever served. 8 of them were yours across the six sessions &mdash; which is exactly why the drop rate cannot carry a rating yet.</p>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">The level bands for drop rate are your coach&rsquo;s calibration, not something read off the video.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 3. VOLLEY ============ -->
+  <div class="card" style="border-left:4px solid #0f766e; padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Volley</h3>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 13% &mdash; carrying <b>12%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">3.6</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#0f766e; line-height:1;">18</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">balls you took <b>out of the air</b> at the net</p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">22% &mdash; a bit over 1 in 5 of your shots</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="font-size:12px; color:#5f6d68; margin-bottom:8px;">Separately, 15 times you took the pace off a drive instead of trading with it:</div>
+        <div style="display:flex; gap:10px;">
+          <div style="flex:6; background:#e6f3ec; border-radius:8px; padding:11px 13px;">
+            <div class="serif num" style="font-size:26px; font-weight:600; color:#0f766e; line-height:1;">6</div>
+            <div style="font-size:11.5px; color:#5f6d68; margin-top:3px;">blocked out of the air &mdash; you stayed on offense</div>
+          </div>
+          <div style="flex:10; background:#f3f6f5; border-radius:8px; padding:11px 13px;">
+            <div class="serif num" style="font-size:26px; font-weight:600; color:#182421; line-height:1;">9</div>
+            <div style="font-size:11.5px; color:#5f6d68; margin-top:3px;">reset after the bounce &mdash; you had already given ground</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Share of your shots that are volleys<div style="font-size:12px; color:#5f6d68;">The whole category rests on this one number, because whether a volley <i>worked</i> is not detectable yet.</div></td><td class="v">22% (18 of 80)</td><td><div class="lev"><i style="width:46px;"></i><b>+0.05</b></div></td></tr>
+        <tr class="off"><td>Block / reset split<div style="font-size:12px;"><b>Too few to judge.</b> The counts are exact, but they do not yet say whether the reset actually <i>worked</i> &mdash; so they inform your coaching without moving the score.</div></td><td class="v">15: 6 blocked, 9 off the bounce</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Put-aways, speed-ups and counters<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> Put-aways and speed-ups need ball speed, which one camera at this distance cannot resolve.</div></td><td class="v">not measured</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:6px;">What to do about it</div>
+      <p style="margin:0 0 10px; font-size:14px; text-wrap:pretty;">Fast exchanges at the net are decided by whether you can absorb pace instead of swinging at it. Nine of your 15 resets came after the bounce and only six were blocked out of the air &mdash; taking more of them early is what a 4.5 does.</p>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        <div class="drill"><span>&#9656;</span><b>Volley exchanges:</b> net-height volley-to-volley with a partner &mdash; soft hands, paddle in front.</div>
+        <div class="drill"><span>&#9656;</span><b>Reset under pressure:</b> have a partner feed hard balls; block them softly into the kitchen instead of swinging.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9680;</span> How often you volley at the net</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Block / reset</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Put-aways</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Speed-ups &amp; counters</span>
+        </div>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">A volley is a shot with no bounce in front of it. That call is right more often than not but not yet reliable, so 18 is a floor: shot-by-shot review of these clips found volleys of yours we had missed. It is the single number in this report most likely to move as detection improves.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 4. DINK ============ -->
+  <div class="card" style="padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Dink</h3>
+      <span class="chip" style="color:#2f8f5b; background:#e6f3ec;">A strength</span>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 15% &mdash; carrying <b>11%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">4.2</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#0f766e; line-height:1;">9<span style="font-size:24px; color:#5f6d68; font-weight:500;"> of </span>14</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">dinks landed <b>inside the kitchen</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">64% &mdash; typically 7.5 ft past the net; the line is at 7</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="font-size:12px; color:#5f6d68; margin-bottom:6px;">The one crack: how many sat up high enough to be attacked.</div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Dinks the opponent took <b>above the waist</b></span><span class="num" style="font-weight:700; color:#a9772a;">4 of 13</span></div>
+        <div style="height:10px; border-radius:5px; background:#eceff1; overflow:hidden;"><div style="width:31%; height:100%; background:#a9772a;"></div></div>
+        <p style="margin:10px 0 0; font-size:12.5px; color:#5f6d68; text-wrap:pretty;">31%. Three in ten of your dinks handed the other side a ball they could hit down on &mdash; and you are hitting them fairly upright, averaging 28&deg; of knee bend where a dink wants 35&ndash;50&deg;.</p>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Pop-ups you gave up</td><td class="v">4 of 13 (31%)</td><td><div class="lev"><i style="width:23px;"></i><b>+0.02</b></div></td></tr>
+        <tr><td>Share of your shots that are dinks</td><td class="v">23 (29%)</td><td><div class="lev"><i style="width:15px;"></i><b>+0.02</b></div></td></tr>
+        <tr><td>Average rally length<div style="font-size:12px; color:#5f6d68;">A stand-in for how long you can sustain a soft exchange.</div></td><td class="v">6.5 shots</td><td><div class="lev"><i style="width:12px;"></i><b>+0.01</b></div></td></tr>
+        <tr><td>Dinks landing in the kitchen</td><td class="v">9 of 14 (64%)</td><td><div class="lev"><i style="width:11px;"></i><b>+0.01</b></div></td></tr>
+        <tr><td>Knee bend on dinks</td><td class="v">6 of 23 (26%), avg 28&deg;</td><td><div class="lev"><i style="width:7px;"></i><b>+0.01</b></div></td></tr>
+        <tr class="off"><td>Dink height<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> How high a dink floats over the net is what makes it attackable, and it is beyond one camera at this range. What you see above is where it landed, and how high the opponent took the answer.</div></td><td class="v">not measured</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#5f6d68; margin-bottom:6px;">Keep it going</div>
+      <p style="margin:0; font-size:14px; text-wrap:pretty;">Your dink placement is a 4.0-plus strength and nothing here needs fixing urgently. If you want the extra tenth, it comes from getting lower &mdash; bending into the shot is what stops the ball sitting up.</p>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9680;</span> How much you dink</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9680;</span> Dink-rally length</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Knee bend</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Depth control</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Pop-ups</span>
+        </div>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">23 dinks of yours. Depth needs the landing bounce, found for <b>14</b>; a pop-up needs the ball to come <i>back</i> so we can see how high the opponent took it, which happened for <b>13</b>. Rally length is a match-wide average, not yours alone.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 5. BACKHAND ============ -->
+  <div class="card" style="padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Backhand</h3>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 10% &mdash; carrying <b>6%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">3.7</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#a9772a; line-height:1;">18<span style="font-size:24px; color:#5f6d68; font-weight:500;"> of </span>26</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">backhands hit <b>in front of your hip</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">69% &mdash; against 91% on your forehand</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="font-size:12px; color:#5f6d68; margin-bottom:8px;">Contact point, wing against wing:</div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Forehand</span><span class="num" style="font-weight:700;">91%</span></div>
+        <div style="height:10px; border-radius:5px; background:#eceff1; overflow:hidden; margin-bottom:10px;"><div style="width:91%; height:100%; background:#0f766e;"></div></div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Backhand</span><span class="num" style="font-weight:700; color:#a9772a;">69%</span></div>
+        <div style="height:10px; border-radius:5px; background:#eceff1; overflow:hidden;"><div style="width:69%; height:100%; background:#a9772a;"></div></div>
+        <p style="margin:10px 0 0; font-size:12.5px; color:#5f6d68; text-wrap:pretty;">The clearest gap between your two wings. Nearly a third of your backhands are struck level with or behind your body, which costs control and pace.</p>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Contact point in front of the hip</td><td class="v">18 of 26 (69%)</td><td><div class="lev"><i style="width:24px;"></i><b>+0.02</b></div></td></tr>
+        <tr><td>Knee bend on drives</td><td class="v">4 of 10 (40%), avg 33&deg;</td><td><div class="lev"><i style="width:6px;"></i><b>+0.01</b></div></td></tr>
+        <tr class="off"><td>How many backhands you hit<div style="font-size:12px;"><b>Context, not a skill grade.</b> USA Pickleball grades how well you hit them, not how many.</div></td><td class="v">30 (38% of your shots)</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Pace &amp; depth<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> Needs ball speed and a landing on a driven ball; neither is resolvable from one camera at this distance.</div></td><td class="v">not measured</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:6px;">What to do about it</div>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        <div class="drill"><span>&#9656;</span><b>Early turn:</b> as soon as the ball leaves their paddle, turn your shoulders and take the paddle back &mdash; late preparation is what puts contact behind you.</div>
+        <div class="drill"><span>&#9656;</span><b>Catch it out front:</b> shadow ten backhands making contact level with your front foot, then hit ten the same way.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> How many backhands you hit</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Contact point</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Knee bend on drives</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Pace &amp; depth</span>
+        </div>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">Contact point and knee bend come from body pose rather than the ball, so they are read on nearly every shot &mdash; 26 of your 30 backhands, 10 of the drives among them.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 6. SERVE / RETURN ============ -->
+  <div class="card" style="padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Serve / return</h3>
+      <span class="chip" style="color:#a9772a; background:#f7efdd;">One threshold away</span>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 12% &mdash; carrying <b>7%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">3.7</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#a9772a; line-height:1;">4<span style="font-size:24px; color:#5f6d68; font-weight:500;"> of </span>7</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">returns we watched land <b>stayed in</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">57% &mdash; three of the seven missed</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="background:#f7efdd; border-radius:8px; padding:12px 14px; margin-bottom:12px;">
+          <div style="font-size:13.5px; text-wrap:pretty;"><b>This is the biggest single gain in your whole report &mdash; but it is currently worth nothing.</b> The in-play scale starts at 70%, which is ordinary rec play; below that everyone scores the same. Get from 57% past 70% and this category starts climbing; take it to a 4.0-level 100% and your overall rating gains <b>+0.06</b>, more than anything else you could fix.</div>
+        </div>
+        <svg viewBox="0 0 400 74" style="width:100%; height:auto; display:block;" role="img" aria-label="Returns landing in, 57 percent, against a scale that starts at 70 percent">
+          <rect x="10" y="14" width="380" height="20" rx="4" fill="#eceff1"></rect>
+          <rect x="10" y="14" width="129" height="20" rx="4" fill="#c2452d" opacity="0.75"></rect>
+          <rect x="276" y="14" width="114" height="20" fill="#0f766e" opacity="0.18"></rect>
+          <line x1="276" y1="8" x2="276" y2="40" stroke="#0b5a54" stroke-width="2"></line>
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#5f6d68">
+            <text x="10" y="52">0%</text>
+            <text x="139" y="52" text-anchor="middle" font-weight="700" fill="#c2452d">you, 57%</text>
+            <text x="276" y="66" text-anchor="middle" font-weight="700" fill="#0b5a54">70% &mdash; the scale starts here</text>
+            <text x="390" y="52" text-anchor="end">100%</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start; margin-bottom:16px;">
+      <div style="flex:1; min-width:280px;">
+        <div style="font-size:12px; color:#5f6d68; margin-bottom:8px;">Depth, the other half. The far baseline is 22 ft past the net:</div>
+        <svg viewBox="0 0 400 96" style="width:100%; height:auto; display:block;" role="img" aria-label="Serve depth 14.7 feet, return depth 20.9 feet, against a 22 foot baseline">
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" fill="#5f6d68">
+            <text x="0" y="26">Serves</text><text x="0" y="66">Returns</text>
+            <text x="128" y="90" font-size="10">kitchen line (7 ft)</text>
+            <text x="396" y="90" font-size="10" text-anchor="end">baseline (22 ft)</text>
+          </g>
+          <rect x="58" y="14" width="338" height="16" rx="3" fill="#eceff1"></rect>
+          <rect x="58" y="14" width="226" height="16" rx="3" fill="#a9772a"></rect>
+          <rect x="58" y="54" width="338" height="16" rx="3" fill="#eceff1"></rect>
+          <rect x="58" y="54" width="321" height="16" rx="3" fill="#0f766e"></rect>
+          <line x1="166" y1="8" x2="166" y2="76" stroke="#9db3aa" stroke-width="1.5" stroke-dasharray="3 3"></line>
+          <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="700" fill="#ffffff">
+            <text x="278" y="26" text-anchor="end">14.7 ft</text>
+            <text x="373" y="66" text-anchor="end">20.9 ft</text>
+          </g>
+        </svg>
+        <p style="margin:8px 0 0; font-size:12.5px; color:#5f6d68; text-wrap:pretty;">When your returns land, they land deep. Your serves sit about 7 ft short, which lets the returner step in and take the ball early.</p>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Serves landing deep</td><td class="v">44%, typically 14.7 ft</td><td><div class="lev"><i style="width:10px;"></i><b>+0.01</b></div></td></tr>
+        <tr><td>Returns landing deep</td><td class="v">71%, typically 20.9 ft</td><td><div class="lev"><i style="width:8px;"></i><b>+0.01</b></div></td></tr>
+        <tr class="off" style="background:#fdf9f0;"><td>Returns landing in<div style="font-size:12px;"><b>Still below where the scale starts.</b> Ten points gets you to 67%, which is still under the 70% floor, so it registers as nothing. Cross that line and it becomes the most valuable thing in this report.</div></td><td class="v">4 of 7 (57%)</td><td><b style="color:#a9772a;">&mdash; until 70%,<br>then up to +0.06</b></td></tr>
+        <tr class="off"><td>Serves landing in<div style="font-size:12px;"><b>You are already at the top.</b> Every serve we watched went in, which is what a 4.0 does. Nothing to gain, only ground to lose.</div></td><td class="v">9 of 9 (100%)</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Serve faults<div style="font-size:12px;"><b>Too few to judge.</b> None seen across 10 rallies you served &mdash; but a serve hit long lands off court, where the bounce is hardest to detect. Read it as a floor, not a clean sheet.</div></td><td class="v">none seen</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>How many you hit<div style="font-size:12px;"><b>Context, not a skill grade.</b> USA Pickleball grades quality, not volume.</div></td><td class="v">10 serves, 14 returns</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Pace &amp; spin<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> Needs ball speed, which is below what one camera can resolve here.</div></td><td class="v">not measured</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:#f3f6f5; border-radius:10px; padding:14px 16px; margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#0f766e; margin-bottom:6px;">What to do about it</div>
+      <p style="margin:0 0 10px; font-size:14px; text-wrap:pretty;">Your serve is the reliable one &mdash; it is the <i>return</i> that is leaking points. Three of the seven we could watch missed the court altogether. A return only has to land somewhere in the far half, so the fix is margin, not power: aim well inside the lines until it is automatic, then push it deep again.</p>
+      <div style="display:flex; flex-direction:column; gap:7px;">
+        <div class="drill"><span>&#9656;</span><b>Ten in a row:</b> return ten serves into the far court without missing, aiming at the middle third rather than the lines.</div>
+        <div class="drill"><span>&#9656;</span><b>Deep-serve target:</b> lay a towel in the last 3 ft before the baseline and serve ten in a row at it.</div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Serve / return count</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> In-play rate</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9680;</span> Serve faults</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Depth</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Pace &amp; spin</span>
+        </div>
+        <p style="margin:0 0 6px; font-size:12.5px; color:#5f6d68;">In or out is decided by watching the ball land: a serve must clear the kitchen line and stay inside the far box diagonally across from you; a return must land anywhere in the far court. Watched down on <b>9 of your 10</b> serves and <b>7 of your 14</b> returns &mdash; so the 57% is over seven returns, and a single one either way moves it a lot.</p>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">One blind spot: which service box is correct depends on which side the server is standing, and a serve to the wrong box would read here as in.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ 7. FOREHAND ============ -->
+  <div class="card" style="padding:20px 22px; margin:0 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <h3 style="font-size:19px; margin:0; font-weight:600;">Forehand</h3>
+      <span class="chip" style="color:#2f8f5b; background:#e6f3ec;">A strength</span>
+      <span style="font-size:12px; color:#5f6d68;">meant to carry 12% &mdash; carrying <b>7%</b> today</span>
+      <span class="serif num" style="margin-left:auto; font-size:22px; font-weight:600; color:#0f766e;">4.2</span>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:16px;">
+      <div style="min-width:180px;">
+        <div class="serif num" style="font-size:44px; font-weight:600; color:#0f766e; line-height:1;">40<span style="font-size:24px; color:#5f6d68; font-weight:500;"> of </span>44</div>
+        <p style="margin:6px 0 0; font-size:14px; text-wrap:pretty;">forehands hit <b>in front of your hip</b></p>
+        <p style="margin:4px 0 0; color:#5f6d68; font-size:12.5px;">91% &mdash; the best technique number in the report</p>
+      </div>
+      <div style="flex:1; min-width:300px;">
+        <div style="background:#e6f3ec; border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+          <div style="font-size:13.5px; text-wrap:pretty;">Your contact point is <b>already at the top of the scale</b> &mdash; there is no rating left to win here. 45 forehands, 56% of your shots, and almost all of them struck out in front.</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Drives hit with the right knee bend</span><span class="num" style="font-weight:700; color:#a9772a;">4 of 12</span></div>
+        <div style="height:10px; border-radius:5px; background:#eceff1; overflow:hidden;"><div style="width:33%; height:100%; background:#a9772a;"></div></div>
+        <p style="margin:8px 0 0; font-size:12.5px; color:#5f6d68;">Average bend 21&deg;, at the shallow edge of the 20&ndash;35&deg; a drive wants. The only lever left in this category.</p>
+      </div>
+    </div>
+
+    <table class="mt">
+      <thead><tr><th>Measurement</th><th style="width:150px;">Where you are</th><th style="width:190px;">Worth, per 10 points</th></tr></thead>
+      <tbody>
+        <tr><td>Knee bend on drives</td><td class="v">4 of 12 (33%), avg 21&deg;</td><td><div class="lev"><i style="width:6px;"></i><b>+0.01</b></div></td></tr>
+        <tr class="off"><td>Contact point in front of the hip<div style="font-size:12px;"><b>You are already at the top.</b> Nothing more to gain here &mdash; only ground to lose if it slips.</div></td><td class="v">40 of 44 (91%)</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>How many forehands you hit<div style="font-size:12px;"><b>Context, not a skill grade.</b> USA Pickleball grades quality, not volume.</div></td><td class="v">45 (56% of your shots)</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+        <tr class="off"><td>Pace, placement &amp; depth<div style="font-size:12px;"><b>USA Pickleball rates this; we cannot see it yet.</b> Needs ball speed and a landing on a driven ball; neither is resolvable from one camera at this distance.</div></td><td class="v">not measured</td><td><b style="color:#6f7a83;">&mdash;</b></td></tr>
+      </tbody>
+    </table>
+
+    <details>
+      <summary>How we measured this</summary>
+      <div style="padding-top:10px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:10px;">
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> How many forehands you hit</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Contact point</span>
+          <span style="font-size:12.5px;"><span style="color:#0f766e;">&#9679;</span> Knee bend on drives</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Pace</span>
+          <span style="font-size:12.5px; color:#5f6d68;"><span style="color:#0f766e;">&#9675;</span> Placement &amp; depth</span>
+        </div>
+        <p style="margin:0; font-size:12.5px; color:#5f6d68;">Contact point and knee bend come from body pose rather than the ball, so they are read on nearly every shot &mdash; 44 of your 45 forehands, 12 of the drives among them.</p>
+      </div>
+    </details>
+  </div>
+
+  <p style="margin:18px 2px 0; font-size:12.5px; color:#5f6d68; text-wrap:pretty;"><b>About knee bend:</b> &ldquo;the right knee bend&rdquo; means your knees were flexed into the range good technique calls for on that shot &mdash; lower on soft control shots, less on power shots. Serve &amp; return 10&ndash;30&deg;, drive 20&ndash;35&deg;, third-shot drop 30&ndash;45&deg;, dink &amp; reset 35&ndash;50&deg;.</p>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body{margin:0;background:#f3f6f5;color:#182421;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;}
+    a{color:#0b5a54;} a:hover{color:#0f766e;}
+    h1,h2,h3,.serif{font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;}
+    .num{font-variant-numeric:tabular-nums;}
+    .vbtn{font:inherit; font-size:13px; padding:9px 14px; min-height:44px; border-radius:9px;
+      cursor:pointer; white-space:nowrap;}
+  </style>
+</helmet>
+
+<div style="max-width:840px; margin:0 auto; padding:30px 20px 40px;">
+
+  <!-- ================= WHERE EVERYONE STOOD ================= -->
+  <h2 style="font-size:23px; margin:0 0 6px; font-weight:600;">Where you stood</h2>
+  <div style="height:2px; background:linear-gradient(90deg,#0f766e,transparent); margin:0 0 14px;"></div>
+  <p style="color:#5f6d68; font-size:13.5px; margin:0 0 16px; text-wrap:pretty;">Share of live-rally time spent in each third of your half of the court. Between-point standing about is excluded.</p>
+
+  <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px;">
+
+    <!-- YOU -->
+    <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:16px 16px 14px;">
+      <h3 style="font-size:15px; margin:0 0 10px; font-weight:600;">You</h3>
+      <svg viewBox="0 0 200 250" style="width:100%; height:auto; display:block;" role="img" aria-label="Your court time: kitchen 37 percent, mid-court 20 percent, baseline 43 percent">
+        <rect x="10" y="10" width="180" height="70" fill="#0f766e" opacity="0.44"></rect>
+        <rect x="10" y="80" width="180" height="70" fill="#0f766e" opacity="0.24"></rect>
+        <rect x="10" y="150" width="180" height="90" fill="#0f766e" opacity="0.51"></rect>
+        <line x1="10" y1="10" x2="190" y2="10" stroke="#182421" stroke-width="3"></line>
+        <line x1="10" y1="80" x2="190" y2="80" stroke="#ffffff" stroke-width="1.5"></line>
+        <line x1="10" y1="150" x2="190" y2="150" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="4 3"></line>
+        <rect x="10" y="10" width="180" height="230" fill="none" stroke="#9db3aa" stroke-width="1.5"></rect>
+        <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" text-anchor="middle">
+          <text x="100" y="42" font-size="24" font-weight="700" fill="#ffffff">37%</text>
+          <text x="100" y="58" font-size="10.5" fill="#ffffff" opacity="0.92">kitchen</text>
+          <text x="100" y="112" font-size="24" font-weight="700" fill="#182421">20%</text>
+          <text x="100" y="128" font-size="10.5" fill="#182421" opacity="0.75">mid-court</text>
+          <text x="100" y="192" font-size="24" font-weight="700" fill="#ffffff">43%</text>
+          <text x="100" y="208" font-size="10.5" fill="#ffffff" opacity="0.92">baseline</text>
+        </g>
+      </svg>
+      <p style="margin:8px 0 0; font-size:11.5px; color:#5f6d68;">Thick line at the top is the net.</p>
+    </div>
+
+    <!-- PARTNER -->
+    <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:16px 16px 14px;">
+      <h3 style="font-size:15px; margin:0 0 10px; font-weight:600;">Your partners</h3>
+      <svg viewBox="0 0 200 250" style="width:100%; height:auto; display:block;" role="img" aria-label="Partner court time: kitchen 42 percent, mid-court 18 percent, baseline 40 percent">
+        <rect x="10" y="10" width="180" height="70" fill="#0f766e" opacity="0.50"></rect>
+        <rect x="10" y="80" width="180" height="70" fill="#0f766e" opacity="0.21"></rect>
+        <rect x="10" y="150" width="180" height="90" fill="#0f766e" opacity="0.47"></rect>
+        <line x1="10" y1="10" x2="190" y2="10" stroke="#182421" stroke-width="3"></line>
+        <line x1="10" y1="80" x2="190" y2="80" stroke="#ffffff" stroke-width="1.5"></line>
+        <line x1="10" y1="150" x2="190" y2="150" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="4 3"></line>
+        <rect x="10" y="10" width="180" height="230" fill="none" stroke="#9db3aa" stroke-width="1.5"></rect>
+        <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" text-anchor="middle">
+          <text x="100" y="42" font-size="24" font-weight="700" fill="#ffffff">42%</text>
+          <text x="100" y="58" font-size="10.5" fill="#ffffff" opacity="0.92">kitchen</text>
+          <text x="100" y="112" font-size="24" font-weight="700" fill="#182421">18%</text>
+          <text x="100" y="128" font-size="10.5" fill="#182421" opacity="0.75">mid-court</text>
+          <text x="100" y="192" font-size="24" font-weight="700" fill="#ffffff">40%</text>
+          <text x="100" y="208" font-size="10.5" fill="#ffffff" opacity="0.92">baseline</text>
+        </g>
+      </svg>
+      <p style="margin:8px 0 0; font-size:11.5px; color:#5f6d68;">Pooled across all six sessions &mdash; not one person.</p>
+    </div>
+
+    <!-- OPPONENTS -->
+    <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:16px 16px 14px;">
+      <h3 style="font-size:15px; margin:0 0 10px; font-weight:600;">Opponents</h3>
+      <svg viewBox="0 0 200 250" style="width:100%; height:auto; display:block;" role="img" aria-label="Opponent court time is not measured yet">
+        <rect x="10" y="10" width="180" height="230" fill="#eceff1"></rect>
+        <line x1="10" y1="10" x2="190" y2="10" stroke="#182421" stroke-width="3" opacity="0.4"></line>
+        <line x1="10" y1="80" x2="190" y2="80" stroke="#ffffff" stroke-width="1.5"></line>
+        <line x1="10" y1="150" x2="190" y2="150" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="4 3"></line>
+        <rect x="10" y="10" width="180" height="230" fill="none" stroke="#c9d2d6" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+        <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" text-anchor="middle" fill="#6f7a83">
+          <text x="100" y="118" font-size="13" font-weight="600">Not measured</text>
+          <text x="100" y="138" font-size="13" font-weight="600">yet</text>
+        </g>
+      </svg>
+      <p style="margin:8px 0 0; font-size:11.5px; color:#5f6d68;">The far-side players are not tracked reliably enough across a whole rally to give an honest split.</p>
+    </div>
+  </div>
+
+  <!-- ================= WHERE THE BALL WENT ================= -->
+  <h2 style="font-size:23px; margin:38px 0 6px; font-weight:600;">Where the ball went</h2>
+  <div style="height:2px; background:linear-gradient(90deg,#0f766e,transparent); margin:0 0 14px;"></div>
+  <p style="color:#5f6d68; font-size:13.5px; margin:0 0 14px; text-wrap:pretty;">One question at a time &mdash; everything on one court is unreadable. Balls that finished outside the lines are plotted where they actually landed, outside the court.</p>
+
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;">
+    <sc-for list="{{views}}" as="v" hint-placeholder-count="5">
+      <button class="vbtn" style="{{v.btnStyle}}" onClick="{{v.pick}}">{{v.label}}</button>
+    </sc-for>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start;">
+
+    <!-- COURT -->
+    <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:14px; width:352px;">
+      <svg viewBox="0 0 320 600" style="width:324px; height:auto; display:block;" role="img" aria-label="Top-down court with the selected shots plotted">
+        <rect x="0" y="0" width="320" height="600" fill="#f7faf9"></rect>
+        <rect x="60" y="80" width="200" height="440" fill="#eef3f0"></rect>
+        <line x1="160" y1="80" x2="160" y2="230" stroke="#b8c9c1" stroke-width="1.5"></line>
+        <line x1="160" y1="370" x2="160" y2="520" stroke="#b8c9c1" stroke-width="1.5"></line>
+        <line x1="60" y1="230" x2="260" y2="230" stroke="#b8c9c1" stroke-width="1.5"></line>
+        <line x1="60" y1="370" x2="260" y2="370" stroke="#b8c9c1" stroke-width="1.5"></line>
+        <rect x="60" y="80" width="200" height="440" fill="none" stroke="#9db3aa" stroke-width="2"></rect>
+        <line x1="44" y1="300" x2="276" y2="300" stroke="#3d4f49" stroke-width="3"></line>
+
+        <sc-for list="{{lines}}" as="ln" hint-placeholder-count="4">
+          <line x1="{{ln.x1}}" y1="{{ln.y1}}" x2="{{ln.x2}}" y2="{{ln.y2}}" stroke="#6b9c33" stroke-width="1.5" opacity="0.45"></line>
+        </sc-for>
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="10">
+          <circle cx="{{d.cx}}" cy="{{d.cy}}" r="{{d.r}}" fill="{{d.fill}}" stroke="{{d.stroke}}" stroke-width="{{d.sw}}" opacity="{{d.op}}"></circle>
+        </sc-for>
+
+        <g font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="10.5" fill="#5f6d68">
+          <text x="48" y="296">net</text>
+          <text x="64" y="72">their baseline</text>
+          <text x="64" y="537">your baseline</text>
+          <text x="264" y="234">kitchen</text>
+          <text x="264" y="374">kitchen</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- READING PANEL -->
+    <div style="flex:1; min-width:260px;">
+
+      <sc-if value="{{isSR}}" hint-placeholder-val="{{ true }}">
+        <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:18px 20px;">
+          <h3 style="font-size:16px; margin:0 0 8px; font-weight:600;">Your serves &amp; returns</h3>
+          <p style="margin:0 0 12px; font-size:14px; text-wrap:pretty;">Where your serves and returns of serve came down. A serve has to clear the kitchen line and stay in the far box; a return just has to land in the far court.</p>
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#2a6ba8; border:1.5px solid #fff; box-shadow:0 0 0 1px #d5dee4;"></span>landed in &mdash; 10</div>
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#c2452d; border:1.5px solid #fff; box-shadow:0 0 0 1px #e8cdc7;"></span>landed out or short &mdash; 3</div>
+          </div>
+          <p style="margin:0; font-size:12.5px; color:#5f6d68;">13 of your 21 serves and returns. The rest had no landing we could see &mdash; the ball is hardest to follow exactly where it comes down.</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isVol}}" hint-placeholder-val="{{ false }}">
+        <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:18px 20px;">
+          <h3 style="font-size:16px; margin:0 0 8px; font-weight:600;">Your volleys</h3>
+          <p style="margin:0 0 12px; font-size:14px; text-wrap:pretty;">Green marks are where you were standing when you took a ball out of the air. A line runs to where that ball came down, when we could follow it.</p>
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#6b9c33; border:1.5px solid #fff; box-shadow:0 0 0 1px #d3ddc6;"></span>where you volleyed from &mdash; 18</div>
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:11px; height:11px; border-radius:50%; background:#2a6ba8; border:1.5px solid #fff; box-shadow:0 0 0 1px #d5dee4;"></span>where that ball landed &mdash; 10</div>
+          </div>
+          <p style="margin:0; font-size:12.5px; color:#5f6d68;">Your contact point is known for every volley &mdash; it is your own body. The landing is the harder half: we have it for half of them.</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isOpp}}" hint-placeholder-val="{{ false }}">
+        <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:18px 20px;">
+          <h3 style="font-size:16px; margin:0 0 8px; font-weight:600;">Opponent mistakes</h3>
+          <p style="margin:0 0 12px; font-size:14px; text-wrap:pretty;">Where an opponent was standing when they hit the ball that lost them the rally &mdash; 17 of them. Clusters here are the spots worth making them play from.</p>
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#c2452d; border:1.5px solid #fff; box-shadow:0 0 0 1px #e8cdc7;"></span>hit it out &mdash; 10</div>
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#fff; border:2.2px solid #c2452d;"></span>into the net or short &mdash; 7</div>
+          </div>
+          <p style="margin:0; font-size:12.5px; color:#5f6d68;">One mark sits on the edge of the drawing: it was tracked well outside the court, which is more likely a tracking slip than a real position.</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isErr}}" hint-placeholder-val="{{ false }}">
+        <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:18px 20px;">
+          <h3 style="font-size:16px; margin:0 0 8px; font-weight:600;">Your errors</h3>
+          <p style="margin:0 0 12px; font-size:14px; text-wrap:pretty;">Where the ball finished on the 14 rallies you ended yourself. Five of the seven you hit long went out over the far baseline.</p>
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#c2452d; border:1.5px solid #fff; box-shadow:0 0 0 1px #e8cdc7;"></span>out &mdash; 7</div>
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#fff; border:2.2px solid #c2452d;"></span>into the net or short &mdash; 7</div>
+          </div>
+          <p style="margin:0; font-size:12.5px; color:#5f6d68;">Which player ended a rally, and why, is the weakest thing in this report &mdash; right about one time in three. Read this view for shape, not as a tally.</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isWin}}" hint-placeholder-val="{{ false }}">
+        <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:18px 20px;">
+          <h3 style="font-size:16px; margin:0 0 8px; font-weight:600;">Your winners</h3>
+          <p style="margin:0 0 12px; font-size:14px; text-wrap:pretty;">Where the ball landed on the rallies you ended with a ball nobody got back. All five were in, and four of the five were deep.</p>
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:9px; font-size:13px;"><span style="width:13px; height:13px; border-radius:50%; background:#2a6ba8; border:1.5px solid #fff; box-shadow:0 0 0 1px #d5dee4;"></span>landed in &mdash; 5</div>
+          </div>
+          <p style="margin:0; font-size:12.5px; color:#5f6d68;">Only five, and resting on the same rally-end reading as your errors. Treat it as a hint until more sessions build it up.</p>
+        </div>
+      </sc-if>
+
+      <div style="background:#ffffff; border:1px solid #e2e8e5; border-radius:14px; padding:14px 18px; margin-top:14px;">
+        <div style="font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#5f6d68; margin-bottom:7px;">Colour key</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:center; gap:9px; font-size:12.5px;"><span style="width:12px; height:12px; border-radius:50%; background:#2a6ba8;"></span>blue &mdash; the ball bounced here</div>
+          <div style="display:flex; align-items:center; gap:9px; font-size:12.5px;"><span style="width:12px; height:12px; border-radius:50%; background:#c2452d;"></span>red &mdash; out, into the net, or short</div>
+          <div style="display:flex; align-items:center; gap:9px; font-size:12.5px;"><span style="width:12px; height:12px; border-radius:50%; background:#6b9c33;"></span>green &mdash; a ball taken out of the air</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":880,"height":1420}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var D = {
+      winners: [{cx:150.7,cy:79,k:'in'},{cx:173.4,cy:274.4,k:'in'},{cx:158.1,cy:222.6,k:'in'},{cx:143.7,cy:115.7,k:'in'},{cx:167.4,cy:291.1,k:'in'}],
+      errors: [{cx:0,cy:320,k:'out',cl:1},{cx:122.7,cy:61.4,k:'out'},{cx:169.2,cy:48.3,k:'out'},{cx:74,cy:48.8,k:'out'},{cx:209.6,cy:68.4,k:'out'},{cx:197.6,cy:534.6,k:'out'},{cx:34.9,cy:7.7,k:'out'},{cx:107.2,cy:343,k:'net'},{cx:184.2,cy:520.2,k:'net'},{cx:152.1,cy:492.8,k:'net'},{cx:119.4,cy:326.3,k:'net'},{cx:64.2,cy:362,k:'net'},{cx:124.9,cy:397.5,k:'net'},{cx:225.6,cy:496.2,k:'net'}],
+      oppflaws: [{cx:230.7,cy:528.5,k:'out'},{cx:132.9,cy:242,k:'out'},{cx:108.2,cy:390.1,k:'out'},{cx:66.4,cy:491.2,k:'out'},{cx:196.1,cy:416.7,k:'out'},{cx:124.2,cy:210.9,k:'out'},{cx:100.8,cy:31,k:'out'},{cx:193.2,cy:406.9,k:'out'},{cx:250,cy:235.8,k:'out'},{cx:145,cy:198.2,k:'out'},{cx:192.7,cy:234,k:'net'},{cx:127.5,cy:569.4,k:'net'},{cx:180.6,cy:168.7,k:'net'},{cx:195.9,cy:403.1,k:'net'},{cx:88.9,cy:205.8,k:'net'},{cx:161.5,cy:0,k:'net',cl:1},{cx:186.2,cy:520.5,k:'net'}],
+      servereturn: [{cx:150.7,cy:79,k:'in'},{cx:182.1,cy:158,k:'in'},{cx:91.1,cy:146.3,k:'in'},{cx:54,cy:138.3,k:'out'},{cx:121,cy:88.7,k:'in'},{cx:241.5,cy:175,k:'in'},{cx:169.2,cy:48.3,k:'out'},{cx:95.4,cy:128.8,k:'in'},{cx:74,cy:48.8,k:'out'},{cx:118.6,cy:153.3,k:'in'},{cx:240.2,cy:118.6,k:'in'},{cx:212.3,cy:126,k:'in'},{cx:154.6,cy:91.5,k:'in'}],
+      volleys: [{cx:204.1,cy:480.3,k:'vol',lx:184.2,ly:520.2},{cx:222.6,cy:397.8,k:'vol',lx:173.4,ly:274.4},{cx:203.8,cy:395.4,k:'vol'},{cx:205.1,cy:390.1,k:'vol',lx:122.7,ly:61.4},{cx:212.5,cy:458.5,k:'vol'},{cx:201.5,cy:403,k:'vol'},{cx:193.9,cy:422.3,k:'vol'},{cx:210.4,cy:413.2,k:'vol',lx:209.5,ly:242.8},{cx:207,cy:391.9,k:'vol',lx:206.4,ly:146.9},{cx:193.5,cy:439.2,k:'vol'},{cx:104.1,cy:379.3,k:'vol'},{cx:120.9,cy:385.8,k:'vol',lx:140.8,ly:166.2},{cx:139.2,cy:389.9,k:'vol'},{cx:135.9,cy:396.4,k:'vol',lx:178.1,ly:250.6},{cx:103.8,cy:403.6,k:'vol',lx:111.7,ly:395.3},{cx:121.2,cy:398.9,k:'vol',lx:177.8,ly:225.9},{cx:115.7,cy:405.1,k:'vol'},{cx:93.8,cy:533.8,k:'vol',lx:181.9,ly:164.4}]
+    };
+    var STYLE = {
+      'in':   {fill:'#2a6ba8', stroke:'#ffffff', sw:1.2, r:6},
+      'out':  {fill:'#c2452d', stroke:'#ffffff', sw:1.2, r:6},
+      'net':  {fill:'#ffffff', stroke:'#c2452d', sw:2.2, r:5.5},
+      'vol':  {fill:'#6b9c33', stroke:'#ffffff', sw:1.2, r:6},
+      'land': {fill:'#2a6ba8', stroke:'#ffffff', sw:1.0, r:4.5}
+    };
+    var SEL = 'background:#0f766e; color:#ffffff; border:1px solid #0f766e; font-weight:600;';
+    var UNSEL = 'background:#ffffff; color:#182421; border:1px solid #e2e8e5;';
+
+    var self = this;
+    var view = (this.state && this.state.view) || 'servereturn';
+    var views = [
+      {id:'servereturn', label:'Serves & returns'},
+      {id:'volleys',     label:'Your volleys'},
+      {id:'oppflaws',    label:'Opponent mistakes'},
+      {id:'errors',      label:'Your errors'},
+      {id:'winners',     label:'Your winners'}
+    ].map(function (v) {
+      return {id: v.id, label: v.label,
+              btnStyle: (v.id === view ? SEL : UNSEL),
+              pick: function () { self.setState({view: v.id}); }};
+    });
+
+    var pts = D[view] || [];
+    var lines = [];
+    var dots = [];
+    pts.forEach(function (p) {
+      if (view === 'volleys' && p.lx !== undefined) {
+        lines.push({x1: p.cx, y1: p.cy, x2: p.lx, y2: p.ly});
+        var L = STYLE.land;
+        dots.push({cx: p.lx, cy: p.ly, r: L.r, fill: L.fill, stroke: L.stroke, sw: L.sw, op: 1});
+      }
+      var s = STYLE[p.k];
+      dots.push({cx: p.cx, cy: p.cy, r: s.r, fill: s.fill, stroke: s.stroke, sw: s.sw,
+                 op: p.cl ? 0.5 : 1});
+    });
+
+    return {
+      views: views, lines: lines, dots: dots,
+      isSR:  view === 'servereturn',
+      isVol: view === 'volleys',
+      isOpp: view === 'oppflaws',
+      isErr: view === 'errors',
+      isWin: view === 'winners'
+    };
+  }
+}
+</script>
+</body>
+</html>

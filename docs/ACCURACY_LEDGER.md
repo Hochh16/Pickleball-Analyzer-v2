@@ -1619,3 +1619,84 @@ association radius today is 0.5 body-heights (ASSOC_BBOX_HEIGHT_FRAC), more than
 paddle's actual reach — deliberately generous to absorb tracking error. Tightening it toward
 real paddle reach was measured as part of the table above and does not pay on its own; it
 would only pay alongside an actual paddle position.
+
+---
+
+## THE RATING'S OWN SOFT SPOTS — measured 2026-09-10
+
+Found while redesigning the report (`docs/REPORT_REDESIGN.md`). These are not detection
+problems; they are properties of how `stages/rate/rate.py` turns measurements into a
+number, and nothing else in this ledger records them.
+
+### The estimate is 39% positioning, not 20%
+
+`WEIGHTS` assigns strategy 0.20, but the estimate is confidence-weighted
+(`weight x confidence`, renormalised), and strategy is the only category measured near
+completely. On David2:
+
+| category | meant | confidence | actually carrying |
+|---|---|---|---|
+| strategy | 20% | 0.98 | **39%** |
+| third_shot | 18% | 0.48 | 17% |
+| volley | 13% | 0.47 | 12% |
+| dink | 15% | 0.38 | 11% |
+| forehand | 12% | 0.30 | 7% |
+| serve_return | 12% | 0.28 | 7% |
+| backhand | 10% | 0.30 | 6% |
+
+Reproduce: `python -m tools.rating_leverage data/_collections/david2`.
+
+**Two consequences worth carrying forward.** First, the weights themselves are declared
+UNCALIBRATED in the source and have never been checked against a known-rated player —
+they are the softest number in the system, and the rating rests on them. Second,
+**improving ball tracking will MOVE every rating, not merely sharpen it**: six categories
+are currently pulled toward the 3.0 neutral prior by low confidence, and they stop being
+pulled as confidence rises. Estimates are therefore not comparable across a tracking
+improvement. That is a migration problem the moment real users have history.
+
+### Rally-end accuracy blocks a rated USAPA element, not just a statistic
+
+End reason is **8 of 23 (35%)** on outdoor-12 after the 2026-09-10 rebuild
+(`python -m tools.rally_end_score`). The ledger has treated this as an accuracy figure.
+It is also a **product** blocker, and the reason is in the confusion matrix:
+
+```
+6  net -> not-returned      the player's error read as their winner
+4  not-returned -> net      the player's winner read as their error
+```
+
+Ten of twenty-three pairs flip the winner/error attribution — which is exactly the
+quantity `unforced_error_rate` needs. USA Pickleball rates unforced errors explicitly
+(the ladder turns on them at 3.0 / 3.5 / 5.0), so `score_strategy` excluding them is a
+**hole in the rating**, not a judgement that they do not matter. The exclusion is correct
+today: the error is biased rather than random — a missed error looks like clean play — so
+folding it in would systematically flatter every player, and flatter most the ones tracked
+worst.
+
+**One fix unlocks four things**: unforced errors as a rated element, the winners view, the
+errors view, and error attribution generally. That is the case for treating rally ends as
+a foundation fix rather than an accuracy chore.
+
+### Two drivers read zero for opposite reasons
+
+`tools/rating_leverage.py` exists to tell them apart, because the report cannot show the
+same dash for both:
+
+- **At the ceiling** — serves landing in, 9 of 9. The scale runs 70-100% and the player is
+  on 100%. No gain is possible; only loss.
+- **Below the floor** — returns landing in, 4 of 7 = 57%, under the 70% where the scale
+  starts. A ten-point gain reads as zero, but crossing the threshold is worth **+0.06** on
+  the overall estimate, the largest single gain available on this player.
+
+### A session folder can be silently corrupted by a partial re-run
+
+`pb_5_minute_outdoor-12` carried a `rallies.json` referencing shot ids 111-116 that
+`classified.json` no longer contained: classify had been re-run during the pass-by filter
+work, `segment_rallies` had not. `stages.aggregate` then died with `KeyError: 111`, so the
+David2 collection **could not be rebuilt at all**. An audit of all 20 session folders found
+only this one affected; re-running `ends -> rallies -> metrics -> rate -> plan` fixed it
+(estimate 3.90 -> 3.92, band unchanged).
+
+**Nothing checks this.** Re-running `classify` without `ends` and `rallies` leaves a folder
+that looks fine until an aggregate crashes. A cheap guard: assert in `segment_rallies` (or
+`aggregate`) that every `shot_ids` entry resolves in `classified.json`.
