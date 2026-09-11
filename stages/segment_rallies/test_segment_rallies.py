@@ -503,3 +503,71 @@ def test_serve_landing_skips_bounces_until_it_crosses_the_net():
     assert sr.serve_landing(post, "near")["bounce_id"] == 3
     assert sr.serve_landing(post, None) is None
     assert sr.serve_landing([_bounce(1, 62, y=-1.0)], "near") is None
+
+
+def _open_rally():
+    """Three shots, near-far-near, a second apart: an ordinary open rally."""
+    return [{"shot_id": i, "frame": 60 + 60 * i, "t_sec": 1.0 + i, "is_serve": i == 0,
+             "hitter_side": "near" if i % 2 == 0 else "far"} for i in range(3)]
+
+
+def test_a_measured_net_end_overrides_the_bounce_call_but_not_the_boundary():
+    """The bounce rules call a net ball from which side of the net the last bounce landed;
+    the net detector measures the ball going dead beside the net. Against the operator's 23
+    rally ends with a reason the detector found 9 of 10 net ends and the bounce rules 2.
+
+    The override must not move the rally's END: ending_bounce_id sets end_frame, and every
+    rally-boundary number in the regression harness is built on it."""
+    rally = _open_rally()                                   # last hitter: near
+    far_bounce = [{"bounce_id": 7, "frame": 200, "between_shots": [2, None],
+                   "court_xy_ft": [10.0, 30.0], "is_in_court": True}]
+    assert sr.classify_rally(rally, far_bounce, None, real_ball=True)[0] == "ball-not-returned"
+
+    net = {"t_sec": 3.8, "reason": "net", "trusted": True, "by_shot_t": 3.0, "by_shot_id": 2}
+    reason, conf, bid, sig = sr.classify_rally(rally, far_bounce, None, real_ball=True,
+                                               net_end=net)
+    assert reason == "net-or-short"
+    assert conf == sr.NET_END_CONFIDENCE
+    assert bid == 7, "the ending bounce -- and so end_frame -- must not move"
+    assert sig["reason_source"] == "rally_ends_net"
+    assert sig["reason_before_net_end"] == "ball-not-returned"
+    assert sig["net_end_by_shot_id"] == 2
+
+    # the synthetic ball has no reconstruction and so no net ends: never overridden
+    assert sr.classify_rally(rally, far_bounce, None, real_ball=False,
+                             net_end=net)[0] == "ball-not-returned"
+
+
+def test_a_net_end_on_a_lone_serve_is_a_fault_unless_its_landing_was_measured():
+    """A serve into the net ends the point on the serve: a FAULT, charged to the server --
+    not a hitter error in open play. But a measured landing is a direct in/out read and
+    outranks the inference."""
+    net = {"t_sec": 1.9, "reason": "net", "trusted": True, "by_shot_t": 1.0, "by_shot_id": 0}
+    reason, conf, bid, _sig = sr.classify_rally(_serve_rally("near"), [], None,
+                                                real_ball=True, net_end=net)
+    assert (reason, bid) == ("serve-fault", None)
+    assert conf == sr.NET_END_CONFIDENCE
+
+    landed_in = [_bounce(1, 70, y=36.0, in_court=True)]
+    reason, _c, bid, sig = sr.classify_rally(_serve_rally("near"), landed_in, None,
+                                             real_ball=True, net_end=net)
+    assert (reason, bid) == ("ball-not-returned", 1)
+    assert sig["reason_source"] == "bounces"
+
+
+def test_a_net_end_joins_its_rally_through_the_shot_it_followed():
+    """Joined on the SHOT, not on a time window -- rally boundaries are this stage's weak
+    part. Any shot in the rally qualifies, not only the last: at outdoor-12 110.2s a junk
+    contact 0.3s after the dead ball was the rally's last shot, and requiring the last shot
+    lost that real net end."""
+    rally = _open_rally()                                   # shots at 1.0, 2.0, 3.0s
+    elsewhere = {"t_sec": 9.5, "reason": "net", "trusted": True, "by_shot_t": 9.0}
+    assert sr.net_end_for_rally(rally, [elsewhere]) is None
+
+    mid = {"t_sec": 2.6, "reason": "net", "trusted": True, "by_shot_t": 2.0}
+    assert sr.net_end_for_rally(rally, [mid])["by_shot_id"] == 1
+
+    late = {"t_sec": 3.7, "reason": "net", "trusted": True, "by_shot_t": 3.0}
+    got = sr.net_end_for_rally(rally, [late, mid])
+    assert (got["by_shot_id"], got["t_sec"]) == (2, 3.7), "a rally ends once: the latest wins"
+    assert "by_shot_id" not in late, "the caller's end must not be mutated"

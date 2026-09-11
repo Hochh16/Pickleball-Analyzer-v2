@@ -132,6 +132,22 @@ FAR_ROLES = ["opp_a", "opp_b"]
 HITTER_ERRORS = {"ball-out", "net-or-short", "ball-off-frame"}
 RECEIVER_ERRORS = {"double-bounce", "ball-not-returned"}
 
+
+def hitter_error_shot_id(rally: dict) -> Optional[int]:
+    """The shot a HITTER error is charged to.
+
+    Normally the rally's last shot. But when Stage 7 took the reason from a trusted NET end,
+    the net detector names the shot the ball died after, and that is the one that lost the
+    point. A contact detected after a dead ball is not: at outdoor-12 110.2s the ball went
+    into the net and a junk contact 0.3s later was the rally's last shot, which would have
+    charged the error to whoever touched the ball next.
+    """
+    sid = (rally.get("end_signals") or {}).get("net_end_by_shot_id")
+    if sid is not None:
+        return int(sid)
+    ids = rally.get("shot_ids") or []
+    return int(ids[-1]) if ids else None
+
 EPS = 1e-9
 
 
@@ -1422,7 +1438,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                 errors_committed[owner] += 1
                 role_error_raw_erc[owner].append(erc)
         elif er in HITTER_ERRORS:
-            last_sid = int(r["shot_ids"][-1]) if r["shot_ids"] else None
+            last_sid = hitter_error_shot_id(r)
             last_shot = shot_by_id.get(last_sid) if last_sid is not None else None
             owner = (role_of(last_shot["track_id"]) if last_shot else None) or "unattributed"
             add_owner(owner, er, "hitter")

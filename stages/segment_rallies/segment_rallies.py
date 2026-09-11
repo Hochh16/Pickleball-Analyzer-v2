@@ -530,12 +530,14 @@ def drop_micro_rallies(rally_groups: List[List[dict]], fps: float,
 
 # --- End-reason classification ----------------------------------------------
 
-def classify_rally(rally_shots: List[dict], bounces: List[dict],
-                    next_rally_serve_frame: Optional[int],
-                    serve_fault_max_frames: int = SERVE_FAULT_MAX_FRAMES,
-                    real_ball: bool = False
-                    ) -> Tuple[str, float, Optional[int], dict]:
-    """Returns (end_reason, confidence, ending_bounce_id, end_signals).
+def _classify_from_bounces(rally_shots: List[dict], bounces: List[dict],
+                           next_rally_serve_frame: Optional[int],
+                           serve_fault_max_frames: int = SERVE_FAULT_MAX_FRAMES,
+                           real_ball: bool = False
+                           ) -> Tuple[str, float, Optional[int], dict]:
+    """The bounce-stream rules. `classify_rally` wraps this with the measured net end.
+
+    Returns (end_reason, confidence, ending_bounce_id, end_signals).
     Implements the rule table in the contract: serve-fault > double-bounce >
     net-or-short > ball-out > ball-not-returned > ball-off-frame > unknown.
 
@@ -668,6 +670,79 @@ def classify_rally(rally_shots: List[dict], bounces: List[dict],
     return ("unknown", 0.3, None, end_signals)
 
 
+# A reason taken from a trusted NET end carries the net detector's measured precision: 85% on
+# the operator's 36 point-ends across three clips (tools/detect_rally_ends.py).
+NET_END_CONFIDENCE = 0.85
+
+
+def classify_rally(rally_shots: List[dict], bounces: List[dict],
+                   next_rally_serve_frame: Optional[int],
+                   serve_fault_max_frames: int = SERVE_FAULT_MAX_FRAMES,
+                   real_ball: bool = False,
+                   net_end: Optional[dict] = None
+                   ) -> Tuple[str, float, Optional[int], dict]:
+    """End reason for one rally: the bounce rules, overridden by a measured NET end.
+
+    Returns (end_reason, confidence, ending_bounce_id, end_signals).
+
+    `net_end` is a trusted `net` end from tools/detect_rally_ends.py, joined by the caller to
+    this rally through the shot it followed (`by_shot_id`). The two sources ask different
+    questions, and only one of them is answerable where rallies actually end. The bounce
+    rules call a net ball from which SIDE of the net the last bounce landed on relative to
+    the last hitter; the rally-ending bounce is exactly the one most often missed or
+    misattributed, and end reason stood at 8 of the operator's 23 rally ends. The net
+    detector asks whether the ball went to the floor beside the net and STAYED there, and it
+    found 9 of those 23's 10 net ends while the bounce rules found 2. It was already trusted
+    for rally boundaries (apply_rally_ends) and simply never consulted for the reason.
+    Wired in: 8/23 -> 14/23, seven fixed and one broken -- and the broken one is a truth
+    note that says the ball "never made it back over the net".
+
+    Deliberately unchanged:
+      * `ending_bounce_id`, so end_frame and every rally-boundary number stay as they were.
+      * a serve whose LANDING was measured: a direct in/out read outranks an inference.
+      * the synthetic ball, which has no reconstruction and so no net ends.
+    A net end on a one-shot rally with no measured landing is a serve into the net -- a serve
+    FAULT, charged to the server, not a hitter error in open play.
+    """
+    reason, conf, bid, signals = _classify_from_bounces(
+        rally_shots, bounces, next_rally_serve_frame, serve_fault_max_frames, real_ball)
+    signals["reason_source"] = "bounces"
+    if not real_ball or not net_end or net_end.get("by_shot_id") is None:
+        return reason, conf, bid, signals
+    if len(rally_shots) == 1 and bid is not None:
+        return reason, conf, bid, signals            # the serve's landing was measured
+    signals["reason_source"] = "rally_ends_net"
+    signals["reason_before_net_end"] = reason
+    signals["net_end_t_sec"] = net_end.get("t_sec")
+    signals["net_end_by_shot_id"] = int(net_end["by_shot_id"])
+    new_reason = "serve-fault" if len(rally_shots) == 1 else "net-or-short"
+    return new_reason, NET_END_CONFIDENCE, bid, signals
+
+
+def net_end_for_rally(rally_shots: List[dict], net_ends: List[dict],
+                      tol_s: float = 0.05) -> Optional[dict]:
+    """The trusted net end that belongs to this rally, or None.
+
+    Joined on the SHOT the net detector says the ball died after, not on time windows: rally
+    boundaries are the weak part of this stage, and a join that leans on them inherits their
+    error. Matching the rally's LAST shot only was measured and loses a real net end
+    (outdoor-12 110.2s) to a junk contact 0.3s after the dead ball, so any shot in the rally
+    qualifies. If several match, the latest wins -- a rally ends once. Returns a copy with
+    `by_shot_id` filled in.
+    """
+    best = None
+    for e in net_ends:
+        b = e.get("by_shot_t")
+        if b is None:
+            continue
+        hit = next((s for s in rally_shots
+                    if s.get("t_sec") is not None and abs(float(s["t_sec"]) - float(b)) <= tol_s),
+                   None)
+        if hit is not None and (best is None or float(e["t_sec"]) > float(best["t_sec"])):
+            best = {**e, "by_shot_id": int(hit["shot_id"])}
+    return best
+
+
 # --- Main pipeline -----------------------------------------------------------
 
 def run(folder: Path, args, log: logging.Logger) -> dict:
@@ -766,13 +841,20 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
     if not rally_groups:
         log.warning("no rallies found; emitting empty rallies list")
 
+    # The measured NET ends vote on the end REASON as well as on boundaries -- see
+    # classify_rally. Same trusted-or-legacy convention as apply_rally_ends, but the reason is
+    # checked explicitly: an ends file written before `trusted` existed carries no flag at all,
+    # and treating that as trusted would let a 29%-precise `out` end rewrite a reason.
+    net_ends = [e for e in rally_ends
+                if e.get("reason") == "net" and e.get("trusted", True)]
     out_rallies: List[dict] = []
     for ri, rally_shots in enumerate(rally_groups):
         next_serve_frame = (int(rally_groups[ri + 1][0]["frame"])
                             if ri + 1 < len(rally_groups) else None)
         end_reason, conf, ending_bid, signals = classify_rally(
             rally_shots, bounces, next_serve_frame, serve_fault_max_frames,
-            real_ball=(ball_source == "real"))
+            real_ball=(ball_source == "real"),
+            net_end=net_end_for_rally(rally_shots, net_ends))
 
         last_shot = rally_shots[-1]
         last_frame = int(last_shot["frame"])

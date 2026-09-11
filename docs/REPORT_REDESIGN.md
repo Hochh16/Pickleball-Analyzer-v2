@@ -206,6 +206,14 @@ in the rating and is missing from it.
 the winners view, the errors view, and error attribution generally. That is the argument
 for treating it as a foundation fix rather than an accuracy chore.
 
+> **Update, later on 2026-09-10: end reason is now 14/23 (61%)**, after wiring the trusted
+> net detector into the reason (see the ledger entry "RALLY END REASON 8/23 -> 14/23"). The
+> 8/23 figures in this section and on the canvas are the pre-fix state. The exclusion of
+> unforced errors from the rating has **not** been revisited: 61% is a large gain but still
+> wrong on 9 of 23, and whether that is enough to score on is the operator's call. The
+> canvas numbers that depend on end reasons (the unforced-errors row, the winners and
+> errors views) need re-cutting against the rebuilt collection before implementation.
+
 ## 5. What was fixed to get here
 
 `pb_5_minute_outdoor-12` had a **stale `rallies.json`** referencing shot ids 111–116 that

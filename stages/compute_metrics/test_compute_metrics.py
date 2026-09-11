@@ -745,3 +745,14 @@ def test_a_dink_that_ends_the_rally_has_no_answer_to_read():
     same = {"frame": 60, "track_id": 2, "hitter_side": "near",
             "features": {"contact_height": "high", "contact_height_known": True}}
     assert popup_block([dink, same], mine, fps)["n_measured"] == 0
+
+
+def test_a_net_error_is_charged_to_the_shot_the_ball_died_after():
+    """Normally a hitter error belongs to the rally's last shot. When the reason came from a
+    measured net end, the detector names the shot the ball died after -- and a contact
+    detected after a dead ball (outdoor-12 110.2s, 0.3s later) is not the shot that lost it."""
+    from stages.compute_metrics.compute_metrics import hitter_error_shot_id
+    assert hitter_error_shot_id({"shot_ids": [4, 5, 6], "end_signals": {}}) == 6
+    netted = {"shot_ids": [4, 5, 6], "end_signals": {"net_end_by_shot_id": 5}}
+    assert hitter_error_shot_id(netted) == 5
+    assert hitter_error_shot_id({"shot_ids": [], "end_signals": None}) is None

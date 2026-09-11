@@ -1700,3 +1700,86 @@ only this one affected; re-running `ends -> rallies -> metrics -> rate -> plan` 
 **Nothing checks this.** Re-running `classify` without `ends` and `rallies` leaves a folder
 that looks fine until an aggregate crashes. A cheap guard: assert in `segment_rallies` (or
 `aggregate`) that every `shot_ids` entry resolves in `classified.json`.
+
+---
+
+## RALLY END REASON 8/23 -> 14/23 — the net detector was never consulted (2026-09-10)
+
+Standing number: `python -m tools.rally_end_score` -> **14/23 (61%)**, was 8/23.
+
+**What changed.** `tools/detect_rally_ends.py`'s NET end — the ball goes to the floor beside
+the net and stays there, 85% precise on the operator's 36 point-ends — was already trusted
+for rally BOUNDARIES through `apply_rally_ends`. `classify_rally` never read it for the
+REASON. On the 23 paired truth ends it found **9 of the 10 true net ends**; the bounce rules
+found **2**. `classify_rally` now wraps the bounce rules (`_classify_from_bounces`) and lets
+a trusted net end, joined through the shot it followed (`net_end_for_rally`), set
+`net-or-short` — or `serve-fault` on a lone serve with no measured landing.
+`compute_metrics.hitter_error_shot_id` charges the error to that shot rather than the
+rally's last one: at outdoor-12 110.2s a junk contact 0.3s after the dead ball was the last
+shot, and would have put the opponent's net error on the user.
+
+Joining on the shot beat joining on the last shot (13/23) and tied a time window (14/23);
+the shot join was kept because rally boundaries are the weak part of this stage.
+
+**Impact, measured, not asserted.**
+
+| check | result |
+|---|---|
+| `tools/regression.py --rerun`, all four clips | **no change against the baseline** |
+| test suite | 181 passed (4 new) |
+| outdoor-12 rating | 3.93 -> 3.93, no subscore moved |
+| David2 collection, all six members rebuilt | 3.92 -> **3.91**, no subscore moved |
+
+Rally boundaries and junk gating did not move because `ending_bounce_id` is preserved, so
+`end_frame` is identical. No subscore moved because neither unforced errors nor the fault
+rate is scored.
+
+**The David2 estimate still dipped 0.01, and the cause is plumbing, not play.** The serve
+metric's confidence is the mean of its rallies' `end_reason_confidence`, and a net-end reason
+carries 0.85 against the bounce rules' 0.75-0.8. Serve/return confidence rose 0.285 -> 0.314,
+its share of the estimate 6.8% -> 7.4%, taken mostly from strategy (39.2% -> 38.9%). Serve/
+return scores below strategy, so the weighted estimate fell. Nothing about the player's
+serve was measured differently. Worth knowing: **how confidently we know how a rally ENDED
+currently sets how much the serve/return category COUNTS** — a pre-existing coupling,
+flagged here rather than changed.
+
+What moved on purpose is error attribution. David2: net-or-short 14 -> 31, ball-not-returned
+25 -> 15, ball-out 17 -> 12; the user's errors 14 -> 16 of 64 rallies; receiver-team errors
+(team_near + team_far) 25 -> 15. That is the winner/error flip this was for.
+
+### Measured and rejected first (cheap test -> gate)
+
+**Serve rotation as a who-won signal.** In doubles the serving side keeps serving only if it
+won, so the next serve should say who won with no ball at all. The premise holds on truth:
+court B's server sequence has **0 rotation violations in 9**, and on court C the 7 rallies
+whose server truth can resolve all give the right winner/error class. On DETECTED inputs it
+went **5 right / 9 wrong** against the live rules' 11/10. Detected server side and last
+hitter are both too noisy, and far-side server identity (opp_a vs opp_b) does not exist.
+Do not re-propose without far-side identity.
+
+**The last hitter as the lever.** Hypothesis: a wrong last hitter flips the bounce-side rule,
+producing the net <-> not-returned swap. Oracle — live rules handed the TRUE last shot:
+**6 right / 10 wrong / 9 true ending shots not detected at all.** Hitter side improves to
+11/12, but the reason does not. Rejected.
+
+### Correction to the 2026-09-03 diagnosis
+
+That entry said the limiter was bounce recall at rally ends and advised against another
+end-reason rule. Partly right: 9 of 25 true ending shots are undetected, and the bounce
+after the last shot is often another touch's bounce (116.4s: the opponent's shot landing at
+the user's feet, whose own touch into the net was never detected). But the largest single
+gain needed no recall improvement at all — only a detector already in the pipeline.
+
+### The 9 still wrong
+
+| confusion | n | note |
+|---|---|---|
+| not-returned -> net | 4 | **all four were already wrong before this change**; two are the net detector firing on a short winner dying at the net line (153.1s bounce +0.3 ft from the net), two the bounce side rule |
+| out -> net | 1 | outdoor 176.4s, described twice in truth; the second note: *"never made it back over the net"*. Disputed — do not tune |
+| net -> not-returned | 1 | court C 28.8s, the one net end the detector missed; the pixel stream missed its bounces, the height stream saw three |
+| out -> unknown, serve-fault -> out, not-returned -> unknown | 3 | no bounce; rally ran into the next; last rally of the clip |
+
+Plus 2 truth ends with no detected rally and 4 spurious rallies — boundary problems, untouched.
+
+**Next levers:** the net detector's false fires on short winners (did the ball die on the
+hitter's side of the net, or just over it?), and out ends (2 missed, 1 unknown).
