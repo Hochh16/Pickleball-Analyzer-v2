@@ -2144,3 +2144,32 @@ Any reassignment rule loses:
 For these hits the far player is not near the ball in the image. At contact the ball sits over a
 near player, so 2-D proximity cannot say who struck it. This is a limit of the single low camera, not an
 association bug. It accounts for about 18 of the 63 real shots the rules miss on dev (~29%).
+
+### 2026-09-14 (later) — Far-hit check: the "18 wrong-side" figure was mostly a matching artifact; the real cause is small
+
+Each of the 20 run members the diagnosis called "real, operator says other side" was looked up and
+rendered: the operator's time, our candidate, the ball track ±15 frames, participant boxes and
+wrists. Scratchpad `far_hit_check.py`, images in `scratchpad/far_hits/`.
+
+**Correction.** In 10 of the 20, the operator's shot WAS detected and kept: a kept kink sits 0.00s from
+the truth time. The dropped member is a different contact 0.2-0.34s away that the loose 0.35s match
+paired with the same truth shot. Two more pairs are duplicates (two members matched to one truth shot).
+So these were never lost shots, and the earlier "18 of 21 pairs" and "~29% of misses" overstate the cause.
+
+**The genuinely lost far/near hits: about 7 distinct shots on three dev videos** (18.37 and 38.30 on outdoor-7; 86.72 on court C;
+51.70, 73.90, 75.70 and 176.20 on court B):
+- **The ball track is fine**: 22-31 of 31 frames visible around each contact.
+- **The players overlap in the image**: a far player at the net stands directly behind a near player
+  (38.30, 86.72, 51.70, 73.90, 176.20). Ball, near player's hand and far player occupy the same pixels.
+- **A far player is not tracked at that moment**: 18.37 (neither opponent boxed) and 176.20 (opp_a
+  behind the partner, not boxed).
+
+**Size.** Even a perfect fix recovers about 7 of the 243 dev real shots (74% → 77%). No single large, fixable cause
+remains: the misses are spread over many small ones (on court A: handling 12, no player 5, same-track
+repeats 5, passed-by 2, latch 1, never a candidate 2).
+
+**Type accuracy of detected shots** (one-to-one within 0.35s against operator-typed shots, all four reviewed videos):
+- type right 181/252 (72%): outdoor-7 66%, court C 76%, court B 64%, court A 82%
+- volley right 159/194 (82%)
+- by operator type: serve 33/39, return 26/33, drive 71/92 (19 called dink), dink 32/39, lob 5/6,
+  **drop 14/43** (17 called drive, 7 called dink)
