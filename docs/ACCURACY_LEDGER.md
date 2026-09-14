@@ -1863,3 +1863,58 @@ serve fault / unsure), imported as a structured `reason` on the rally end and pr
 set by column position (wrong on the disputed sheet), the worked example's note sat in
 CORRECT_HITTER, and an ending shot added in the blank rows with no type was silently dropped
 by the importer. Court A — the one harness clip with no truth — is out for review with it.
+
+---
+
+## HELD-OUT COURT A — the first clip scored that nothing was tuned on (2026-09-14)
+
+The operator fully reviewed `pb_5_min_indoor_1_court_a`, the one harness clip with no truth.
+Imported and verified against their own counts: 97 real shots, 38 not-a-shot, 27 missed, 19
+serves, 19 rally ends with reasons (8 net / 6 out / 5 winner), 0 conflicts. Every earlier figure
+in this ledger was measured on the outdoor video and courts B/C, which rules were adjusted
+against; **court A is held out from now on — nothing is tuned on it.**
+
+**Baseline on court A:**
+
+| | court A |
+|---|---|
+| serves correct | 14 / 19 — 4 false accepts, every one junk the operator marked, 2-6s before the real serve it blocked |
+| rally END (our last shot vs the ending shot) within 2s | 12 / 19 — 6 early (ending shot never detected, mostly balls into the net), 5 late |
+| end reason | 10 / 19 |
+| junk | 38 — 20 between true points (12 of them inside our rallies), 18 inside true rallies |
+| missed shots | 27 — all inside true rallies |
+
+**25 of the 27 missed shots WERE candidates, killed by our own filters.** Final fate, following
+merge chains to the surviving candidate: `handling_same_side_run` 12, `no_player_in_range` 5,
+`reject_same_track_repeats` 5 (it writes no discard record — the silent one), `passed_by` 2
+(including the real serve at 4:27.8, which let the junk before it be accepted), wrong-object
+latch 1, never a candidate 2. The two "you cannot hit twice in a row" filters account for ~17.
+
+**How the handling filter loses real shots.** Rebuilt all runs from `shot_discards.json` and
+labelled members from truth. The losses are mostly the WRONG WINNER — a contact 0.3-1.0s
+after the real shot — not a missed intervening opposite-side shot (5 such pairs on court A,
+1 on each dev clip) and not between-point retrieval. The same harm is on the DEV clips at the
+same rate: 16 (court A), 15 (court C), 16 (outdoor-12) real shots lost to a junk or unlabelled
+winner. This is the rule stack's plateau, not a court-A quirk.
+
+`SAME_SIDE_EXCURSION_PX` is **inert on all three clips**: at 3840px width the scaled split
+threshold is 1200px and the largest excursion after any dropped contact is 1173px.
+
+**Measured and rejected on 2026-09-11/14 (do not re-propose):**
+
+| idea | result |
+|---|---|
+| split handling runs where the ball crossed the net (3-D, 3 ft past, K frames) | K=3 recovers 3/5 real pairs but splits 45/251 handling pairs; K>=10 recovers 0 |
+| same, ground-projected pixel | 2/5 real, 38-41/251 handling |
+| split runs at dead-ball gaps (unseen >=1.5s, ball at rest >=1s) | present in 0 of 16 harmful losses on court A (1 at >=1.0s) |
+| resting side of the dead ball: net ball vs just-cleared winner | breaks 6 of 9 true net balls |
+| serve rotation as who-won | 5 right / 9 wrong on detected inputs |
+| live end rules given the true last shot | 6 right / 10 wrong |
+
+Serve truth completeness, for anyone scoring serves: court A 19/19 typed, court B 10 marked
+strikes, court C 9 of 10 typed, outdoor-12 only 9 typed of ~16 rallies.
+
+**Conclusion.** Hand-built rejection filters over kink candidates have plateaued, and they do
+not generalise to an unseen court. The real contacts are almost all present in the candidate
+stream; the failure is classifying candidates. The next test is a learned candidate
+classifier validated leave-one-video-out, gated on held-out court A.
