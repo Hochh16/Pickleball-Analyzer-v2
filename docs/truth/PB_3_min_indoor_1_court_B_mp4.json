@@ -3,22 +3,392 @@
  "video": "PB 3 min indoor 1 court B.mp4",
  "shots": [
   {
-   "t_sec": 65.6,
-   "type": "return",
-   "hitter": "partner",
+   "t_sec": 3.67,
+   "type": "serve",
+   "hitter": "user",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "from your 18 Aug missed-shot worksheet, never imported -- check it, fix or delete the row",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@3.67"
+  },
+  {
+   "t_sec": 5.34,
+   "type": "return",
+   "hitter": "opponent",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "from your 18 Aug missed-shot worksheet, never imported -- check it, fix or delete the row",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@5.34"
+  },
+  {
+   "t_sec": 7.21,
+   "type": "drop",
+   "hitter": "user",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "from your 18 Aug missed-shot worksheet, never imported -- check it, fix or delete the row (you wrote '3rd shot drop'). Our #2 at 0:07.68 is close -- make sure they are different shots",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@7.21"
+  },
+  {
+   "t_sec": 7.68,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#2"
+  },
+  {
+   "t_sec": 9.11,
+   "type": "drive",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#3"
+  },
+  {
+   "t_sec": 9.96,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#4"
+  },
+  {
+   "t_sec": 10.7,
+   "type": "lob",
+   "hitter": "partner",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#5"
+  },
+  {
+   "t_sec": 11.93,
+   "type": "dink",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#6"
+  },
+  {
+   "t_sec": 12.59,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#7"
+  },
+  {
+   "t_sec": 12.97,
+   "type": "dink",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#8"
+  },
+  {
+   "t_sec": 14.48,
+   "type": "dink",
+   "hitter": "user",
+   "side": "near",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#9"
+  },
+  {
+   "t_sec": 16.15,
+   "type": "dink",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#10"
+  },
+  {
+   "t_sec": 16.37,
+   "type": "dink",
+   "hitter": "partner",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#11"
+  },
+  {
+   "t_sec": 17.21,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#12"
+  },
+  {
+   "t_sec": 17.89,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#13"
+  },
+  {
+   "t_sec": 18.58,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#14"
+  },
+  {
+   "t_sec": 19.57,
+   "type": "drive",
+   "hitter": "partner",
+   "volley": true,
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "from your 18 Aug missed-shot worksheet, never imported -- check it, fix or delete the row (you wrote 'drive / volley')",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@19.57"
+  },
+  {
+   "t_sec": 30.01,
+   "type": "serve",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#16"
+  },
+  {
+   "t_sec": 30.83,
+   "type": "drive",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#17"
+  },
+  {
+   "t_sec": 32.19,
+   "type": "drop",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#18"
+  },
+  {
+   "t_sec": 33.63,
+   "type": "drive",
+   "hitter": "user",
+   "volley": true,
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@33.63"
+  },
+  {
+   "t_sec": 45.66,
+   "type": "serve",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#22"
+  },
+  {
+   "t_sec": 48.0,
+   "type": "return",
+   "hitter": "user",
+   "side": "near",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@48.00"
+  },
+  {
+   "t_sec": 49.48,
+   "type": "drop",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#23"
+  },
+  {
+   "t_sec": 51.0,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@51.00"
+  },
+  {
+   "t_sec": 51.7,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@51.70"
+  },
+  {
+   "t_sec": 63.82,
+   "type": "serve",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#24"
+  },
+  {
+   "t_sec": 65.5,
+   "type": "return",
+   "hitter": "user",
+   "detected": false,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@65.50",
+   "superseded": [
+    {
+     "field": "hitter",
+     "was": "partner",
+     "now": "user",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 65.6,
+     "now": 65.5,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "near",
+   "volley_explicit": true
+  },
+  {
+   "t_sec": 67.7,
+   "type": "drop",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@67.70"
   },
   {
    "t_sec": 68.24,
    "type": "drive",
    "hitter": "partner",
    "detected": true,
-   "source": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "authority": 3,
-   "seq": 1788655645,
+   "seq": 1789404092,
    "key": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b#25",
    "superseded": [
     {
@@ -38,29 +408,65 @@
      "was": 67.6,
      "now": 68.24,
      "by": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "volley",
+     "was": true,
+     "now": false,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
     }
    ],
    "side": "near",
-   "volley": true,
+   "volley": false,
    "volley_explicit": true
   },
   {
-   "t_sec": 70.4,
-   "type": "drive",
+   "t_sec": 70.2,
+   "type": "drop",
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@70.20",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "drive",
+     "now": "drop",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 70.4,
+     "now": 70.2,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "far",
+   "volley_explicit": true
+  },
+  {
+   "t_sec": 70.85,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#26"
   },
   {
    "t_sec": 72.14,
    "type": "drop",
    "hitter": "opponent",
    "detected": true,
-   "source": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "authority": 3,
-   "seq": 1788655645,
+   "seq": 1789404092,
    "key": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b#27",
    "superseded": [
     {
@@ -89,16 +495,34 @@
     }
    ],
    "side": "far",
-   "volley_explicit": true
+   "volley_explicit": true,
+   "volley": false
+  },
+  {
+   "t_sec": 73.3,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@73.30"
   },
   {
    "t_sec": 73.9,
    "type": "drive",
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@73.90",
+   "side": "far",
+   "volley": true,
+   "volley_explicit": true
   },
   {
    "t_sec": 74.2,
@@ -107,9 +531,9 @@
    "volley": true,
    "detected": true,
    "volley_explicit": true,
-   "source": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "authority": 3,
-   "seq": 1788655645,
+   "seq": 1789404092,
    "key": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b#28",
    "side": "near",
    "superseded": [
@@ -128,135 +552,680 @@
    ]
   },
   {
-   "t_sec": 74.8,
-   "type": "drive",
+   "t_sec": 74.6,
+   "type": "drop",
    "hitter": "opponent",
    "volley": true,
    "detected": false,
    "volley_explicit": true,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@74.60",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "drive",
+     "now": "drop",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 74.8,
+     "now": 74.6,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "far"
   },
   {
-   "t_sec": 75.6,
-   "type": "drive",
+   "t_sec": 75.7,
+   "type": "dink",
    "hitter": "partner",
    "volley": true,
    "detected": false,
    "volley_explicit": true,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "notes": "however, it says opponent #30",
-   "authority": 2,
-   "seq": 0
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@75.70",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "drive",
+     "now": "dink",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 75.6,
+     "now": 75.7,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "near"
   },
   {
-   "t_sec": 76.3,
+   "t_sec": 76.04,
    "type": "drive",
    "hitter": "opponent",
    "volley": true,
-   "detected": false,
+   "detected": true,
    "volley_explicit": true,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#29",
+   "side": "far",
+   "superseded": [
+    {
+     "field": "detected",
+     "was": false,
+     "now": true,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 76.3,
+     "now": 76.04,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ]
+  },
+  {
+   "t_sec": 76.58,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#30"
   },
   {
    "t_sec": 78.3,
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "notes": "2 circles at same time show #32 opponent, #33 partner.  #31 by user was a winning shot missed by opponent. So there is no #32 and #33 shots.  Ball is not visible but a few yellow circles appear (not around ball)",
    "authority": 2,
-   "seq": 0
+   "seq": 0,
+   "not_a_shot": true,
+   "type": null
   },
   {
-   "t_sec": 105.2,
+   "t_sec": 86.82,
    "type": "serve",
    "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#36"
+  },
+  {
+   "t_sec": 88.56,
+   "type": "return",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#38"
+  },
+  {
+   "t_sec": 90.02,
+   "type": "drive",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#39"
+  },
+  {
+   "t_sec": 90.92,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#40"
+  },
+  {
+   "t_sec": 91.57,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#41"
+  },
+  {
+   "t_sec": 92.51,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#42"
+  },
+  {
+   "t_sec": 93.21,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#43"
+  },
+  {
+   "t_sec": 94.3,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@94.30"
+  },
+  {
+   "t_sec": 95.05,
+   "type": "lob",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#44"
+  },
+  {
+   "t_sec": 96.41,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#45"
+  },
+  {
+   "t_sec": 104.95,
+   "type": "serve",
+   "hitter": "user",
+   "detected": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#47",
+   "superseded": [
+    {
+     "field": "hitter",
+     "was": "partner",
+     "now": "user",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "detected",
+     "was": false,
+     "now": true,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 105.2,
+     "now": 104.95,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "near",
+   "volley": false,
+   "volley_explicit": true
   },
   {
    "t_sec": 106.5,
    "type": "return",
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@106.50",
+   "side": "far",
+   "volley_explicit": true
   },
   {
-   "t_sec": 107.8,
+   "t_sec": 107.56,
    "type": "drive",
    "hitter": "user",
-   "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "detected": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "notes": "however, it says partner SERVE",
-   "authority": 2,
-   "seq": 0
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#48",
+   "side": "near",
+   "volley": false,
+   "superseded": [
+    {
+     "field": "detected",
+     "was": false,
+     "now": true,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 107.8,
+     "now": 107.56,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "volley_explicit": true
   },
   {
-   "t_sec": 115.6,
+   "t_sec": 108.31,
    "type": "drive",
    "hitter": "opponent",
-   "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": "shot was hit out by opponent",
-   "authority": 2,
-   "seq": 0
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#49"
   },
   {
-   "t_sec": 169.3,
+   "t_sec": 109.5,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#50"
+  },
+  {
+   "t_sec": 110.92,
+   "type": "dink",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#51"
+  },
+  {
+   "t_sec": 111.88,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#52"
+  },
+  {
+   "t_sec": 113.0,
+   "type": "dink",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#53"
+  },
+  {
+   "t_sec": 114.4,
+   "type": "dink",
+   "hitter": "user",
+   "side": "near",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@114.40"
+  },
+  {
+   "t_sec": 115.32,
+   "type": "drive",
+   "hitter": "opponent",
+   "detected": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "shot was hit out by opponent",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#54",
+   "side": "far",
+   "superseded": [
+    {
+     "field": "detected",
+     "was": false,
+     "now": true,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 115.6,
+     "now": 115.32,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "volley_explicit": true
+  },
+  {
+   "t_sec": 127.63,
+   "type": "serve",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#56"
+  },
+  {
+   "t_sec": 129.13,
+   "type": "return",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#57"
+  },
+  {
+   "t_sec": 130.76,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#58"
+  },
+  {
+   "t_sec": 131.73,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#59"
+  },
+  {
+   "t_sec": 132.68,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#60"
+  },
+  {
+   "t_sec": 140.6,
+   "type": "serve",
+   "hitter": "user",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#62"
+  },
+  {
+   "t_sec": 142.15,
+   "type": "return",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#63"
+  },
+  {
+   "t_sec": 143.6,
+   "type": "drop",
+   "hitter": "partner",
+   "side": "near",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@143.60"
+  },
+  {
+   "t_sec": 153.4,
+   "type": "serve",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#66"
+  },
+  {
+   "t_sec": 155.31,
+   "type": "return",
+   "hitter": "partner",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#67"
+  },
+  {
+   "t_sec": 157.62,
+   "type": "drop",
+   "hitter": "opponent",
+   "side": "far",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#68"
+  },
+  {
+   "t_sec": 167.8,
+   "type": "serve",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": false,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@167.80"
+  },
+  {
+   "t_sec": 169.2,
    "type": "return",
    "hitter": "user",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "notes": "before that, it labels #67, opponent as 1st shot, however, it does it while she is about to throw the ball up for the serve and not when she actually hits the ball. So not sure it is catching the actual serve.",
-   "authority": 2,
-   "seq": 0
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@169.20",
+   "side": "near",
+   "volley_explicit": true,
+   "superseded": [
+    {
+     "field": "t_sec",
+     "was": 169.3,
+     "now": 169.2,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ]
   },
   {
-   "t_sec": 171.3,
-   "type": "drive",
-   "hitter": "opponent",
-   "detected": false,
-   "rally_position": "3rd",
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
-  },
-  {
-   "t_sec": 171.9,
-   "type": "drive",
-   "hitter": "user",
-   "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
-  },
-  {
-   "t_sec": 172.7,
+   "t_sec": 171.1,
    "type": "drop",
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
+   "rally_position": "3rd",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@171.10",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "drive",
+     "now": "drop",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 171.3,
+     "now": 171.1,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "far",
+   "volley_explicit": true
+  },
+  {
+   "t_sec": 171.8,
+   "type": "drive",
+   "hitter": "user",
+   "detected": false,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@171.80",
+   "side": "near",
+   "volley": true,
+   "volley_explicit": true,
+   "superseded": [
+    {
+     "field": "t_sec",
+     "was": 171.9,
+     "now": 171.8,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ]
+  },
+  {
+   "t_sec": 173.1,
+   "type": "drop",
+   "hitter": "opponent",
+   "detected": false,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "notes": "but says #68 user when opponent hits it and red circle is around user panel",
-   "authority": 2,
-   "seq": 0
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@173.10",
+   "side": "far",
+   "volley_explicit": true,
+   "superseded": [
+    {
+     "field": "t_sec",
+     "was": 172.7,
+     "now": 173.1,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ]
+  },
+  {
+   "t_sec": 173.12,
+   "type": "drive",
+   "hitter": "user",
+   "side": "near",
+   "volley": true,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#71"
   },
   {
    "t_sec": 173.66,
    "type": "drop",
    "hitter": "opponent",
-   "volley": true,
+   "volley": false,
    "detected": true,
    "volley_explicit": true,
-   "source": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b",
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
    "authority": 3,
-   "seq": 1788655645,
+   "seq": 1789404092,
    "key": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b#72",
    "superseded": [
     {
@@ -282,30 +1251,205 @@
      "was": 173.5,
      "now": 173.66,
      "by": "shot_review_disputed.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "volley",
+     "was": true,
+     "now": false,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
     }
    ],
    "side": "far"
   },
   {
-   "t_sec": 175.2,
-   "type": "dink",
+   "t_sec": 175.0,
+   "type": "drive",
    "hitter": "partner",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@175.00",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "dink",
+     "now": "drive",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 175.2,
+     "now": 175.0,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "near",
+   "volley": true,
+   "volley_explicit": true
   },
   {
-   "t_sec": 176.3,
-   "type": "dink",
+   "t_sec": 176.2,
+   "type": "drop",
    "hitter": "opponent",
    "detected": false,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "authority": 2,
-   "seq": 0
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b@176.20",
+   "superseded": [
+    {
+     "field": "type",
+     "was": "dink",
+     "now": "drop",
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    },
+    {
+     "field": "t_sec",
+     "was": 176.3,
+     "now": 176.2,
+     "by": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
+    }
+   ],
+   "side": "far",
+   "volley_explicit": true
+  },
+  {
+   "t_sec": 176.55,
+   "type": "dink",
+   "hitter": "user",
+   "side": "near",
+   "volley": false,
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#73"
+  },
+  {
+   "t_sec": 177.32,
+   "type": "drive",
+   "hitter": "opponent",
+   "side": "far",
+   "detected": true,
+   "volley_explicit": true,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "authority": 3,
+   "seq": 1789404092,
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#74"
   }
  ],
- "false_positives": [],
+ "false_positives": [
+  {
+   "t_sec": 2.23,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#1"
+  },
+  {
+   "t_sec": 28.44,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#15"
+  },
+  {
+   "t_sec": 37.31,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#19"
+  },
+  {
+   "t_sec": 39.45,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#20"
+  },
+  {
+   "t_sec": 44.19,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#21"
+  },
+  {
+   "t_sec": 77.03,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#31"
+  },
+  {
+   "t_sec": 79.09,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#32"
+  },
+  {
+   "t_sec": 79.35,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#33"
+  },
+  {
+   "t_sec": 81.16,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#34"
+  },
+  {
+   "t_sec": 81.5,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#35"
+  },
+  {
+   "t_sec": 87.17,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#37"
+  },
+  {
+   "t_sec": 98.48,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#46"
+  },
+  {
+   "t_sec": 120.98,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#55"
+  },
+  {
+   "t_sec": 139.53,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#61"
+  },
+  {
+   "t_sec": 147.21,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#64"
+  },
+  {
+   "t_sec": 147.68,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#65"
+  },
+  {
+   "t_sec": 164.11,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#69"
+  },
+  {
+   "t_sec": 164.97,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "key": "shot_review.xlsx / pb_3_min_indoor_1_court_b#70"
+  }
+ ],
  "dead_intervals": [
   [
    20.0,
@@ -411,58 +1555,105 @@
    "source": "import_review_xlsx from pb_3_min_indoor_1_court_b",
    "confirmed": 1,
    "updated": 4
+  },
+  {
+   "at": "2026-09-14T16:44:23.214688+00:00",
+   "source": "import_review_xlsx from pb_3_min_indoor_1_court_b",
+   "confirmed": 39,
+   "agreed": 5,
+   "false_positive": 18,
+   "new": 62,
+   "updated": 13,
+   "enriched": 6,
+   "rally_end_reason": 3,
+   "retracted": 1,
+   "rally_end": 7,
+   "missed": 26,
+   "third_shot_drop": 1
+  },
+  {
+   "at": "2026-09-14T16:45:34.117748+00:00",
+   "source": "fold_shadowed_legacy after import_review_xlsx",
+   "folded": 7
   }
  ],
  "rally_ends": [
   {
    "t_sec": 20.0,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
-  },
-  {
-   "t_sec": 35.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
-  },
-  {
-   "t_sec": 53.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
+   "notes": "",
+   "reason": "out",
+   "reason_source": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
   },
   {
    "t_sec": 77.0,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
-  },
-  {
-   "t_sec": 98.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
-  },
-  {
-   "t_sec": 116.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
-  },
-  {
-   "t_sec": 134.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
+   "notes": "",
+   "reason": "not-returned",
+   "reason_source": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
   },
   {
    "t_sec": 144.0,
    "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
+   "notes": "",
+   "reason": "net",
+   "reason_source": "shot_review.xlsx / pb_3_min_indoor_1_court_b"
   },
   {
-   "t_sec": 159.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
+   "t_sec": 96.41,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "out",
+   "rally_over_t_sec": 98.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
   },
   {
-   "t_sec": 178.0,
-   "source": "legacy / pb_3_min_indoor_1_court_b",
-   "notes": ""
+   "t_sec": 115.32,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "out",
+   "rally_over_t_sec": 116.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 132.68,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "net",
+   "rally_over_t_sec": 134.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 157.62,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "not-returned",
+   "rally_over_t_sec": 159.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 177.32,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "not-returned",
+   "rally_over_t_sec": 178.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 33.63,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "net",
+   "rally_over_t_sec": 35.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
+  },
+  {
+   "t_sec": 51.7,
+   "source": "shot_review.xlsx / pb_3_min_indoor_1_court_b",
+   "notes": "",
+   "reason": "out",
+   "rally_over_t_sec": 53.0,
+   "rally_over_source": "legacy / pb_3_min_indoor_1_court_b"
   }
  ],
  "rally_truth": [
@@ -557,5 +1748,8 @@
    "source": "legacy / pb_3_min_indoor_1_court_b"
   }
  ],
- "updated_at_utc": "2026-09-06T00:48:46.304733+00:00"
+ "updated_at_utc": "2026-09-14T16:45:34.117923+00:00",
+ "third_shot_drops": [
+  7.21
+ ]
 }

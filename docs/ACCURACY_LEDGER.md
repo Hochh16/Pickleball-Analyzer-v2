@@ -1918,3 +1918,91 @@ strikes, court C 9 of 10 typed, outdoor-12 only 9 typed of ~16 rallies.
 not generalise to an unseen court. The real contacts are almost all present in the candidate
 stream; the failure is classifying candidates. The next test is a learned candidate
 classifier validated leave-one-video-out, gated on held-out court A.
+
+### 2026-09-14 — Learned candidate classifier on held-out court A: does not beat the rules
+
+**Instrument.** Stage 5 now writes every impulse candidate, before any rejection filter, as
+`"candidates"` in `shot_discards.json`. That includes the ones with no player in range. It
+changes no output: re-running on copies reproduced the shipped `shots.json` exactly for outdoor-7
+and court C. Court A came out one shot longer, at frame 7111, because its shipped file predates
+a later input change. 95/97 of court A's real shots are in the candidate stream (110/112 outdoor-7,
+59/60 court C), so the contacts are there; the failure is choosing among them.
+
+**Test.** A gradient-boosted classifier (sklearn, tools-only) used 24 per-candidate features:
+- turn and speed change, pre/post speed
+- player distance, association basis, confidence, wrist motion
+- hitter court position, ball quality
+- gaps to neighbours, candidate density, same-side neighbours, turn relative to the local max
+
+Training was on outdoor-7 + court C only, with a threshold picked by cross-clip validation on
+those two. Candidates within 0.2s were merged. Scoring was one-to-one within 0.35s against the
+truth store.
+
+| | found | junk |
+|---|---|---|
+| court A, today's filter stack | 72/97 | 36 |
+| court A, classifier at dev-chosen threshold 0.70 | 62/97 | 21 |
+| court A, classifier at the threshold giving the same junk (not a fair pick) | 67/97 | 36 |
+| outdoor-7 cross-clip (rules are in-sample) | 49/112 vs rules 87 | 12 vs 25 |
+| court C cross-clip | 35/60 vs rules 47 | 7 vs 22 |
+
+The classifier trades found shots for less junk and never matches the rules at equal junk. It
+fails the bar set beforehand (clearly beat the rules on both missed and junk). Serves were not
+modelled separately, so the serve bar (18/19) is untested.
+
+Caveats:
+- Two training videos, about 170 positives.
+- The first run had a label bug in the test script (untyped truth shots counted as junk). It
+  was found from the dev counts and fixed; court A has therefore been scored twice.
+
+**Untried:** sequence context (the rules' strength is reasoning over neighbouring contacts),
+and more training videos. None are available today:
+- outdoor-12 is the SAME source video as outdoor-7.
+- court B's truth is partial (21 shots, 0 false positives), so its junk cannot be labelled.
+A third training video needs a full review (court B is the cheapest, 3 min).
+
+### 2026-09-14 (later) — Court B reviewed shot by shot; the classifier re-run with three videos
+
+**Court B truth.** The operator reviewed all 74 detected shots, added the 26 missed ones, and
+marked 18 not-a-shots and every point's end. Imported after a trial import on a copy:
+- 82 real shots, equal to the operator's own total, and every one of the 10 rallies matches their count
+- 18 false positives, 10 rally ends, 0 conflicts
+- the single-sheet import left the 7 older 18 Aug rally ends beside the new ones (17);
+  `fold_shadowed_legacy` (which `--import-all` runs) merged them to 10, with shots and false positives unchanged
+
+The harness scores court B's truth-backed numbers against far more truth now:
+- shot type correct 37/82 (was 7/20)
+- volley 33/45
+- rally-end median error 1.69s (was 1.01s on fewer ends)
+
+The baseline must be re-saved with the commit.
+
+**Correction to the entry above.** The first classifier runs counted truth shots the operator
+later RETRACTED (`not_a_shot` on the shot entry) as real. That affected 9 on outdoor-7 (112 → 103) and 2 on
+court C (60 → 58). Numbers below use the corrected labels.
+
+**Re-run.** Leave-one-video-out over outdoor-7, court C and court B; threshold chosen on those only.
+
+| court A (97 real) | found | junk |
+|---|---|---|
+| today's filter stack | 72 | 36 |
+| classifier, 3 training videos, dev-chosen threshold 0.65 | 64 | 26 |
+| same, threshold giving ~36 junk (not a fair pick) | ~65 | ~36-43 |
+
+The third video did not move court A: at equal junk the classifier still finds fewer real shots than
+the rules. On each dev video left out, it finds fewer but emits less junk:
+
+| dev video | classifier found / junk | rules found / junk |
+|---|---|---|
+| outdoor-7 | 49 / 25 | 79 / 33 |
+| court C | 39 / 7 | 45 / 24 |
+| court B | 51 / 8 | 56 / 18 |
+
+**Conclusion.** The per-candidate ball-and-pose features cannot separate real contacts from
+junk better than the rule stack, and more labelled video of the same kind does not change that.
+The candidate stream holds 96-98% of real shots on every video, so what is missing is a signal,
+not a candidate.
+
+All four source videos carry a stereo audio track (44.1/48 kHz). Audio is unused by the pipeline
+so far, and a paddle strike is a sharp, well-timed sound, which makes it the most promising
+independent signal.

@@ -1337,7 +1337,8 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
            log: logging.Logger, params: dict,
            side_by_track: Optional[Dict[int, str]] = None,
            ball_court_y: Optional[Dict[int, float]] = None,
-           formation=None, players_px=None, own_feet_bounce=None
+           formation=None, players_px=None, own_feet_bounce=None,
+           candidates_out: Optional[List[dict]] = None
            ) -> Tuple[List[dict], dict, List[str]]:
     n = len(df_ball)
     fx = df_ball["pixel_x"].to_numpy(copy=True)
@@ -1611,6 +1612,15 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
         if a is None:
             n_no_player += 1
             discard(f, "no_player_in_range")
+            if candidates_out is not None:
+                _pre, _post, _dchg = windowed(f)
+                candidates_out.append({
+                    "frame": int(f), "t_sec": round(f / params["fps"], 3), "no_player": True,
+                    "impact_pixel_xy": [round(bx, 2), round(by, 2)],
+                    "turn_rate_deg": round(float(turn[f]), 1),
+                    "speed_change_ratio": round(float(sratio[f]), 3),
+                    "direction_change_deg": (round(_dchg, 1) if not math.isnan(_dchg) else None),
+                    "ball_quality": round(quality(f), 3)})
             continue
         p, dist, basis, radius = a
         pre, post, dchg = windowed(f)
@@ -1642,6 +1652,14 @@ def detect(df_ball: pd.DataFrame, players_by_frame, poses, court_M,
                                                      int(p["track_id"]))) is not None
                              else None),
         })
+
+    # Every impulse candidate that reached a player, BEFORE any rejection filter, with the
+    # features those filters decide on. A copy, for the learned-classifier test on held-out
+    # court A (docs/ACCURACY_LEDGER.md, 2026-09-14); nothing downstream reads it.
+    if candidates_out is not None:
+        candidates_out.extend({**s, "no_player": False,
+                               "ball_quality": round(quality(int(s["frame"])), 3)}
+                              for s in shots)
 
     # --- Net-side alternation filter (real ball only). Rejects ball-handling
     #     (catch / hold / bounce between points) that the synthetic placeholder
@@ -2048,6 +2066,7 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                  "tools.build_ball_3d and re-run this stage to enable the net-crossing "
                  "split (it recovers real shots the run filter would delete).")
 
+    _candidates: List[dict] = []
     shots, stats, warnings, discards = detect(df_ball, players_by_frame, poses,
                                               court["image_to_court"], log, params,
                                               side_by_track, ball_court_y,
@@ -2056,12 +2075,14 @@ def run(folder: Path, args, log: logging.Logger) -> dict:
                                               own_feet_bounce=(
                                                   None if args.no_bounces else
                                                   load_own_feet_bounce(
-                                                      folder, court["net_y_ft"], fps, log)))
+                                                      folder, court["net_y_ft"], fps, log)),
+                                              candidates_out=_candidates)
 
     # Beside shots.json, not inside it: it is a debugging trace, not part of the contract,
     # and it is large (thousands of rejected candidates). tools/why_no_shot.py reads it.
     with (folder / "shot_discards.json").open("w", encoding="utf-8") as f:
-        json.dump({"fps": params["fps"], "discards": discards}, f)
+        json.dump({"fps": params["fps"], "discards": discards,
+                   "candidates": _candidates}, f)
 
     if ball_source == "synthetic":
         warnings.insert(0, "ball_source is 'synthetic': shots are derived from "
