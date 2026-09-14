@@ -2006,3 +2006,141 @@ not a candidate.
 All four source videos carry a stereo audio track (44.1/48 kHz). Audio is unused by the pipeline
 so far, and a paddle strike is a sharp, well-timed sound, which makes it the most promising
 independent signal.
+
+### 2026-09-14 (later) — Does the paddle sound separate real contacts from junk? (dev videos only)
+
+**Method.**
+- Mono 16 kHz audio pulled from each source video with the app's own imageio-ffmpeg.
+- High-passed at 1.5 / 4 kHz; energy measured in 5 ms steps.
+- Each video's audio offset estimated from ALL candidates, with no truth used: +0.055s outdoor-7, +0.135s court C, -0.005s court B.
+- Court A was not touched. Script: scratchpad `audio_test.py` (not in repo).
+
+**Sharpness of the sound at the contact, above its local background (4 kHz high-pass):**
+
+| video | real shots, median | junk, median | real > 6 dB | junk > 6 dB | AUC, sound alone | best existing feature |
+|---|---|---|---|---|---|---|
+| outdoor-7 | 13.9 dB | 4.5 dB | 71% | 37% | 0.78 | 0.74 |
+| court C | 13.2 dB | 4.3 dB | 78% | 38% | 0.78 | 0.71 |
+| court B | 7.7 dB | 4.0 dB | 54% | 37% | 0.60 | 0.71 |
+
+**What this shows.**
+- The sound carries real, independent information: on two of three videos it alone separates
+  real from junk better than any ball or pose measurement.
+- It is weak on court B, the busier indoor hall.
+- About a third of junk candidates also sit on a loud sound. These are likely other contacts
+  (feeds, bounces, adjacent courts).
+- About a quarter of real shots have no clear pop (soft dinks, occluded or distant hits).
+
+**Combined result.** Adding the three crude audio numbers to the leave-one-video-out classifier did
+NOT improve found/junk:
+- outdoor-7: 43/13 → 39/3
+- court C: 39/7 → 39/8
+- court B: 51/8 → 49/15
+
+**Timing.** The averaged real-shot peak is sharp on outdoor-7 (one 50 ms step) but smeared over
+~220 ms on court C. Per-shot timing error, in our contact frames or in hand-typed missed-shot
+times, blurs a signal that is only a few ms wide.
+
+**Not yet tried with audio:**
+- the stereo channel difference, to reject adjacent-court hits
+- an onset timed per candidate, rather than a max in a ±60 ms window
+- using the sound to FIND contacts, rather than to score ball kinks
+
+### 2026-09-14 (later) — Stereo balance and precise pop timing: no net gain (dev videos only)
+
+**Method.**
+- Stereo audio at 32 kHz, 4 kHz high-pass, 2.5 ms steps.
+- Per candidate: the sharpest 10 ms rise within ±80 ms, giving its prominence over the 500-150 ms before, its decay 50 ms later, its left-right level difference, and its offset from our contact frame.
+- Expected left-right balance for a hit at a given image x, fitted per video on all candidates with a clear pop (no truth).
+- Court A untouched. Script: scratchpad `audio_stereo_test.py`.
+
+**AUC** (0.5 is useless):
+
+| feature | outdoor-7 | court C | court B |
+|---|---|---|---|
+| pop prominence | 0.78 | 0.82 | 0.64 |
+| pop decay | 0.78 | 0.67 | 0.62 |
+| left-right balance | 0.62 | 0.60 | 0.50 |
+| balance off the expected line (adjacent court?) | 0.57 | 0.58 | 0.52 |
+| pop offset from our contact frame | 0.62 | 0.52 | 0.51 |
+
+**Findings.**
+- The channels are only weakly correlated indoors (0.32-0.33; 0.79 outdoors), but the balance barely tracks where the ball is (about 1-2 dB per 1000 px). It does not identify other courts' hits.
+- Candidates with a clear pop: 81 real / 272 junk on outdoor-7, 50 / 158 on court C, 52 / 139 on court B. Most junk sits on a real sound, very likely the same strike heard by a second ball kink or a bounce nearby. So the sound says "something was hit around here", not "this kink is the hit".
+
+**Leave-one-video-out, one threshold chosen over the three dev videos:**
+
+| | found (of 243 real) | junk |
+|---|---|---|
+| ball+pose | 139 | 40 |
+| ball+pose+audio | 148 | 50 |
+| rules, in-sample | 180 | 75 |
+
+Audio buys found shots at the price of junk, about one for one.
+
+**Standing conclusion.** Nothing tried so far beats the hand-built rules on unseen video by a clear margin:
+- more rules
+- a learned per-candidate classifier
+- a third labelled video
+- mono audio
+- stereo audio
+
+The remaining untested use of sound is choosing WHICH nearby candidate is the hit, which is the handling filter's dominant failure (the wrong winner 0.3-1.0s later).
+
+### 2026-09-14 (later) — Option 1: the pop picks which contact in a same-side run is the hit — no gain
+
+**Setup.** The handling filter keeps ONE member of each same-side run (largest ball excursion).
+Both rules were fixed before scoring, on dev videos only:
+- A: keep the loudest pop.
+- B: keep today's winner unless it has no clear pop (< 6 dB) and another member does.
+
+Only the choice inside a run changes, never the count. Script: scratchpad `audio_pick_winner.py`.
+
+| dev video | runs | runs with a real shot | runs with 2+ real shots | today's winner real | A real | B real |
+|---|---|---|---|---|---|---|
+| outdoor-7 | 83 | 62 | 32 | 50 | 49 | 52 |
+| court C | 45 | 25 | 12 | 14 | 19 | 17 |
+| court B | 43 | 27 | 18 | 26 | 20 | 23 |
+
+**Totals on the shipped shot lists** (243 real):
+- today 180 found / 75 junk
+- A 176 / 79
+- B 180 / 75
+
+No gain.
+
+**Correction (same day).** An earlier version of this entry said about half the runs hold two or more
+real shots (62 of 114). That count let one truth shot match several members within 0.35s.
+Matched one-to-one there are **21 consecutive real pairs** inside runs across the three dev videos
+(outdoor-7 11, court C 3, court B 7). The next entry diagnoses them.
+
+### 2026-09-14 (later) — Why runs hold two real shots: a far hit attached to a near player, and the image cannot tell them apart
+
+**Diagnosis of the 21 consecutive real pairs inside same-side runs** (dev videos; scratchpad `run_diagnosis.py`):
+
+| cause | pairs |
+|---|---|
+| nothing between them in truth, operator's sides differ: we put one real shot on the WRONG side | 17 |
+| same, where the missed shot between them became a member of the run (so its side was wrong) | 1 |
+| operator has both on the same side | 3 |
+| opposite-side shot between them never detected | 0 |
+
+The shots Stage 5 KEEPS carry the right side 178/180. The errors sit in the contacts it discards: a
+far player's real hit gets associated with a near player, joins that side's run, and is dropped as
+handling. The ball's post-contact image direction is no substitute (right 100/166).
+
+**Could association try the other side first?** (scratchpad `opposite_player.py`). Distance from the
+ball to the nearest participant on the OTHER side, measured as Stage 5 does (visible wrist, else box):
+
+| run member | n | median | within 240 px | other side no farther than own |
+|---|---|---|---|---|
+| real, operator says the other side | 20 | 221 px | 55% | 5% |
+| junk | 564 | 574 px | 17% | 2% |
+
+Any reassignment rule loses:
+- at 240 px it would recover at most 11 real shots while re-associating ~96 junk contacts
+- "other side no farther than own" would recover 1
+
+For these hits the far player is not near the ball in the image. At contact the ball sits over a
+near player, so 2-D proximity cannot say who struck it. This is a limit of the single low camera, not an
+association bug. It accounts for about 18 of the 63 real shots the rules miss on dev (~29%).

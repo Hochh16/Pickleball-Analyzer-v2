@@ -1,0 +1,1396 @@
+/* Pickleball Analyzer — setup wizard (Phase 1) front end.
+   Vanilla JS single-page wizard: Video -> Court -> Players -> You -> Review. */
+
+'use strict';
+
+// ---------------------------------------------------------------- constants
+const STEPS = ['video', 'court', 'players', 'you', 'review', 'run'];
+
+const CORNER = '#ff4d4d', KU = '#2ab7ff', KO = '#ffab2e';
+const POINTS = [
+  { label: 'Court corner — bottom LEFT',        color: CORNER },
+  { label: 'Court corner — bottom RIGHT',       color: CORNER },
+  { label: 'Court corner — top RIGHT',          color: CORNER },
+  { label: 'Court corner — top LEFT',           color: CORNER },
+  { label: 'User kitchen line — LEFT end',      color: KU },
+  { label: 'User kitchen line — RIGHT end',     color: KU },
+  { label: 'Opponent kitchen line — LEFT end',  color: KO },
+  { label: 'Opponent kitchen line — RIGHT end', color: KO },
+];
+const FRAME_MAXW = 1600;
+
+// ---------------------------------------------------------------- state
+const S = {
+  step: 'video',
+  reachedIdx: 0,            // furthest step reached — earlier steps stay clickable
+  driveSync: false,         // Google Drive for Desktop auto-sync available (from /api/config)
+  session: null,
+  startingCorner: 'left',   // set visually on the "You" step; default until then
+  court: { frameIdx: 0, markFrame: null, points: new Array(8).fill(null), img: null, imgFrame: -1,
+           selected: null },
+  calib: null,
+  courtConfirmed: false,
+  you: { frameIdx: 0, img: null, imgFrame: -1, click: null },
+};
+
+// ---------------------------------------------------------------- helpers
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const el = (id) => document.getElementById(id);
+
+function toast(msg, isErr) {
+  const t = el('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.hidden = false;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.hidden = true; }, isErr ? 5200 : 2600);
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let detail = res.statusText, structured = null;
+    try {
+      const j = await res.json();
+      if (j.detail && typeof j.detail === 'object') {
+        // A refusal the UI can act on carries fields, not just a sentence -- keep them,
+        // or the message renders as "[object Object]".
+        structured = j.detail;
+        detail = j.detail.message || detail;
+      } else { detail = j.detail || detail; }
+    } catch (e) {}
+    const err = new Error(detail);
+    err.status = res.status;
+    err.detail = structured;
+    throw err;
+  }
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json') ? res.json() : res;
+}
+const jsonPost = (path, body) =>
+  api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+function fmtDuration(sec) {
+  sec = Math.round(sec || 0);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------- routing
+// A step is reachable if it's at/behind the furthest step we've reached, and
+// (for anything past Video) we have a loaded session. Lets the user click the
+// step bar to jump back and re-edit without a linear back-button trail.
+function canGoto(i) {
+  return i <= S.reachedIdx && (i === 0 || !!S.session);
+}
+
+function goto(step) {
+  S.step = step;
+  STEPS.forEach((s) => { const p = el('panel-' + s); if (p) p.hidden = (s !== step); });
+  const idxCur = STEPS.indexOf(step);
+  S.reachedIdx = Math.max(S.reachedIdx, idxCur);
+  $$('#stepnav li').forEach((li) => {
+    const i = STEPS.indexOf(li.dataset.step);
+    li.classList.toggle('is-active', i === idxCur);
+    li.classList.toggle('is-done', i < idxCur);
+    li.classList.toggle('is-clickable', canGoto(i));
+    const num = li.querySelector('.num');
+    num.innerHTML = i < idxCur ? '' : String(i + 1);
+  });
+  if (step === 'court') enterCourt();
+  if (step === 'you') enterYou();
+  if (step === 'review') enterReview();
+  if (step === 'run') enterRun();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ================================================================ STEP 1: VIDEO
+async function initVideoStep() {
+  el('refreshVideos').addEventListener('click', loadVideos);
+  // Always show the folder path first, even if the listing later fails.
+  try {
+    const cfg = await api('/api/config');
+    el('videosDir').textContent = cfg.videos_dir;
+    S.driveSync = !!cfg.drive_sync;
+  } catch (e) { /* fall back to whatever /api/videos returns */ }
+  loadVideos();
+  loadExistingSessions(); loadReports();
+}
+
+async function loadVideos() {
+  const list = el('videoList');
+  try {
+    const data = await api('/api/videos');
+    if (data.dir) el('videosDir').textContent = data.dir;
+    list.innerHTML = '';
+    if (!data.videos.length) {
+      list.appendChild(Object.assign(document.createElement('div'), {
+        className: 'empty',
+        textContent: 'No videos here yet. Copy your clip into the folder shown above, then press Refresh.',
+      }));
+      return;
+    }
+    data.videos.forEach((v) => {
+      const size = v.size_mb >= 1024 ? (v.size_mb / 1024).toFixed(1) + ' GB' : v.size_mb + ' MB';
+      const row = rowEl('video', '🎬', v.name, size, () => pickLocal(v.path));
+      // Say up front that this clip has been analysed before, and where it ended up.
+      // The alternative is finding out from the duplicate guard after setting it up
+      // again and waiting out a vision pass.
+      if (v.already_analysed || v.in_collection) {
+        const tag = document.createElement('span');
+        tag.className = 'row-note';
+        tag.textContent = v.in_collection
+          ? 'already analysed · in "' + v.in_collection + '"'
+          : 'already analysed';
+        row.querySelector('.nm').appendChild(tag);
+      }
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'empty';
+    msg.textContent = 'Could not read the videos folder. If you just updated the app, restart the server, then press Refresh.';
+    list.appendChild(msg);
+  }
+}
+
+function rowEl(kind, icon, name, size, onClick) {
+  const row = document.createElement('div');
+  row.className = 'row ' + kind;
+  row.innerHTML = `<span class="ic">${icon}</span><span class="nm"></span><span class="sz"></span>`;
+  row.querySelector('.nm').textContent = name;
+  row.querySelector('.sz').textContent = size;
+  row.addEventListener('click', onClick);
+  return row;
+}
+
+async function pickLocal(path) {
+  try {
+    toast('Opening video…');
+    const session = await jsonPost('/api/sessions', { path });  // backend derives a good name
+    onSessionReady(session);
+  } catch (e) { toast('Could not open that video: ' + e.message, true); }
+}
+
+async function loadReports() {
+  // Every finished report in one place: the cumulative ones first, then each video's own.
+  // Previously the only way to a report was the button bound to the session currently
+  // loaded, so finishing a second video made the first one's report unreachable.
+  try {
+    const wrap = el('reportsWrap');
+    const list = el('reportList');
+    list.innerHTML = '';
+    let n = 0;
+
+    let cols = { collections: [] };
+    try { cols = await api('/api/collections'); } catch (e) { /* optional */ }
+    (cols.collections || []).forEach((c) => {
+      if (!c.has_report) return;
+      n += 1;
+      const a = document.createElement('a');
+      a.className = 'report-row cumulative';
+      a.href = `/api/collections/${c.id}/files/report.html`;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.innerHTML = `<span class="rr-name"></span>
+                     <span class="rr-meta">cumulative · ${c.n_members} video${c.n_members === 1 ? '' : 's'}</span>
+                     <span class="rr-go">Open →</span>`;
+      a.querySelector('.rr-name').textContent = c.name;
+      list.appendChild(a);
+    });
+
+    const { sessions } = await api('/api/sessions');
+    (sessions || []).forEach((s) => {
+      if (!s.has_report) return;
+      n += 1;
+      const a = document.createElement('a');
+      a.className = 'report-row';
+      a.href = `/api/sessions/${s.report_session_id}/files/report.html`;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.innerHTML = `<span class="rr-name"></span>
+                     <span class="rr-meta">${fmtDuration(s.video.duration_sec)}${s.report_is_older_setup ? ' · from an earlier setup' : ''}</span>
+                     <span class="rr-go">Open →</span>`;
+      a.querySelector('.rr-name').textContent = s.name;
+      list.appendChild(a);
+    });
+
+    wrap.hidden = n === 0;
+  } catch (e) { /* best-effort */ }
+}
+
+async function loadExistingSessions() {
+  try {
+    const { sessions } = await api('/api/sessions');
+    if (!sessions.length) return;
+    el('existingWrap').hidden = false;
+    const list = el('sessionList');
+    list.innerHTML = '';
+    sessions.forEach((s) => {
+      const card = document.createElement('div');
+      card.className = 'session-card';
+      const steps = s.steps || {};
+      const pill = (k, label) => `<span class="pill ${steps[k] ? 'done' : ''}">${label}</span>`;
+      // A finished video gets a direct link to its own report. Without it the only way in
+      // was the button bound to the session currently loaded, so an earlier video's report
+      // existed on disk with no route to it from the UI.
+      // The report may belong to an EARLIER setup of the same video: the row is the newest
+      // setup (what "continue a previous setup" means), while the report link follows
+      // whichever setup actually produced one.
+      const reportLink = s.has_report
+        ? `<a class="sc-report" href="/api/sessions/${s.report_session_id}/files/report.html"
+              target="_blank" rel="noopener"
+              title="${s.report_is_older_setup ? 'From an earlier setup of this video' : ''}"
+              >Report${s.report_is_older_setup ? ' (earlier run)' : ''} →</a>`
+        : '';
+      card.innerHTML =
+        `<div class="sc-name"></div>
+         <div class="sc-meta">${s.video.frame_width}×${s.video.frame_height} · ${fmtDuration(s.video.duration_sec)}</div>
+         <div class="sc-steps">${pill('calibration', 'Court')}${pill('roster', 'Players')}${reportLink}</div>`;
+      card.querySelector('.sc-name').textContent = s.name;
+      card.addEventListener('click', (ev) => {
+        // the report link is a link, not a card click -- opening the setup flow instead
+        // would be the opposite of what was asked for
+        if (ev.target.closest('.sc-report')) return;
+        onSessionReady(s);
+      });
+      list.appendChild(card);
+    });
+  } catch (e) { /* library is best-effort */ }
+}
+
+async function onSessionReady(session) {
+  S.session = session;
+  S.courtConfirmed = !!(session.steps && session.steps.calibration);
+  toast(`Loaded “${session.name}”`);
+  // Ask whose report this is before anything else, once per video. Deciding up front is
+  // what lets a finished analysis join the cumulative report by itself, instead of the
+  // operator having to come back for a second step after a ~100-minute run.
+  if (session.collection_id === undefined) {
+    await askWhoseReport(session);
+    return;
+  }
+  const configured = !!(session.steps && session.steps.calibration && session.steps.roster);
+  if (!configured) { goto('court'); return; }
+  // Fully configured session: hydrate the wizard from disk, unlock every step,
+  // and jump straight to the run (or review if nothing is running yet) — no
+  // re-marking the court just to get back to your analysis.
+  S.reachedIdx = STEPS.length - 1;
+  try {
+    const sum = await api(`/api/sessions/${session.id}/summary`);
+    if (sum.roster && sum.roster.handedness) {
+      const h = sum.roster.handedness;
+      el('handUser').value = h.user || 'right';
+      el('handPartner').value = h.partner || 'unknown';
+      el('handOppA').value = h.opp_a || 'unknown';
+      el('handOppB').value = h.opp_b || 'unknown';
+    }
+    const ui = sum.calibration && sum.calibration.user_inputs;
+    if (ui && ui.user_starting_corner) S.startingCorner = ui.user_starting_corner;
+  } catch (e) { /* hydration is best-effort */ }
+  try {
+    const run = await api(`/api/sessions/${session.id}/run`);
+    goto(run.phase && run.phase !== 'idle' ? 'run' : 'review');
+  } catch (e) { goto('review'); }
+}
+
+// ================================================================ STEP 2: COURT
+let courtCanvas, courtCtx, loupeCanvas, loupeCtx;
+
+function initCourtStep() {
+  courtCanvas = el('courtCanvas'); courtCtx = courtCanvas.getContext('2d');
+  loupeCanvas = el('loupe'); loupeCtx = loupeCanvas.getContext('2d');
+  loupeCanvas.width = 150; loupeCanvas.height = 150;
+
+  courtCanvas.addEventListener('click', onCourtClick);
+  courtCanvas.addEventListener('mousemove', onCourtMove);
+  courtCanvas.addEventListener('mouseleave', () => { loupeCanvas.hidden = true; });
+  window.addEventListener('keydown', onCourtKey);
+
+  el('undoBtn').addEventListener('click', () => { undoLastPoint(); });
+  el('clearBtn').addEventListener('click', () => { clearPoints(); });
+  el('frameSlider').addEventListener('input', (e) => setCourtFrame(parseInt(e.target.value, 10)));
+  el('frameBack').addEventListener('click', () => setCourtFrame(S.court.frameIdx - 1));
+  el('frameFwd').addEventListener('click', () => setCourtFrame(S.court.frameIdx + 1));
+  el('calibrateBtn').addEventListener('click', runCalibrate);
+  el('confirmCourtBtn').addEventListener('click', () => { el('calibResult').hidden = true; S.courtConfirmed = true; goto('players'); });
+  el('redoBtn').addEventListener('click', () => { el('calibResult').hidden = true; window.scrollTo({ top: 0, behavior: 'smooth' }); });
+}
+
+function hideCalibResult() { const r = el('calibResult'); if (r) r.hidden = true; }
+
+function enterCourt() {
+  const v = S.session.video;
+  const slider = el('frameSlider');
+  slider.max = Math.max(0, v.frame_count - 1);
+  // default to a frame a little into the clip (players/serve less likely to block corners at start)
+  if (S.court.imgFrame < 0) {
+    S.court.frameIdx = Math.min(Math.floor((v.frame_count || 1) * 0.05), Math.max(0, v.frame_count - 1));
+    slider.value = S.court.frameIdx;
+  }
+  renderPointList();
+  loadCourtFrame();
+  updateCalibButton();
+}
+
+function setCourtFrame(idx) {
+  const max = Math.max(0, (S.session.video.frame_count || 1) - 1);
+  idx = Math.max(0, Math.min(max, idx));
+  S.court.frameIdx = idx;
+  el('frameSlider').value = idx;
+  loadCourtFrame();
+}
+
+function loadCourtFrame() {
+  const s = S.session, idx = S.court.frameIdx;
+  el('frameLabel').textContent = `${idx} / ${Math.max(0, s.video.frame_count - 1)}`;
+  const img = new Image();
+  img.onload = () => {
+    S.court.img = img; S.court.imgFrame = idx;
+    courtCanvas.width = img.naturalWidth;
+    courtCanvas.height = img.naturalHeight;
+    drawCourt();
+  };
+  img.onerror = () => toast('Could not load that frame', true);
+  img.src = `/api/sessions/${s.id}/frame/${idx}?maxw=${FRAME_MAXW}`;
+}
+
+// scale between source pixels and the served (canvas) image
+function servedScale() {
+  return S.court.img ? (S.court.img.naturalWidth / S.session.video.frame_width) : 1;
+}
+
+// -------------------------------------------------- live fit (mirrors stages/calibrate)
+// Court model, in feet, matching stages/calibrate/calibrate.py: the user is on the near
+// baseline, so their kitchen line is at y=15 and the opponent's at y=29.
+const COURT_W_FT = 20.0, COURT_L_FT = 44.0, NET_FT = 22.0, KITCHEN_FT = 7.0;
+const USER_KITCHEN_FT = NET_FT - KITCHEN_FT;      // 15
+const OPP_KITCHEN_FT  = NET_FT + KITCHEN_FT;      // 29
+const CORNERS_FT = [[0, 0], [COURT_W_FT, 0], [COURT_W_FT, COURT_L_FT], [0, COURT_L_FT]];
+// Judged in FEET, not pixels -- see KITCHEN_PROJECTION_WARNING_FT in stages/calibrate.
+// A pixel means whatever the video's resolution makes it mean, so a pixel bar failed
+// well-marked 4K clips and passed worse 1080p ones.
+const KITCHEN_WARN_FT = 0.5;
+
+/** Court feet -> image pixels, from the 4 clicked corners. Four points determine the
+ *  homography exactly (8 equations, 8 unknowns), so this is a plain linear solve --
+ *  the same map the server builds, computed here so the fit is visible while clicking. */
+function homographyFromCorners(corners) {
+  if (!corners || corners.length !== 4 || corners.some((c) => !c)) return null;
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [X, Y] = CORNERS_FT[i], [x, y] = corners[i];
+    A.push([X, Y, 1, 0, 0, 0, -X * x, -Y * x]); b.push(x);
+    A.push([0, 0, 0, X, Y, 1, -X * y, -Y * y]); b.push(y);
+  }
+  for (let c = 0; c < 8; c++) {                    // Gaussian elimination, partial pivot
+    let piv = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+    if (Math.abs(A[piv][c]) < 1e-9) return null;   // degenerate clicks (collinear/coincident)
+    [A[c], A[piv]] = [A[piv], A[c]]; [b[c], b[piv]] = [b[piv], b[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      if (!f) continue;
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const h = b.map((v, i) => v / A[i][i]);
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function projectFt(H, X, Y) {
+  const w = H[6] * X + H[7] * Y + H[8];
+  if (!w || !isFinite(w)) return null;
+  return [(H[0] * X + H[1] * Y + H[2]) / w, (H[3] * X + H[4] * Y + H[5]) / w];
+}
+
+/** Mean of the two endpoint distances -- identical to compute_kitchen_projection_error,
+ *  so the number shown here is the number "Check calibration" will report. */
+function kitchenErrorPx(H, clicked, yFt) {
+  if (!H || !clicked[0] || !clicked[1]) return null;
+  const ends = [projectFt(H, 0, yFt), projectFt(H, COURT_W_FT, yFt)];
+  if (ends.some((e) => !e)) return null;
+  const d = ends.map((e, i) => Math.hypot(e[0] - clicked[i][0], e[1] - clicked[i][1]));
+  return (d[0] + d[1]) / 2;
+}
+
+/** Image pixels per court foot along the court at yFt -- mirrors pixels_per_foot_at. */
+function pixelsPerFootAt(H, yFt) {
+  const a = projectFt(H, COURT_W_FT / 2, yFt - 0.5), b = projectFt(H, COURT_W_FT / 2, yFt + 0.5);
+  if (!a || !b) return null;
+  return Math.hypot(b[0] - a[0], b[1] - a[1]);
+}
+
+function kitchenErrorFt(H, clicked, yFt) {
+  const px = kitchenErrorPx(H, clicked, yFt), ppf = pixelsPerFootAt(H, yFt);
+  return (px === null || !ppf) ? null : px / ppf;
+}
+
+function updateFitBar(H) {
+  const bar = el('fitBar'); if (!bar) return;
+  if (!H) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const pts = S.court.points;
+  const eu = kitchenErrorFt(H, [pts[4], pts[5]], USER_KITCHEN_FT);
+  const eo = kitchenErrorFt(H, [pts[6], pts[7]], OPP_KITCHEN_FT);
+  const done = [eu, eo].filter((e) => e !== null);
+  let cls, msg;
+  if (!done.length) {
+    cls = 'pending';
+    msg = 'Corners set. The dashed lines are where the kitchen, net and centre line '
+        + 'should be — if they miss the paint, fix a corner before going on. '
+        + 'The ○ shows where the next point goes.';
+  } else {
+    const worst = Math.max(...done);
+    cls = worst <= KITCHEN_WARN_FT ? 'good' : 'bad';
+    const part = (lbl, e) => e === null ? '' : `${lbl} ${(e * 12).toFixed(0)}in off`;
+    msg = [part('Your kitchen line', eu), part('opponent', eo)].filter(Boolean).join(' · ')
+        + (worst <= KITCHEN_WARN_FT
+             ? '  — good enough, move on'
+             : `  — over ${(KITCHEN_WARN_FT * 12).toFixed(0)}in, adjust`);
+  }
+  el('fitDot').className = 'fit-dot ' + cls;
+  el('fitText').textContent = msg;
+}
+
+function drawCourt() {
+  if (!S.court.img) return;
+  const ctx = courtCtx, sc = servedScale();
+  ctx.drawImage(S.court.img, 0, 0);
+  const P = S.court.points.map((p) => p ? [p[0] * sc, p[1] * sc] : null);
+
+  // Predicted court from the corners: dashed, so it reads as "where this should be"
+  // rather than as another clicked line.
+  const H = homographyFromCorners(S.court.points.slice(0, 4));
+  if (H) {
+    const seg = (a, b, color) => {
+      const p = projectFt(H, a[0], a[1]), q = projectFt(H, b[0], b[1]);
+      if (!p || !q) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+      ctx.beginPath(); ctx.moveTo(p[0] * sc, p[1] * sc); ctx.lineTo(q[0] * sc, q[1] * sc);
+      ctx.stroke(); ctx.setLineDash([]);
+    };
+    seg([0, USER_KITCHEN_FT], [COURT_W_FT, USER_KITCHEN_FT], KU);
+    seg([0, OPP_KITCHEN_FT],  [COURT_W_FT, OPP_KITCHEN_FT],  KO);
+    seg([0, NET_FT], [COURT_W_FT, NET_FT], '#ffffff');
+    // Service centre line -- painted on every court, and it stops at the kitchen.
+    seg([COURT_W_FT / 2, 0], [COURT_W_FT / 2, USER_KITCHEN_FT], '#ffffff');
+    seg([COURT_W_FT / 2, OPP_KITCHEN_FT], [COURT_W_FT / 2, COURT_L_FT], '#ffffff');
+
+    // "No idea where to click" -- so say where. Once the corners are down, each remaining
+    // point has a predicted position; ring it.
+    const NEXT_FT = {4: [0, USER_KITCHEN_FT], 5: [COURT_W_FT, USER_KITCHEN_FT],
+                     6: [0, OPP_KITCHEN_FT],  7: [COURT_W_FT, OPP_KITCHEN_FT]};
+    const target = NEXT_FT[nextPointIdx()];
+    if (target) {
+      const q = projectFt(H, target[0], target[1]);
+      if (q) {
+        ctx.strokeStyle = POINTS[nextPointIdx()].color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(q[0] * sc, q[1] * sc, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(q[0] * sc, q[1] * sc, 14, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  }
+  updateFitBar(H);
+
+  const line = (a, b, color) => {
+    if (!P[a] || !P[b]) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(P[a][0], P[a][1]); ctx.lineTo(P[b][0], P[b][1]); ctx.stroke();
+  };
+  // court rectangle
+  line(0, 1, CORNER); line(1, 2, CORNER); line(2, 3, CORNER); line(3, 0, CORNER);
+  line(4, 5, KU); line(6, 7, KO);
+
+  P.forEach((p, i) => {
+    if (!p) return;
+    ctx.fillStyle = POINTS[i].color;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (i === S.court.selected) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(p[0], p[1], 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
+    ctx.strokeText(String(i + 1), p[0] + 9, p[1] - 8);
+    ctx.fillText(String(i + 1), p[0] + 9, p[1] - 8);
+  });
+}
+
+function canvasToSource(e) {
+  const rect = courtCanvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (courtCanvas.width / rect.width);
+  const cy = (e.clientY - rect.top) * (courtCanvas.height / rect.height);
+  const sc = servedScale();
+  return [cx / sc, cy / sc];  // source pixels
+}
+
+function nextPointIdx() {
+  return S.court.points.findIndex((p) => p === null);
+}
+
+function onCourtClick(e) {
+  const idx = nextPointIdx();
+  if (idx === -1) {
+    // With all 8 down, a click retargets the NEAREST point instead of refusing. Undo can
+    // only take the last one back, so fixing point 2 meant undoing six good clicks.
+    const [sx, sy] = canvasToSource(e);
+    let best = -1, bestD = Infinity;
+    S.court.points.forEach((p, i) => {
+      const d = Math.hypot(p[0] - sx, p[1] - sy);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    S.court.points[best] = [sx, sy];
+    S.court.selected = best;
+    hideCalibResult();
+    drawCourt(); renderPointList(); updateCalibButton();
+    return;
+  }
+  const [sx, sy] = canvasToSource(e);
+  S.court.points[idx] = [sx, sy];
+  S.court.selected = idx;
+  if (idx === 0) S.court.markFrame = S.court.frameIdx;
+  hideCalibResult();
+  drawCourt(); renderPointList(); updateCalibButton();
+}
+
+/** Arrow keys nudge the last-placed point by one SOURCE pixel.
+ *
+ *  The frame is 3840px wide but is displayed a few hundred CSS pixels across, so one pixel
+ *  of mouse movement is worth several source pixels -- more than the 10px the kitchen fit
+ *  is judged against. The magnifier makes the corner VISIBLE at that scale but cannot make
+ *  the click finer than one screen pixel, which is why lining the court up by clicking
+ *  alone is a fight. Nudging closes the loop: the fit bar rescores on every press. */
+function onCourtKey(e) {
+  if (S.step !== 'court') return;
+  const D = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[e.key];
+  if (!D) return;
+  const i = S.court.selected;
+  if (i === null || i === undefined || !S.court.points[i]) return;
+  e.preventDefault();
+  const step = e.shiftKey ? 10 : 1;   // Shift for a coarse move
+  S.court.points[i] = [S.court.points[i][0] + D[0] * step,
+                       S.court.points[i][1] + D[1] * step];
+  hideCalibResult();
+  drawCourt(); renderPointList();
+}
+
+function onCourtMove(e) {
+  if (!S.court.img) return;
+  const rect = courtCanvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (courtCanvas.width / rect.width);
+  const cy = (e.clientY - rect.top) * (courtCanvas.height / rect.height);
+  // magnifier
+  const z = 3.2, size = 150, half = size / 2;
+  loupeCtx.clearRect(0, 0, size, size);
+  loupeCtx.imageSmoothingEnabled = false;
+  const srcSize = size / z;
+  loupeCtx.drawImage(S.court.img, cx - srcSize / 2, cy - srcSize / 2, srcSize, srcSize, 0, 0, size, size);
+  loupeCtx.strokeStyle = '#00e0ff'; loupeCtx.lineWidth = 1;
+  loupeCtx.beginPath(); loupeCtx.moveTo(half, 0); loupeCtx.lineTo(half, size);
+  loupeCtx.moveTo(0, half); loupeCtx.lineTo(size, half); loupeCtx.stroke();
+  loupeCanvas.hidden = false;
+  // position near cursor but inside wrap, avoiding the cursor itself
+  const wrap = el('canvasWrap').getBoundingClientRect();
+  let lx = e.clientX - wrap.left + 20, ly = e.clientY - wrap.top + 20;
+  if (lx + size > wrap.width) lx = e.clientX - wrap.left - size - 20;
+  if (ly + size > wrap.height) ly = e.clientY - wrap.top - size - 20;
+  loupeCanvas.style.left = Math.max(0, lx) + 'px';
+  loupeCanvas.style.top = Math.max(0, ly) + 'px';
+}
+
+function undoLastPoint() {
+  for (let i = S.court.points.length - 1; i >= 0; i--) {
+    if (S.court.points[i] !== null) { S.court.points[i] = null; break; }
+  }
+  S.court.selected = null;
+  if (nextPointIdx() === 0) S.court.markFrame = null;
+  hideCalibResult();
+  drawCourt(); renderPointList(); updateCalibButton();
+}
+function clearPoints() {
+  S.court.points = new Array(8).fill(null);
+  S.court.selected = null;
+  S.court.markFrame = null;
+  hideCalibResult();
+  drawCourt(); renderPointList(); updateCalibButton();
+}
+
+function renderPointList() {
+  const ol = el('pointList'); ol.innerHTML = '';
+  const nextIdx = nextPointIdx();
+  POINTS.forEach((p, i) => {
+    const li = document.createElement('li');
+    const set = S.court.points[i] !== null;
+    li.className = (set ? 'set' : '') + (i === nextIdx ? ' next' : '');
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span><span>${i + 1}. ${p.label}</span>`;
+    ol.appendChild(li);
+  });
+  // prompt bar
+  if (nextIdx === -1) {
+    el('promptSwatch').style.background = 'var(--ok)';
+    el('promptText').textContent = 'All points placed. Press “Check calibration” →';
+    el('promptCount').textContent = '8 / 8';
+  } else {
+    el('promptSwatch').style.background = POINTS[nextIdx].color;
+    el('promptText').textContent = 'Click: ' + POINTS[nextIdx].label;
+    el('promptCount').textContent = `${S.court.points.filter(Boolean).length} / 8`;
+  }
+}
+
+function updateCalibButton() {
+  el('calibrateBtn').disabled = nextPointIdx() !== -1;
+}
+
+async function runCalibrate() {
+  const pts = S.court.points;
+  if (pts.some((p) => p === null)) { toast('Mark all 8 points first', true); return; }
+  const btn = el('calibrateBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking…';
+  const payload = {
+    court_corners_image: pts.slice(0, 4),
+    kitchen_line_user_image: pts.slice(4, 6),
+    kitchen_line_opponent_image: pts.slice(6, 8),
+    // The analyzed player is always on the near baseline: the camera protocol puts
+    // the camera in the corner nearest their start, and the court marking treats
+    // points 5-6 as the user's (near/bottom) kitchen line. Asked once, on the "You"
+    // step (which SIDE). Stage 2.5 v1 only supports the user on the near baseline.
+    user_baseline: 'near',
+    // Handedness is collected on the Players step (roster.json is authoritative for
+    // Stage 6). Calibration still needs the field, so send a placeholder now; the
+    // backend patches court.json.dominant_hand from the roster when Players saves.
+    dominant_hand: 'right',
+    user_starting_corner: S.startingCorner,   // confirmed visually on the "You" step
+    frame_used_for_calibration: S.court.markFrame ?? S.court.frameIdx,
+  };
+  try {
+    const res = await jsonPost(`/api/sessions/${S.session.id}/calibrate`, payload);
+    S.calib = res;
+    showCalibResult(res);
+  } catch (e) {
+    toast('Calibration failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Check calibration';
+  }
+}
+
+function showCalibResult(res) {
+  el('previewImg').src = 'data:image/jpeg;base64,' + res.preview_jpeg_base64;
+  const v = res.validation;
+  const meta = el('previewMeta');
+  const cls = (val, warn) => val <= warn ? 'good' : 'bad';
+  const inches = (ft, px) => ft === undefined || ft === null
+    ? `${px.toFixed(1)} px off` : `${(ft * 12).toFixed(0)} in off`;
+  meta.innerHTML =
+    `<div class="metric"><span class="k">Corner fit (RMSE)</span><span class="v ${cls(v.homography_rmse_pixels, 5)}">${v.homography_rmse_pixels.toFixed(1)} px</span></div>
+     <div class="metric"><span class="k">Your kitchen line</span><span class="v ${cls(v.kitchen_projection_error_user_ft, KITCHEN_WARN_FT)}">${inches(v.kitchen_projection_error_user_ft, v.kitchen_projection_error_user_px)}</span></div>
+     <div class="metric"><span class="k">Opponent kitchen line</span><span class="v ${cls(v.kitchen_projection_error_opponent_ft, KITCHEN_WARN_FT)}">${inches(v.kitchen_projection_error_opponent_ft, v.kitchen_projection_error_opponent_px)}</span></div>`;
+  if (v.warnings && v.warnings.length) {
+    const w = document.createElement('div'); w.className = 'warns';
+    v.warnings.forEach((msg) => {
+      const d = document.createElement('div'); d.className = 'warn-item'; d.textContent = '⚠ ' + msg; w.appendChild(d);
+    });
+    meta.appendChild(w);
+  } else {
+    const d = document.createElement('div'); d.className = 'metric'; d.style.marginTop = '10px';
+    d.innerHTML = '<span class="k">Warnings</span><span class="v good">none</span>';
+    meta.appendChild(d);
+  }
+  const r = el('calibResult');
+  r.hidden = false;
+  r.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ================================================================ STEP 3: PLAYERS
+function initPlayersStep() {
+  el('playersNext').addEventListener('click', savePlayers);
+  $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
+}
+
+async function savePlayers() {
+  const body = {
+    user: el('handUser').value,
+    partner: el('handPartner').value,
+    opp_a: el('handOppA').value,
+    opp_b: el('handOppB').value,
+  };
+  const btn = el('playersNext');
+  btn.disabled = true;
+  try {
+    await jsonPost(`/api/sessions/${S.session.id}/roster`, body);
+    toast('Players saved');
+    goto('you');
+  } catch (e) { toast('Could not save players: ' + e.message, true); }
+  finally { btn.disabled = false; }
+}
+
+// ================================================================ STEP 4: YOU (which side)
+let youCanvas, youCtx;
+function initYouStep() {
+  youCanvas = el('youCanvas'); youCtx = youCanvas.getContext('2d');
+  el('youSlider').addEventListener('input', (e) => setYouFrame(parseInt(e.target.value, 10)));
+  el('youBack').addEventListener('click', () => setYouFrame(S.you.frameIdx - 1));
+  el('youFwd').addEventListener('click', () => setYouFrame(S.you.frameIdx + 1));
+  youCanvas.addEventListener('click', onYouClick);
+  ['cardLeft', 'cardRight'].forEach((id) =>
+    el(id).addEventListener('click', () => pickCorner(el(id).dataset.corner)));
+  el('youClearClick').addEventListener('click', () => { S.you.click = null; drawYou(); reflectYou(); });
+  el('youNext').addEventListener('click', saveSide);
+}
+
+function enterYou() {
+  const v = S.session.video;
+  el('youSlider').max = Math.max(0, v.frame_count - 1);
+  if (S.you.imgFrame < 0) { S.you.frameIdx = Math.floor((v.frame_count || 1) * 0.1); el('youSlider').value = S.you.frameIdx; }
+  loadYouFrame();
+  reflectCorner();
+  reflectYou();
+}
+function setYouFrame(idx) {
+  const max = Math.max(0, (S.session.video.frame_count || 1) - 1);
+  idx = Math.max(0, Math.min(max, idx));
+  S.you.frameIdx = idx; el('youSlider').value = idx; loadYouFrame(); reflectYou();
+}
+function loadYouFrame() {
+  const s = S.session, idx = S.you.frameIdx;
+  el('youFrameLabel').textContent = `${idx} / ${Math.max(0, s.video.frame_count - 1)}`;
+  const img = new Image();
+  img.onload = () => { S.you.img = img; S.you.imgFrame = idx; youCanvas.width = img.naturalWidth; youCanvas.height = img.naturalHeight; drawYou(); };
+  img.onerror = () => toast('Could not load that frame', true);
+  img.src = `/api/sessions/${s.id}/frame/${idx}?maxw=${FRAME_MAXW}`;
+}
+
+// Identifying the user by CLICK rather than by starting corner. The corner is a
+// geometric guess that Stage 2.5 seeds at confidence 0.5; a click seeds at 0.95. On
+// pb_5_minute_outdoor-7 the corner guess happened to be right, but nothing verified it,
+// and if it lands wrong every "your" metric and the USAPA rating belong to the partner
+// with no signal that anything is amiss. One click removes the coin flip.
+function youScale() {
+  return S.you.img ? (S.you.img.naturalWidth / S.session.video.frame_width) : 1;
+}
+
+function onYouClick(e) {
+  if (!S.you.img) return;
+  const rect = youCanvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (youCanvas.width / rect.width);
+  const cy = (e.clientY - rect.top) * (youCanvas.height / rect.height);
+  const sc = youScale();
+  S.you.click = { frame: S.you.frameIdx, x: Math.round(cx / sc), y: Math.round(cy / sc) };
+  // Keep the corner consistent with the click so court.json still carries a sane value
+  // for the geometric fallback; the click is what Stage 2 actually uses.
+  S.startingCorner = (cx < youCanvas.width / 2) ? 'left' : 'right';
+  drawYou(); reflectYou();
+}
+
+function drawYou() {
+  if (!S.you.img) return;
+  youCtx.drawImage(S.you.img, 0, 0);
+  const c = S.you.click;
+  if (!c || c.frame !== S.you.frameIdx) return;
+  const sc = youScale(), x = c.x * sc, y = c.y * sc;
+  youCtx.strokeStyle = '#ff3b30'; youCtx.lineWidth = 3;
+  youCtx.beginPath(); youCtx.arc(x, y, 26, 0, Math.PI * 2); youCtx.stroke();
+  youCtx.beginPath(); youCtx.moveTo(x - 38, y); youCtx.lineTo(x - 30, y);
+  youCtx.moveTo(x + 30, y); youCtx.lineTo(x + 38, y);
+  youCtx.moveTo(x, y - 38); youCtx.lineTo(x, y - 30);
+  youCtx.moveTo(x, y + 30); youCtx.lineTo(x, y + 38); youCtx.stroke();
+  youCtx.fillStyle = '#ff3b30'; youCtx.font = 'bold 20px system-ui';
+  youCtx.fillText('you', x + 32, y - 10);
+}
+
+function reflectYou() {
+  const c = S.you.click;
+  const marked = !!c;
+  el('youClearClick').hidden = !marked;
+  el('youClickState').textContent = marked
+    ? `Marked on frame ${c.frame}. Analysis will follow this player.`
+    : 'Not marked yet — without it we fall back to guessing from your starting side.';
+  el('youClickState').classList.toggle('ok', marked);
+}
+
+function pickCorner(corner) {
+  S.startingCorner = corner;
+  reflectCorner();
+}
+function reflectCorner() {
+  ['Left', 'Right'].forEach((side) => {
+    el('card' + side).classList.toggle('selected', S.startingCorner === side.toLowerCase());
+  });
+}
+async function saveSide() {
+  const btn = el('youNext'); btn.disabled = true;
+  try {
+    // persist the starting side into markers.json + court.json (used by Stage 2/2.5)
+    await jsonPost(`/api/sessions/${S.session.id}/starting-corner`, { corner: S.startingCorner });
+    // The click is what actually identifies the user (Stage 2.5 seeds it at 0.95 vs 0.5
+    // for the corner). Posting an empty list clears any prior file and reverts to the
+    // geometric guess, so only send when we have one.
+    if (S.you.click) {
+      await jsonPost(`/api/sessions/${S.session.id}/user-clicks`, { clicks: [S.you.click] });
+      toast('You are marked — analysis will follow that player');
+    } else {
+      toast(`Starting side: ${S.startingCorner} (guessing which player is you)`);
+    }
+    goto('review');
+  } catch (e) { toast('Could not save: ' + e.message, true); }
+  finally { btn.disabled = false; }
+}
+
+// ================================================================ STEP 5: REVIEW
+function initReviewStep() {
+  el('finishBtn').addEventListener('click', async () => {
+    el('finishBtn').disabled = true;
+    try {
+      await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' });
+      goto('run');
+    } catch (e) {
+      toast('Could not start analysis: ' + e.message, true);
+      el('finishBtn').disabled = false;
+    }
+  });
+}
+
+async function enterReview() {
+  let sum;
+  try { sum = await api(`/api/sessions/${S.session.id}/summary`); }
+  catch (e) { toast('Could not load summary: ' + e.message, true); return; }
+  const grid = el('reviewGrid');
+  const cal = sum.calibration, roster = sum.roster, v = S.session.video;
+  const handLabel = (h) => ({ right: 'Right', left: 'Left', unknown: 'Not sure' }[h] || h);
+
+  const card = (title, rows) =>
+    `<div class="review-card"><h3>${title}</h3>${rows.map(([k, val]) => `<div class="kv"><span class="k">${k}</span><span class="v">${val}</span></div>`).join('')}</div>`;
+
+  const calBadge = cal
+    ? `<span class="badge ok">✓ done</span>`
+    : `<span class="badge skip">not set</span>`;
+
+  grid.innerHTML =
+    card('Video', [
+      ['Name', esc(S.session.name)],
+      ['Resolution', `${v.frame_width}×${v.frame_height}`],
+      ['Length', `${fmtDuration(v.duration_sec)} · ${v.frame_count} frames`],
+      ['FPS', v.fps.toFixed(0)],
+    ]) +
+    card('Court calibration', cal ? [
+      ['Status', calBadge],
+      ['Marked on frame', String(cal.frame_used_for_calibration)],
+      ['Corner fit (RMSE)', cal.validation.homography_rmse_pixels.toFixed(1) + ' px'],
+      ['Warnings', String((cal.validation.warnings || []).length)],
+    ] : [['Status', calBadge]]) +
+    card('Players', roster ? [
+      ['You', handLabel(roster.handedness.user)],
+      ['Partner', handLabel(roster.handedness.partner)],
+      ['Opponent A', handLabel(roster.handedness.opp_a)],
+      ['Opponent B', handLabel(roster.handedness.opp_b)],
+    ] : [['Status', '<span class="badge skip">not set</span>']]) +
+    card('Your side', [
+      ['Starting side', S.startingCorner === 'right' ? 'Right' : 'Left'],
+      ['Baseline', cal ? (cal.user_inputs.user_baseline === 'far' ? 'Far' : 'Near') : '—'],
+    ]);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ================================================================ STEP 6: RUN
+let runES = null;         // EventSource
+let visionBusy = false;
+
+function initRunStep() {
+  el('visionUploadBtn').addEventListener('click', () => el('visionInput').click());
+  el('visionInput').addEventListener('change', () => { if (el('visionInput').files.length) uploadVision(el('visionInput').files); });
+  el('retryBtn').addEventListener('click', async () => {
+    try { await api(`/api/sessions/${S.session.id}/run`, { method: 'POST' }); enterRun(); }
+    catch (e) { toast('Retry failed: ' + e.message, true); }
+  });
+}
+
+// When Google Drive for Desktop is configured, the app pushes the clip to Drive
+// and auto-ingests the results — rewrite the hand-off card to that (no manual
+// download; upload stays as a fallback).
+function applyHandoffMode() {
+  // The numbered steps and the numbered BUTTONS must agree. They previously disagreed:
+  // the button labels hardcoded 1/2/3 for the manual path while the step list described
+  // the Drive-sync path, so the screen told the operator both to download the bundle and
+  // that the clip was already synced.
+  const steps = el('handoffSteps'), dl = el('bundleDownloadBtn'), colab = el('openColabBtn');
+  const ub = el('visionUploadBtn');
+  const once = el('handoffOnce');
+  if (S.driveSync) {
+    // Everything the operator would otherwise carry to Drive by hand — the clip AND the
+    // ball model — is copied by the app. One instruction is left, so there is one step.
+    el('handoffIntro').textContent =
+      'Vision runs on Colab’s GPU. Your clip and the ball model are copied to Google '
+      + 'Drive automatically — there is nothing to upload.';
+    steps.innerHTML =
+      '<li><b>Wait for Google Drive to finish uploading your clip.</b> The app copies it '
+      + 'to Drive in seconds, but Drive needs several minutes to upload a few GB, and '
+      + 'Colab reads the uploaded copy. Your taskbar Drive icon shows when it is done. '
+      + '<span class="small muted">Starting sooner fails with “no *_vision_input.zip '
+      + 'found on Drive root”.</span></li>'
+      + '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU '
+      + 'runtime). Nothing to edit.</li>'
+      + '<li>Come back here and leave this page open. Results import themselves and the '
+      + 'analysis finishes on its own.</li>';
+    once.hidden = true;                     // the app handles the model; do not mention it
+    dl.hidden = true;                       // bundle is auto-pushed to Drive
+    colab.textContent = '↗ Open Colab notebook';
+    ub.classList.remove('primary');
+    ub.classList.add('ghost');
+    ub.textContent = 'Upload results by hand (only if the import fails)';
+    el('visionNote').textContent = '⏳ Waiting for Colab results (importing from Google Drive automatically)…';
+  } else {
+    el('handoffIntro').textContent =
+      'Vision runs on Colab’s GPU — too slow on this computer. Follow these three steps.';
+    steps.innerHTML =
+      '<li>Save the clip bundle to your computer, then move it into Google Drive, top '
+      + 'level (“My Drive”).</li>'
+      + '<li>Open the Colab notebook and choose <b>Runtime → Run all</b> (pick a GPU '
+      + 'runtime). It finds the clip on its own — nothing to edit.</li>'
+      + '<li>When Colab prints <b>ALL 7 OUTPUTS READY</b>, save those files from Drive, '
+      + 'then send them back here.</li>';
+    once.hidden = false;                    // no auto-sync: the model is the operator's job
+    dl.hidden = false;
+    dl.textContent = '⬇ 1. Save clip bundle';
+    colab.textContent = '↗ 2. Open Colab notebook';
+    ub.textContent = '3. Send results back here';
+  }
+}
+
+function enterRun() {
+  // serve via /files/ so the report's relative <video src="annotated_web.mp4"> resolves
+  el('viewReportBtn').href = `/api/sessions/${S.session.id}/files/report.html`;
+  el('viewVideoBtn').href = `/api/sessions/${S.session.id}/files/video.mp4`;
+  el('bundleDownloadBtn').href = `/api/sessions/${S.session.id}/vision-input.zip`;
+  applyHandoffMode();
+  // (re)connect the live stream
+  if (runES) { runES.close(); runES = null; }
+  runES = new EventSource(`/api/sessions/${S.session.id}/run/stream`);
+  runES.onmessage = (ev) => { try { renderRun(JSON.parse(ev.data)); } catch (e) {} };
+  runES.onerror = () => { /* browser auto-reconnects */ };
+}
+
+const STEP_ICON = { pending: '○', running: '<span class="spinner"></span>', done: '✓', failed: '✕', skipped: '–', waiting: '⏸' };
+
+function renderRun(job) {
+  // steps checklist
+  const wrap = el('runSteps');
+  wrap.innerHTML = '';
+  (job.steps || []).forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'run-step ' + s.status;
+    let dur = '';
+    if (s.started_at && s.ended_at) dur = `${Math.round(s.ended_at - s.started_at)}s`;
+    row.innerHTML =
+      `<span class="rs-icon">${STEP_ICON[s.status] || '○'}</span>` +
+      `<span class="rs-label"></span><span class="rs-dur">${dur}</span>`;
+    row.querySelector('.rs-label').textContent = s.label;
+    wrap.appendChild(row);
+  });
+
+  // log tail
+  const log = el('runLog');
+  log.textContent = (job.log || []).join('\n');
+  log.scrollTop = log.scrollHeight;
+
+  // side cards
+  el('visionHandoff').hidden = job.phase !== 'vision';
+  el('runDone').hidden = job.phase !== 'done';
+  if (job.phase === 'done') showCollectStep();
+  el('runFail').hidden = job.phase !== 'failed';
+  if (job.phase === 'failed') el('runFailMsg').textContent = job.error || 'A stage failed. See the activity log.';
+
+  // header
+  const titles = {
+    prepare: 'Preparing your video', vision: 'Vision runs on a GPU',
+    post: 'Finishing your analysis', done: 'Your report is ready',
+    failed: 'Analysis stopped', idle: 'Analyzing your match',
+  };
+  el('runTitle').textContent = titles[job.phase] || 'Analyzing your match';
+  if (job.phase === 'done' && runES) { runES.close(); runES = null; }
+}
+
+async function uploadVision(files) {
+  if (visionBusy) return;
+  files = Array.from(files);
+  const note = el('visionNote');
+  const hasZip = files.some((f) => f.name.toLowerCase().endsWith('.zip'));
+  const hasBall = files.some((f) => f.name === 'ball.parquet');
+  if (!hasZip && !hasBall) { note.textContent = 'Please include ball.parquet and the other output files (or a .zip of them).'; return; }
+  visionBusy = true;
+  note.textContent = `Uploading ${files.length} file(s)…`;
+  const fd = new FormData();
+  files.forEach((f) => fd.append('files', f));
+  try {
+    const res = await api(`/api/sessions/${S.session.id}/vision`, { method: 'POST', body: fd });
+    if (res.resumed) {
+      note.textContent = 'Received — resuming analysis…';
+      el('visionHandoff').hidden = true;
+    } else if (!res.have_all_outputs) {
+      note.textContent = 'Got ' + res.saved.join(', ') + '. Still missing some of: players.parquet, track_roles.json, poses.parquet, ball.parquet.';
+    } else {
+      note.textContent = 'Received.';
+    }
+  } catch (e) {
+    note.textContent = 'Upload failed: ' + e.message;
+  } finally { visionBusy = false; }
+}
+
+// ---------------------------------------------------------------- boot
+function boot() {
+  initVideoStep();
+  initCourtStep();
+  initPlayersStep();
+  initYouStep();
+  initReviewStep();
+  initRunStep();
+  initCollectStep();
+  initCollMgr();
+  $$('[data-goto]').forEach((b) => b.addEventListener('click', () => goto(b.dataset.goto)));
+  $$('#stepnav li').forEach((li) => li.addEventListener('click', () => {
+    const i = STEPS.indexOf(li.dataset.step);
+    if (canGoto(i)) goto(li.dataset.step);
+  }));
+  goto('video');
+}
+document.addEventListener('DOMContentLoaded', boot);
+
+// ---------------------------------------------------------------------------
+// Cumulative reports (collections)
+//
+// NOTHING IS PRE-SELECTED. Adding a video to the wrong player's cumulative report is
+// not something the app can detect, and un-picking it means a rebuild plus explaining
+// why their numbers moved. One extra click is cheaper than that, every time.
+// ---------------------------------------------------------------------------
+
+let collectLoaded = false;
+
+async function showCollectStep() {
+  const card = el('collectCard');
+  if (!card || collectLoaded) return;
+  collectLoaded = true;
+  // The report was chosen with the video, so this is a confirmation, not a question.
+  // Falling back to asking here only matters for videos set up before that existed.
+  try {
+    const res = await jsonPost(`/api/sessions/${S.session.id}/finalize-collection`, {});
+    if (res.collection_id) {
+      card.hidden = false;
+      const nm = (res.collection && res.collection.name) || res.collection_id;
+      finishCollect(res.collection_id,
+                    res.added ? `Added to "${nm}".` : `Already part of "${nm}".`);
+      return;
+    }
+    card.hidden = true;   // standalone: nothing to ask
+  } catch (e) {
+    card.hidden = false;
+    el('collectReminder').textContent = e.message || 'Could not update the cumulative report.';
+  }
+}
+
+function renderCollectList(list) {
+  const wrap = el('collectList');
+  const open = list.filter((c) => !c.closed_at);
+  if (!open.length) {
+    wrap.innerHTML = '<p class="small muted">No cumulative reports yet. '
+      + 'Start one to track this player across videos.</p>';
+    return;
+  }
+  wrap.innerHTML = '';
+  open.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn ghost block collect-pick';
+    const n = (c.members || []).length;
+    b.innerHTML = `<b>${escapeHtml(c.name)}</b>`
+      + `<span class="small muted"> — ${n} video${n === 1 ? '' : 's'}</span>`;
+    b.onclick = () => addToCollection(c.id, c.name);
+    wrap.appendChild(b);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function addToCollection(cid, name) {
+  const wrap = el('collectList');
+  wrap.innerHTML = '<p class="small muted">Adding and rebuilding…</p>';
+  try {
+    await jsonPost(`/api/collections/${cid}/members`,
+                   { session_id: S.session.id });
+    finishCollect(cid, `Added to "${name}".`);
+  } catch (e) {
+    // The most likely refusals are meaningful to the operator: an unsupported venue
+    // (D4) or the same video twice. Show the server's reason rather than a generic error.
+    wrap.innerHTML = `<p class="small err">${escapeHtml(e.message || 'Could not add.')}</p>`;
+    // Re-running a video to fix its analysis is the NORMAL reason to hit the duplicate
+    // guard, and the right answer is to supersede the old one. Offer it here; refusing
+    // and stopping left a finished report with no way in.
+    if (e.detail && e.detail.can_replace) {
+      const btn = document.createElement('button');
+      btn.className = 'btn primary';
+      btn.textContent = `Replace "${e.detail.replaces}" with this run`;
+      btn.onclick = async () => {
+        wrap.innerHTML = '<p class="small muted">Replacing and rebuilding…</p>';
+        try {
+          await jsonPost(`/api/collections/${cid}/members`,
+                         { session_id: S.session.id, replace: true });
+          finishCollect(cid, `Replaced "${e.detail.replaces}" in "${name}".`);
+        } catch (e2) {
+          wrap.innerHTML = `<p class="small err">${escapeHtml(e2.message || 'Could not replace.')}</p>`;
+          toast(e2.message || 'Could not replace', true);
+        }
+      };
+      const note = document.createElement('p');
+      note.className = 'small muted';
+      note.textContent = 'This is the same footage re-analysed, so it replaces the old '
+                       + 'run rather than adding to it — the totals stay right.';
+      wrap.appendChild(note); wrap.appendChild(btn);
+    }
+    toast(e.message || 'Could not add to the cumulative report', true);
+  }
+}
+
+function finishCollect(cid, msg) {
+  el('collectList').innerHTML = '';
+  el('collectNewWrap').hidden = true;
+  el('collectNewBtn').hidden = true;
+  el('collectSkipBtn').hidden = true;
+  el('collectDoneMsg').textContent = msg;
+  el('viewCollectionBtn').href = `/api/collections/${cid}/files/report.html`;
+  el('collectDone').hidden = false;
+}
+
+function initCollectStep() {
+  const nb = el('collectNewBtn');
+  if (!nb) return;
+  nb.onclick = () => {
+    el('collectNewWrap').hidden = false;
+    el('collectNewName').focus();
+  };
+  el('collectNewGo').onclick = async () => {
+    const name = el('collectNewName').value.trim();
+    if (!name) { toast('Give the report a name (whose is it?)', true); return; }
+    try {
+      const c = await jsonPost('/api/collections', { name });
+      await addToCollection(c.id, c.name);
+    } catch (e) {
+      toast(e.message || 'Could not create the cumulative report', true);
+    }
+  };
+  el('collectSkipBtn').onclick = () => {
+    el('collectCard').hidden = true;
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// Cumulative reports — management view
+//
+// Reachable any time from the top bar rather than being a wizard step: managing a
+// player's running report has nothing to do with setting up one video.
+// ---------------------------------------------------------------------------
+
+function showCollectionsPanel(on) {
+  $$('.panel').forEach((p) => { p.hidden = true; });
+  el('panel-collections').hidden = !on;
+  if (on) loadCollMgr(); else goto('video');
+}
+
+async function loadCollMgr() {
+  const wrap = el('collMgrList');
+  wrap.innerHTML = '<p class="small muted">Loading…</p>';
+  try {
+    const data = await api('/api/collections');
+    el('collMgrReminder').textContent = data.reminder || '';
+    renderCollMgr(data.collections || [], data.active_id);
+  } catch (e) {
+    wrap.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+}
+
+function renderCollMgr(list, activeId) {
+  const wrap = el('collMgrList');
+  if (!list.length) {
+    wrap.innerHTML = '<p class="small muted">No cumulative reports yet. Create one on the right.</p>';
+    el('collMgrAddCard').hidden = true;
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach((c) => {
+    const n = (c.members || []).length;
+    const card = document.createElement('div');
+    card.className = 'coll-card' + (c.closed_at ? ' is-closed' : '');
+    const members = (c.members || []).map((m) =>
+      '<li><span>' + escapeHtml(m.session_id) + '</span>'
+      + '<button class="btn ghost xsmall" data-rm="' + escapeHtml(m.session_id)
+      + '" data-cid="' + escapeHtml(c.id) + '">Remove</button></li>').join('');
+    card.innerHTML =
+      '<div class="coll-card-head"><h3>' + escapeHtml(c.name)
+      + (c.id === activeId ? ' <span class="badge ok">default</span>' : '')
+      + (c.closed_at ? ' <span class="badge">closed</span>' : '')
+      + '</h3><span class="small muted">' + n + ' video' + (n === 1 ? '' : 's')
+      + '</span></div>'
+      + '<ul class="coll-members">' + (members || '<li class="small muted">No videos yet</li>')
+      + '</ul><div class="coll-card-actions">'
+      + '<a class="btn primary small" target="_blank" href="/api/collections/'
+      + encodeURIComponent(c.id) + '/files/report.html">View report →</a>'
+      + (c.closed_at
+        ? '<button class="btn ghost small" data-reopen="' + escapeHtml(c.id) + '">Resume adding videos</button>'
+        : '<button class="btn ghost small" data-add="' + escapeHtml(c.id) + '">Add a video</button>'
+        + '<button class="btn ghost small" data-act="' + escapeHtml(c.id) + '">Make default</button>'
+        + '<button class="btn ghost small" data-close="' + escapeHtml(c.id) + '">Stop adding videos</button>')
+      + '</div>';
+    wrap.appendChild(card);
+  });
+
+  wrap.querySelectorAll('[data-rm]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.cid + '/members/'
+                                    + b.dataset.rm, 'DELETE', 'Removed ' + b.dataset.rm);
+  });
+  wrap.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.act + '/activate',
+                                    'POST', 'Set as default');
+  });
+  wrap.querySelectorAll('[data-reopen]').forEach((b) => {
+    b.onclick = () => collMgrAction('/api/collections/' + b.dataset.reopen + '/reopen',
+                                    'POST', 'Resumed');
+  });
+  wrap.querySelectorAll('[data-close]').forEach((b) => {
+    b.onclick = () => {
+      // This used to be labelled "Close", which reads as closing the panel. The operator
+      // pressed it after viewing a report and silently ended their cumulative analysis.
+      if (!confirm('Stop adding videos to this report? The report stays and can be '
+                   + 'resumed later - this only stops new videos joining it.')) return;
+      collMgrAction('/api/collections/' + b.dataset.close + '/close', 'POST',
+                    'Stopped adding videos');
+    };
+  });
+  wrap.querySelectorAll('[data-add]').forEach((b) => {
+    b.onclick = () => openAddPicker(b.dataset.add);
+  });
+}
+
+async function collMgrAction(path, method, okMsg) {
+  try {
+    await api(path, { method });
+    toast(okMsg);
+    await loadCollMgr();
+  } catch (e) {
+    toast(e.message || 'That did not work', true);
+  }
+}
+
+async function openAddPicker(cid) {
+  const card = el('collMgrAddCard');
+  const list = el('collMgrAddList');
+  card.hidden = false;
+  list.innerHTML = '<p class="small muted">Loading videos…</p>';
+  try {
+    const { sessions } = await api('/api/sessions');
+    list.innerHTML = '';
+    if (!sessions.length) {
+      list.innerHTML = '<p class="small muted">No videos set up yet.</p>';
+      return;
+    }
+    sessions.forEach((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost block collect-pick';
+      b.textContent = s.name || s.id;
+      b.onclick = async () => {
+        try {
+          await jsonPost('/api/collections/' + cid + '/members', { session_id: s.id });
+          toast('Added ' + (s.name || s.id));
+          card.hidden = true;
+          await loadCollMgr();
+        } catch (e) {
+          // The refusals that actually happen carry meaning: an unsupported venue, the
+          // same video twice, or a video that was never analysed. Show the real reason.
+          toast(e.message || 'Could not add that video', true);
+        }
+      };
+      list.appendChild(b);
+    });
+  } catch (e) {
+    list.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Whose report is this?" — asked on the video page, with the video.
+// ---------------------------------------------------------------------------
+
+async function askWhoseReport(session) {
+  const box = el('videoCollect');
+  const list = el('videoCollectList');
+  box.hidden = false;
+  list.innerHTML = '<p class="small muted">Loading…</p>';
+  try {
+    const data = await api('/api/collections');
+    el('videoCollectReminder').textContent = data.reminder || '';
+    const open = (data.collections || []).filter((c) => !c.closed_at);
+    list.innerHTML = '';
+    open.forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost block collect-pick';
+      const n = (c.members || []).length;
+      b.innerHTML = '<b>' + escapeHtml(c.name) + '</b><span class="small muted"> — '
+                    + n + ' video' + (n === 1 ? '' : 's') + '</span>';
+      b.onclick = () => chooseReport(session, c.id, c.name);
+      list.appendChild(b);
+    });
+    if (!open.length) {
+      list.innerHTML = '<p class="small muted">No cumulative reports yet.</p>';
+    }
+  } catch (e) {
+    list.innerHTML = '<p class="small err">' + escapeHtml(e.message || 'Could not load') + '</p>';
+  }
+  el('videoCollectNewGo').onclick = async () => {
+    const name = el('videoCollectNewName').value.trim();
+    if (!name) { toast('Whose report is it?', true); return; }
+    try {
+      const c = await jsonPost('/api/collections', { name });
+      await chooseReport(session, c.id, c.name);
+    } catch (e) { toast(e.message || 'Could not create', true); }
+  };
+  el('videoCollectSkip').onclick = () => chooseReport(session, null, null);
+}
+
+async function chooseReport(session, cid, name) {
+  try {
+    const updated = await jsonPost(`/api/sessions/${session.id}/collection`,
+                                   { collection_id: cid, player_name: name });
+    el('videoCollect').hidden = true;
+    toast(cid ? `This video will join "${name}"` : 'Standalone analysis');
+    await onSessionReady(updated);
+  } catch (e) {
+    toast(e.message || 'Could not save that choice', true);
+  }
+}
+
+function initCollMgr() {
+  const open = el('openCollections');
+  if (!open) return;
+  open.onclick = () => showCollectionsPanel(true);
+  el('collMgrBack').onclick = () => showCollectionsPanel(false);
+  el('collMgrNewGo').onclick = async () => {
+    const name = el('collMgrNewName').value.trim();
+    if (!name) { toast('Give the report a name (whose is it?)', true); return; }
+    try {
+      await jsonPost('/api/collections', { name });
+      el('collMgrNewName').value = '';
+      toast('Created "' + name + '"');
+      await loadCollMgr();
+    } catch (e) {
+      toast(e.message || 'Could not create', true);
+    }
+  };
+}

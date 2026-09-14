@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://127.0.0.1:8000/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pickleball Analyzer — Setup</title>
+  <link rel="stylesheet" href="./Pickleball Analyzer — Setup_files/styles.css">
+</head>
+<body data-new-gr-c-s-check-loaded="14.1328.0" data-gr-ext-installed="">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">Pickleball Analyzer</span>
+      <span class="brand-sub">Setup</span>
+    </div>
+    <ol class="steps" id="stepnav">
+      <li data-step="video" class="is-active is-clickable"><span class="num">1</span><span class="lbl">Video</span></li>
+      <li data-step="court"><span class="num">2</span><span class="lbl">Court</span></li>
+      <li data-step="players"><span class="num">3</span><span class="lbl">Players</span></li>
+      <li data-step="you"><span class="num">4</span><span class="lbl">You</span></li>
+      <li data-step="review"><span class="num">5</span><span class="lbl">Review</span></li>
+      <li data-step="run"><span class="num">6</span><span class="lbl">Run</span></li>
+    </ol>
+    <button class="btn ghost small topbar-btn" id="openCollections" type="button">Cumulative reports</button>
+  </header>
+
+  <main class="stage">
+
+    <!-- CUMULATIVE REPORTS (not a wizard step — reachable any time) -->
+    <section class="panel" id="panel-collections" hidden="">
+      <div class="panel-head">
+        <h1>Cumulative reports</h1>
+        <p class="lead" id="collMgrReminder"></p>
+      </div>
+      <div class="coll-mgr">
+        <div class="coll-mgr-list" id="collMgrList"></div>
+        <div class="coll-mgr-side">
+          <div class="done-card">
+            <h3>Start a new one</h3>
+            <p class="small muted">One report per player. Videos you add are combined as
+              if they were a single longer match.</p>
+            <div class="collect-new">
+              <input type="text" id="collMgrNewName" placeholder="Whose report? e.g. David">
+              <button class="btn primary small" id="collMgrNewGo" type="button">Create</button>
+            </div>
+          </div>
+          <div class="done-card" id="collMgrAddCard" hidden="">
+            <h3 id="collMgrAddTitle">Add a video</h3>
+            <p class="small muted">Only analysed videos can be added.</p>
+            <div class="coll-add-list" id="collMgrAddList"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn ghost" id="collMgrBack" type="button">← Back to setup</button>
+    </section>
+
+    <!-- STEP 1: VIDEO -->
+    <section class="panel" id="panel-video">
+      <div class="panel-head">
+        <h1>Choose your match video</h1>
+        <p class="lead">It stays on this computer — nothing is uploaded to the internet.</p>
+      </div>
+
+      <div class="video-cols">
+        <div class="video-pick">
+          <div class="folder-callout">
+            <div class="fc-title">Put your video in this folder, then pick it below:</div>
+            <div class="fc-path" id="videosDir">C:\Users\hochh\Pickleball-Analyzer-V2\videos</div>
+            <div class="fc-note">If your clip is somewhere else, move or copy it into this folder first, then press Refresh.</div>
+          </div>
+          <div class="pick-head">
+            <span class="pick-label">Videos in this folder</span>
+            <button class="btn ghost small" id="refreshVideos" type="button">↻ Refresh</button>
+          </div>
+          <div class="browse-list" id="videoList"><div class="row video"><span class="ic">🎬</span><span class="nm">PB 2 minute outdoor.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">1.7 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 3 min indoor 1 court B.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">2.1 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 3 min indoor 1 court C.mp4<span class="row-note">already analysed</span></span><span class="sz">1.5 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 3 min indoor 2 Court B.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">1.6 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 3 minute outdoor court 2.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">2.1 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 3 minute outdoor.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">2.5 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 5 min indoor 1 court A.mp4<span class="row-note">already analysed</span></span><span class="sz">2.5 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB 5 minute outdoor.mp4<span class="row-note">already analysed · in "David2"</span></span><span class="sz">4.4 GB</span></div><div class="row video"><span class="ic">🎬</span><span class="nm">PB_5min_test_20s.mp4<span class="row-note">already analysed</span></span><span class="sz">836.8 MB</span></div></div>
+
+          <!-- REPORTS FIRST. Finding a finished report was the hardest thing in this
+               screen: the only link was bound to the session currently loaded, so an
+               earlier video's report existed on disk with no route to it. -->
+          <div class="existing" id="reportsWrap" hidden="">
+            <h2>Your reports</h2>
+            <div class="report-list" id="reportList"><a class="report-row cumulative" href="http://127.0.0.1:8000/api/collections/david2/files/report.html" target="_blank" rel="noopener"><span class="rr-name">David2</span>
+                     <span class="rr-meta">cumulative · 6 videos</span>
+                     <span class="rr-go">Open →</span></a><a class="report-row cumulative" href="http://127.0.0.1:8000/api/collections/david/files/report.html" target="_blank" rel="noopener"><span class="rr-name">David</span>
+                     <span class="rr-meta">cumulative · 2 videos</span>
+                     <span class="rr-go">Open →</span></a></div>
+          </div>
+
+          <div class="existing" id="existingWrap">
+            <h2>Or continue a previous setup</h2>
+            <div class="session-list" id="sessionList"><div class="session-card"><div class="sc-name">PB 3 min indoor 1 court B</div>
+         <div class="sc-meta">3840×2160 · 3:04</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_3_min_indoor_1_court_b-11/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 3 minute outdoor</div>
+         <div class="sc-meta">3840×2160 · 3:00</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_3_minute_outdoor/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 3 minute outdoor court 2</div>
+         <div class="sc-meta">3840×2160 · 3:07</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_3_minute_outdoor_court_2-5/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 3 min indoor 2 Court B</div>
+         <div class="sc-meta">3840×2160 · 3:17</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_3_min_indoor_2_court_b-2/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 2 minute outdoor</div>
+         <div class="sc-meta">3840×2160 · 1:59</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_2_minute_outdoor-4/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 5 minute outdoor</div>
+         <div class="sc-meta">3840×2160 · 5:14</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_5_minute_outdoor-12/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 5 min indoor 1 court A</div>
+         <div class="sc-meta">3840×2160 · 5:03</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_5_min_indoor_1_court_a/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB 3 min indoor 1 court C</div>
+         <div class="sc-meta">3840×2160 · 3:02</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_3_min_indoor_1_court_c/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div><div class="session-card"><div class="sc-name">PB_5min_test_20s</div>
+         <div class="sc-meta">3840×2160 · 0:20</div>
+         <div class="sc-steps"><span class="pill done">Court</span><span class="pill done">Players</span><a class="sc-report" href="http://127.0.0.1:8000/api/sessions/pb_5min_test_20s-7/files/report.html" target="_blank" rel="noopener" title="">Report →</a></div></div></div>
+          </div>
+
+          <!-- Whose report is this? Asked WITH the video, before analysis, so a
+               finished video folds into the cumulative report on its own. -->
+          <div class="video-collect" id="videoCollect" hidden="">
+            <h2>Whose report is this?</h2>
+            <p class="small muted" id="videoCollectReminder"></p>
+            <div class="collect-list" id="videoCollectList"></div>
+            <div class="collect-new">
+              <input type="text" id="videoCollectNewName" placeholder="New report — whose is it? e.g. David">
+              <button class="btn primary small" id="videoCollectNewGo" type="button">Create &amp; use</button>
+            </div>
+            <button class="btn ghost block" id="videoCollectSkip" type="button">Just this video (no cumulative report)</button>
+          </div>
+        </div>
+
+        <aside class="camera-reqs">
+          <h3>Recording requirements</h3>
+          <ul class="req-list">
+            <li><b>Camera position:</b> in the corner of the court closest to the starting position of the player being analyzed.</li>
+            <li><b>Framing:</b> the entire court must be in view, plus the space outside the lines where players move.</li>
+            <li><b>Height:</b> on a tripod, at least <b>6 ft</b> high.</li>
+            <li><b>Shutter speed:</b> <b>1/1000 s</b> or faster (freezes the ball).</li>
+            <li><b>Frame rate:</b> <b>60 fps</b>.</li>
+            <li><b>Resolution:</b> <b>4K UHD</b>.</li>
+            <li><b>ISO:</b> <b>800</b>.</li>
+            <li><b>Length:</b> <b>2–5 minutes</b> for now.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <!-- STEP 2: COURT -->
+    <section class="panel" id="panel-court" hidden="">
+      <div class="panel-head">
+        <h1>Mark the court</h1>
+        <p class="lead">Find a clear frame, then click the 8 points in order. Follow the prompt above the image.</p>
+      </div>
+
+      <div class="court-grid">
+        <div class="court-main">
+          <div class="prompt-bar" id="promptBar">
+            <span class="prompt-swatch" id="promptSwatch"></span>
+            <span class="prompt-text" id="promptText">Loading frame…</span>
+            <span class="prompt-count" id="promptCount"></span>
+          </div>
+
+          <!-- Live fit. The 4 corners alone fix the homography, so the kitchen lines, net
+               and centre line are PREDICTED from them: if the dashed overlay misses the
+               paint, the corners are wrong and you can see it before clicking anything
+               else. Without this the only feedback came after submitting all 8 points. -->
+          <div class="fit-bar" id="fitBar" hidden="">
+            <span class="fit-dot" id="fitDot"></span>
+            <span class="fit-text" id="fitText"></span>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="courtCanvas"></canvas>
+            <canvas id="loupe" class="loupe" hidden="" width="150" height="150"></canvas>
+          </div>
+
+          <div class="scrubber">
+            <button class="step-btn" id="frameBack" title="Previous frame" type="button">‹</button>
+            <input type="range" id="frameSlider" min="0" max="0" value="0">
+            <button class="step-btn" id="frameFwd" title="Next frame" type="button">›</button>
+            <span class="frame-label" id="frameLabel">0 / 0</span>
+          </div>
+
+          <!-- Inline calibration result (kept below the frame so the marked
+               court stays visible for comparison). -->
+          <div class="calib-result" id="calibResult" hidden="">
+            <h2>Does this look like a court?</h2>
+            <p class="lead">Compare your marked frame above with this straightened, top-down view — it should be a clean rectangle with two horizontal kitchen lines.</p>
+            <div class="preview-row">
+              <img id="previewImg" alt="Top-down court preview">
+              <div class="preview-meta" id="previewMeta"></div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="redoBtn" type="button">Re-mark points</button>
+              <button class="btn primary" id="confirmCourtBtn" type="button">Looks right — continue</button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="court-side">
+          <div class="side-card">
+            <h3>Your position</h3>
+            <p class="field-note">You're filmed from the corner nearest your start, so you're on the <b>near</b> baseline (bottom of frame). You'll pick which <b>side</b> you start on, and set handedness, on the next screens.</p>
+          </div>
+
+          <div class="side-card">
+            <h3>Points</h3>
+            <ol class="pointlist" id="pointList"></ol>
+            <div class="side-actions">
+              <button class="btn ghost" id="undoBtn" type="button">Undo</button>
+              <button class="btn ghost" id="clearBtn" type="button">Clear all</button>
+            </div>
+          </div>
+
+          <button class="btn primary block" id="calibrateBtn" type="button" disabled="">Check calibration</button>
+        </aside>
+      </div>
+    </section>
+
+    <!-- STEP 3: PLAYERS -->
+    <section class="panel" id="panel-players" hidden="">
+      <div class="panel-head">
+        <h1>Players</h1>
+        <p class="lead">Set your handedness (it sharpens your forehand/backhand analysis). Add the others if you know them — leave as “Not sure” to skip.</p>
+      </div>
+      <div class="roster">
+        <div class="roster-card">
+          <div class="roster-role">You</div>
+          <select id="handUser"><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Your partner</div>
+          <select id="handPartner"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Opponent A</div>
+          <select id="handOppA"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+        <div class="roster-card">
+          <div class="roster-role">Opponent B</div>
+          <select id="handOppB"><option value="unknown">Not sure</option><option value="right">Right-handed</option><option value="left">Left-handed</option></select>
+        </div>
+      </div>
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="court" type="button">Back</button>
+        <button class="btn primary" id="playersNext" type="button">Continue</button>
+      </div>
+    </section>
+
+    <!-- STEP 4: YOU (which side) -->
+    <section class="panel" id="panel-you" hidden="">
+      <div class="panel-head">
+        <h1>Which player are you?</h1>
+        <p class="lead">You're one of the two players <b>closest to the camera</b> (the near baseline, bottom of frame). Scrub to a frame where you can see yourself, then <b>click on yourself</b> in the picture. Everything in your report — your shots, your court coverage, your rating — follows whoever you mark here.</p>
+      </div>
+
+      <div class="court-main you-main">
+        <div class="canvas-wrap">
+          <canvas id="youCanvas"></canvas>
+        </div>
+        <div class="scrubber">
+          <button class="step-btn" id="youBack" title="Previous frame" type="button">‹</button>
+          <input type="range" id="youSlider" min="0" max="0" value="0">
+          <button class="step-btn" id="youFwd" title="Next frame" type="button">›</button>
+          <span class="frame-label" id="youFrameLabel">0 / 0</span>
+        </div>
+        <p class="hint">Click directly on yourself in the frame above.</p>
+        <p class="click-state" id="youClickState">Not marked yet — without it we fall back to guessing from your starting side.</p>
+        <button class="btn ghost small" id="youClearClick" type="button" hidden="">Clear mark</button>
+        <details class="fallback">
+          <summary>Can't see yourself in any frame?</summary>
+          <p class="hint">Pick the side you start on instead. This is a guess based on position, so check the report names it right.</p>
+        <div class="side-choice">
+          <button class="choice-card" data-corner="left" id="cardLeft" type="button">
+            <div class="cc-icon">◄</div><div class="cc-title">Left side</div>
+          </button>
+          <button class="choice-card" data-corner="right" id="cardRight" type="button">
+            <div class="cc-icon">►</div><div class="cc-title">Right side</div>
+          </button>
+        </div>
+        </details>
+      </div>
+
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="players" type="button">Back</button>
+        <button class="btn primary" id="youNext" type="button">Continue</button>
+      </div>
+    </section>
+
+    <!-- STEP 5: REVIEW -->
+    <section class="panel" id="panel-review" hidden="">
+      <div class="panel-head">
+        <h1>Review</h1>
+        <p class="lead">Everything below is saved. You’re ready for processing.</p>
+      </div>
+      <div class="review-grid" id="reviewGrid"></div>
+      <div class="panel-nav">
+        <button class="btn ghost" data-goto="you" type="button">Back</button>
+        <button class="btn primary" id="finishBtn" type="button">Start Analysis →</button>
+      </div>
+      <div class="done-note" id="doneNote" hidden=""></div>
+    </section>
+
+    <!-- STEP 6: RUN -->
+    <section class="panel" id="panel-run" hidden="">
+      <div class="panel-head">
+        <h1 id="runTitle">Analyzing your match</h1>
+        <p class="lead" id="runLead">This runs on your computer and can take a while — you can leave it going.</p>
+      </div>
+
+      <div class="run-grid">
+        <div class="run-steps" id="runSteps"></div>
+
+        <div class="run-side">
+          <!-- Vision hand-off (shown while waiting for the GPU outputs) -->
+          <div class="handoff-card" id="visionHandoff" hidden="">
+            <h3>⚡ Vision runs on a GPU (Colab)</h3>
+            <p id="handoffIntro">Player tracking, pose, and ball detection run on Colab's GPU — too slow on this computer. Bring the results back and the rest of the analysis finishes on its own.</p>
+            <!-- Shown ONLY when Drive auto-sync is off. With sync on, the app copies the
+                 model itself and this stays hidden — nothing for the operator to track. -->
+            <div class="handoff-once" id="handoffOnce" hidden="">
+              <b>Optional — only when the ball model has been updated.</b>
+              <span class="small muted">The app ships a trained ball model. Colab reads it
+                from your Drive, so a newer model has to get there once. Skip this unless
+                you were told the model changed, or Colab reports a missing
+                <code>ball_model_v4.pt</code>.</span>
+              <ol class="handoff-steps">
+                <li>Save the model file to your computer.
+                  <a class="btn ghost block" href="http://127.0.0.1:8000/api/models/ball_model_v4.pt" download="">⬇ Save ball_model_v4.pt</a></li>
+                <li>Move that file into Google Drive, top level (“My Drive”).
+                  Keep the name exactly <code>ball_model_v4.pt</code> and replace any older copy.</li>
+              </ol>
+            </div>
+            <ol class="handoff-steps" id="handoffSteps">
+              <li><b>Download the clip bundle</b> (button below) and put it in your Google Drive (top level, “My Drive”).</li>
+              <li><b>Open the Colab notebook</b> and choose <b>Runtime → Run all</b> (GPU runtime). It finds this clip automatically — nothing to edit.</li>
+              <li>When Colab prints <b>“ALL 7 OUTPUTS READY”</b>, download those files and <b>upload them here</b>.</li>
+            </ol>
+            <a class="btn ghost block" id="bundleDownloadBtn" download="">⬇ Download clip bundle (video + setup)</a>
+            <a class="btn ghost block" id="openColabBtn" target="_blank" rel="noopener" href="https://colab.research.google.com/github/Hochh16/Pickleball-Analyzer-v2/blob/main/stages/infer_vision.ipynb">↗ Open Colab notebook (Run all)</a>
+            <label class="ball-upload" id="visionUploadWrap">
+              <input type="file" id="visionInput" accept=".parquet,.json,.zip" multiple="" hidden="">
+              <span class="btn primary block" id="visionUploadBtn">3. Upload vision outputs</span>
+            </label>
+            <div class="ball-note" id="visionNote"></div>
+          </div>
+
+          <!-- Done -->
+          <div class="done-card" id="runDone" hidden="">
+            <h3>✓ Analysis complete</h3>
+            <a class="btn primary block" id="viewReportBtn" target="_blank">View your report →</a>
+            <a class="btn ghost block" id="viewVideoBtn" target="_blank">Watch match video</a>
+          </div>
+
+          <!-- Cumulative report: nothing is pre-selected on purpose. Adding a video to
+               the wrong player's collection is not something the app can detect or undo
+               cleanly, so the choice is always an explicit click. -->
+          <div class="done-card" id="collectCard" hidden="">
+            <h3>Add to a cumulative report?</h3>
+            <p class="small muted" id="collectReminder"></p>
+            <div class="collect-list" id="collectList"></div>
+            <div class="collect-new" id="collectNewWrap" hidden="">
+              <input type="text" id="collectNewName" placeholder="Whose report is this? e.g. David">
+              <button class="btn primary small" id="collectNewGo" type="button">Create</button>
+            </div>
+            <button class="btn ghost block" id="collectNewBtn" type="button">+ Start a new cumulative report</button>
+            <button class="btn ghost block" id="collectSkipBtn" type="button">Keep this video standalone</button>
+            <div class="collect-done" id="collectDone" hidden="">
+              <p class="small" id="collectDoneMsg"></p>
+              <a class="btn primary block" id="viewCollectionBtn" target="_blank">View cumulative report →</a>
+            </div>
+          </div>
+
+          <!-- Failure -->
+          <div class="fail-card" id="runFail" hidden="">
+            <h3>Something went wrong</h3>
+            <p id="runFailMsg"></p>
+            <button class="btn ghost block" id="retryBtn" type="button">Retry</button>
+          </div>
+
+          <div class="log-card">
+            <div class="log-head"><h3>Activity</h3></div>
+            <pre id="runLog"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden=""></div>
+  <script src="./Pickleball Analyzer — Setup_files/app.js.download"></script>
+
+
+<cloudhq-chatgpt-sidebar style=""><template shadowrootmode="open"><link rel="stylesheet" href="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/stylesheets/hljs/github.css"><link type="text/css" rel="stylesheet" href="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/stylesheets/sidebar.css"><link type="text/css" rel="stylesheet" href="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/stylesheets/popup.css"><style>cloudhq-chatgpt-sidebar * { cursor: auto; } cloudhq-chatgpt-sidebar a, cloudhq-chatgpt-sidebar button, cloudhq-chatgpt-sidebar .btn, cloudhq-chatgpt-sidebar .float-btn, cloudhq-chatgpt-sidebar .close, cloudhq-chatgpt-sidebar .settings, cloudhq-chatgpt-sidebar .copy, cloudhq-chatgpt-sidebar .stop, cloudhq-chatgpt-sidebar textarea, cloudhq-chatgpt-sidebar select, cloudhq-chatgpt-sidebar input, .sidebar-floating-btn { cursor: pointer !important; }</style><div><div class="sidebar-floating-div sidebar-wrapper" style="display: none;"><div class="sidebar"><div class="header"><div class="title"><img src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/icon-128x128.png">ChatGPT Sidebar by cloudHQ</div><div title="Show settings" style="margin-left: auto; margin-right: 10px;" class="settings"><img src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/settings.svg" class="cog-icon"></div><div title="Close the sidebar" class="close"><img src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/close.svg" class="close-icon"></div></div><div class="main"><div class="sidebar-container"><div style="min-width: 350px;" class="row"><div class="column"><select class="form-control prompt-list"><option value="summarize">Summarize</option><option value="fix_grammar">Fix Grammar</option><option value="rewrite">Rewrite</option><option value="bulletize">Bulletize</option><option value="elaborate">Elaborate</option><option disabled="">──────────</option><option value="adhoc__reserved">Custom</option><option disabled="">──────────</option><option value="adhoc__summarize_web_page">Summarize current web page</option></select></div></div><div id="custom_prompt_row" class="row" style="margin-top: 1em; display: none;"><div class="column"><textarea class="form-control adhoc_prompt" rows="3" style="resize: vertical;height: auto; min-height: 64px; font-family: Arial, Helvetica, sans-serif;" placeholder="Enter your command here"></textarea></div></div><div class="row" style="margin-top: 1em;"><div class="column"><textarea class="form-control pasted_text" rows="7" style="resize: vertical;height: auto; min-height: 64px; font-family: Arial, Helvetica, sans-serif;" placeholder="Paste or input content here"></textarea><button id="paste-btn" class="btn btn-primary" style="display: none;">Paste selected text</button></div></div><div class="row" style="margin-top: 1em; "><div class="column" style="justify-content: center; display: flex;"><button class="btn btn-primary send-to-chatgpt" style="width:60%">Send to ChatGPT</button></div></div><div class="row error-row" style="margin-top: 1em; display: none;"></div><div class="row answer-row" style="display: none;"><div class="answer-actions"><div class="stop" style="display: none;"><img width="10" height="10" src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/square.svg">Stop generating</div><div class="copy" style="display: none;"><img width="13" height="13" src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/copy.svg">Copy response</div></div><div class="answer-inner"><div class="answer-scroll"><div class="answer-scroll-content"></div></div></div></div></div></div><div class="bottom"><span>Service by </span><span>&nbsp;</span><a target="_blank" href="https://www.cloudhq.net/">cloudHQ.net</a>&nbsp; · &nbsp;<a target="_blank" href="https://www.cloudhq.net/dashboard/apps/smart_web_sidebar">My Dashboard</a>&nbsp; · &nbsp;<a target="_blank" href="https://www.cloudhq.net/chrome_extensions">cloudHQ Apps</a>&nbsp; · &nbsp;<a target="_blank" href="https://support.cloudhq.net/category/browser-extensions/chatgpt-sidebar/">Help</a></div></div></div><div class="sidebar-floating-btn sidebar-float show"><div class="float-btn"><img src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/smart_web_sidebar.png" class="icon"><span class="close-btn"><img width="8" height="8" style="filter: invert(1);" src="chrome-extension://kapoabaoamgiilmlanmfejgfomlnccph/icons/close.svg"></span></div></div></div></template></cloudhq-chatgpt-sidebar></body><grammarly-desktop-integration data-grammarly-shadow-root="true" style="visibility: visible !important;"><template shadowrootmode="open"><style>
+      div.grammarly-desktop-integration {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select:none;
+        user-select:none;
+      }
+
+      div.grammarly-desktop-integration:before {
+        content: attr(data-content);
+      }
+    </style><div aria-label="grammarly-integration" role="group" tabindex="-1" class="grammarly-desktop-integration" data-content="{&quot;mode&quot;:&quot;full&quot;,&quot;isActive&quot;:true,&quot;isUserDisabled&quot;:false}"></div></template></grammarly-desktop-integration></html>
