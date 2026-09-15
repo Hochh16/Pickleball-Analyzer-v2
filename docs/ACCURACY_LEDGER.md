@@ -2173,3 +2173,53 @@ repeats 5, passed-by 2, latch 1, never a candidate 2).
 - volley right 159/194 (82%)
 - by operator type: serve 33/39, return 26/33, drive 71/92 (19 called dink), dink 32/39, lob 5/6,
   **drop 14/43** (17 called drive, 7 called dink)
+
+### 2026-09-15 — Gemini video models on court C, without training: worse than the pipeline on every measure
+
+**Setup.**
+- Court C downscaled to 720p (7.8 MB, 182.5 s), audio kept, sent through the Gemini Files API at 10 fps.
+- Models: `gemini-3.8-flash` (newest Flash) and `gemini-pro-latest`.
+- One prompt, written before any output was seen: every point (serve time, server side, last contact, point over, end reason) and every shot (time, side, left/right, type, volley), as structured JSON.
+- Scored one-to-one against the truth store. Scripts: scratchpad `gemini/gemini_test.py` (whole video) and `gemini/gemini_chunks.py` (30 s windows, 6 s overlap, merged).
+- Court A NOT sent.
+
+**Whole video in one request.** The models stopped listing early: Flash 6 of 10 points and 32 shots, Pro 3 points and 13 shots.
+
+**30 s windows** (58 real shots, 10 serves, 10 points):
+
+| | shots found ≤0.35 s | junk | found ≤1 s | type right | serves right (≤1.5 s) / false | rally end ≤2 s | end reason | time |
+|---|---|---|---|---|---|---|---|---|
+| gemini-3.8-flash | 27 | 14 | 35 | 9/27 | 6 / 3 | 6/10 | 2/6 | 20 min |
+| gemini-pro-latest | 41 | 101 | 49 | 21/41 | 1 / 7 | 3/10 | 1/3 | 28 min |
+| pipeline today | 45 | 24 | – | 34/45 | 7 / 2 | ~8/10 | – | seconds |
+
+**Findings.**
+- Neither model beats the pipeline on shots, types, serves or rally ends. Serves and rally ends were the hoped-for strengths.
+- Flash is conservative, and weak at shot type.
+- Pro over-reports contacts (142 for 58 real) and misplaces serves.
+- Flash gets near/far side right on 23 of the 27 shots it found.
+
+**Caveats.** One prompt, one video, 720p, no iteration, no few-shot examples. A differently framed request (per point, higher media resolution) could do better, but nothing here suggests a large jump.
+
+### 2026-09-15 (later) — Gemini at full resolution: cropping helps, still below the pipeline
+
+The operator questioned the 720p test: the ball was blurry and the frame rate too low. So the
+test was re-run on ONE MINUTE of court C (56-119 s: 29 real shots, 4 serves, 4 rally ends).
+- Original 4K, full frame, and 4K cropped to the court region (3300×1500 at native pixels; crop taken from court.json corners with a margin for the players).
+- Files API upload (the 100 MB limit applies only to inline data).
+- 24 fps, the API maximum (30 was rejected), high media resolution, 20 s windows with 4 s overlap.
+- Same prompt and schema as before. Script: scratchpad `gemini/gemini_hires.py`.
+
+| same minute | shots found ≤0.35 s | junk | type right | side right | serves right / false | rally ends ≤2 s (reason) |
+|---|---|---|---|---|---|---|
+| gemini-3.8-flash, 4K full frame | 14/29 | 11 | 6/14 | 13/14 | 1 / 2 | 2/4 (0) |
+| gemini-3.8-flash, 4K cropped to court | 21/29 | 6 | 9/21 | 20/21 | 2 / 1 | 2/4 (1) |
+| gemini-pro-latest, 4K cropped to court | 19/29 | 39 | 7/19 | 13/19 | 1 / 5 | 2/4 (0) |
+| pipeline today | 24/29 | 10 | 20/24 | 24/24 | 3 / 0 | – |
+
+**Findings.**
+- Every request used the same 127,556 prompt tokens whatever the upload's resolution. Gemini rescales each frame to a fixed budget, so sending 4K by itself adds nothing: full-frame 4K scored below cropped 4K.
+- Cropping to the court (more pixels on the players and ball within that budget) is what helped. Flash on the crop found 21 of 29 shots with the least junk of any run, and it took under a minute.
+- Shot type (9/21), serves (2/4) and rally ends (2/4) remain well below the pipeline. Pro is worse than Flash again.
+
+**Caveat.** One minute is a small sample (4 serves, 4 ends).
