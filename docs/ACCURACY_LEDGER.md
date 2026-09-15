@@ -2260,3 +2260,36 @@ One minute; conclusions need a longer stretch.
 **Combination check on the same minute** (saved responses, no new API call). Keeping only the pipeline shots that Pro also reports
 within 0.35 s: 23/29 found, 5 junk. The pipeline alone scores 24/29 with 10 junk; Pro alone 27/29 with 35 junk. Agreement halves the
 junk for one lost shot. It is the first result in which Gemini improves on the pipeline, and it needs a longer stretch to confirm.
+
+### 2026-09-15 (later) — Gemini Pro on all of court C and court B: the second-opinion gain does not hold
+
+Pro ran on each full video: 20 s pieces as separate files, court crop, 24 fps, high media resolution.
+Every row is scored one-to-one against the operator's review (0.35 s).
+
+| | court C (58 shots) found / junk | court B (82 shots) found / junk | both (140) found / junk |
+|---|---|---|---|
+| Pro alone | 36 / 83 (53 within 1 s) | 60 / 72 (72 within 1 s) | 96 / 155 |
+| pipeline today | 45 / 24 | 56 / 18 | 101 / 42 |
+| pipeline where Pro agrees (≤0.35 s) | 30 / 10 | 40 / 2 | 70 / 12 |
+| pipeline where Pro agrees (≤1.0 s; tolerance picked after seeing court C) | 41 / 16 | 50 / 5 | 91 / 21 |
+| pipeline + Pro-only shots that sit on a candidate Stage 5 dropped (≤0.2 s) | 51 / 77 | 71 / 62 | 122 / 139 |
+
+Other measures:
+
+| | court C, Pro | court C, pipeline | court B, Pro | court B, pipeline |
+|---|---|---|---|---|
+| type right | 20/36 | 34/45 | 30/60 | 36/56 |
+| side right | 25/36 | 44/45 | 34/57 | 55/56 |
+| serves right / false | 6/10 / 5 | 8/10 / 1 | 6/10 / 7 | 5/10 / 2 |
+| rally ends | 6/10 | – | 7/10 | – |
+
+**Findings.**
+- **One minute misled.** On the full videos, "pipeline where Pro agrees" at 0.35 s loses 31 of 101 real shots to remove 30 junk. At 1.0 s it loses 10 to remove 21. That is a trade, not a gain, and the tolerance was chosen after seeing court C.
+- **Together the two find far more.** The pipeline or Pro finds 128 of 140 real shots within 0.35 s (137 within 1 s), against the pipeline's 101. Pro finds 27 real shots the pipeline misses, 20 of them on court B.
+- **But Pro's extra shots cannot be picked out.** Of Pro's 169 shots with no pipeline shot nearby, 29 are real and 140 junk. Keeping those that land on a candidate Stage 5 dropped adds 21 real and 97 junk, because candidates are dense enough to sit under almost any time.
+- **Pro's timing is loose**: its median error is +0.17 s on court C and +0.02 s on court B, and the middle half spans about 0.3-0.4 s.
+- **It is also slow**: 27 min for court C, 39 min for court B.
+
+**Conclusion.** Neither Gemini alone nor any combination tested beats the pipeline on unseen-style
+measurement. Pro's one distinctive value is recall: real shots the pipeline misses, especially on
+court B. Its junk is not separable with what we have.
