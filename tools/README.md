@@ -6,6 +6,22 @@ artifacts that stages consume but that we don't regenerate every run.
 
 ## Inventory
 
+### `gemini_video_test.py`
+
+Scores a Gemini video model against the operator's truth store, beside today's
+pipeline, for any stretch of a reviewed clip. The clip is cropped to the court
+(from `court.json`), sent through the Gemini Files API at 24 fps with high
+media resolution in 20 s windows, and merged. Raw responses are saved to
+`data/<clip>/_gemini/`. The held-out clip (court A) is refused unless
+`--allow-heldout` is passed. Results so far are in `docs/ACCURACY_LEDGER.md`
+(2026-09-15): below the pipeline at 720p and at 4K.
+
+Needs `pip install google-genai` (tools only) and `GEMINI_API_KEY`, set in the
+environment or with `setx`.
+
+    python -m tools.gemini_video_test data\pb_3_min_indoor_1_court_c --start 56 --end 119
+    python -m tools.gemini_video_test data\pb_3_min_indoor_1_court_c --model gemini-pro-latest
+
 ### `verify_rally_frames.py`
 
 Reads `data/<clip>/active_rally_frames.json` and writes annotated
