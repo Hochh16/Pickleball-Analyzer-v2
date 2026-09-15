@@ -2223,3 +2223,40 @@ test was re-run on ONE MINUTE of court C (56-119 s: 29 real shots, 4 serves, 4 r
 - Shot type (9/21), serves (2/4) and rally ends (2/4) remain well below the pipeline. Pro is worse than Flash again.
 
 **Caveat.** One minute is a small sample (4 serves, 4 ends).
+
+### 2026-09-15 (later) — CORRECTION: windowed Gemini scores were corrupted by a timing bug; re-run with fair context
+
+**The bug.** Every windowed Gemini run above sent one upload and chose each window with
+`start_offset`/`end_offset`. Gemini's times for such a window were inconsistent: some counted from the
+window's start, some from the file's start (e.g. window 16-36 s answering 16.8-35.0), and Pro once
+answered past the window's end (window 96-126 s answering 138-157 s). The merge assumed window-relative
+times, so correct shots were moved into misses and junk. The flash/pro 30 s 720p and 20 s 4K
+window rows above are UNRELIABLE. The whole-video single requests were unaffected.
+
+**Fix.** `tools/gemini_video_test.py` now cuts every piece into its own file, which has only one clock.
+Old saved responses print a warning when re-scored.
+
+**Fair-context re-run.** The operator asked whether 20 s pieces starve Gemini of context. The pipeline
+row always came from the full-video run, filtered to the minute. One minute of court C (56-119 s),
+cropped to the court, 24 fps, high media resolution. Every row is scored against the operator's review.
+
+| setup | shots found | junk | type right | side right | serves right / false | rally ends ≤2 s (reason) |
+|---|---|---|---|---|---|---|
+| Flash, whole minute in one request | 13/29 | 6 | 3/13 | 6/13 | 1 / 1 | 2/4 (2) |
+| Flash, 20 s pieces (separate files) | 16/29 | 5 | 3/16 | 15/16 | 1 / 1 | 1/4 (0) |
+| Flash, one request per pipeline rally ±3 s | 18/29 | 8 | 6/18 | 16/18 | 2 / 1 | 3/4 (1) |
+| **Pro, 20 s pieces (separate files)** | **27/29** | 35 | 13/27 | 16/27 | 3 / 1 | 3/4 (1) |
+| pipeline today (full-video run) | 24/29 | 10 | 20/24 | 24/24 | 3 / 0 | – |
+
+**Findings.**
+- The whole-minute request stopped listing: 19 shots and 2 points against the pipeline's 34 shots. That triggered the automatic fallback to per-rally requests.
+- Flash stays below the pipeline everywhere.
+- With correct timing, Pro FINDS more real shots than the pipeline (27 vs 24 of 29), but with 35 junk and weak type (13/27) and side (16/27).
+- Serves and rally ends are level with the pipeline on this minute (3/4), too small a sample to separate them.
+- Flash's windowed score moved from 21 to 16 found once timing was fixed. Some of that is run-to-run variation even at temperature 0.
+
+One minute; conclusions need a longer stretch.
+
+**Combination check on the same minute** (saved responses, no new API call). Keeping only the pipeline shots that Pro also reports
+within 0.35 s: 23/29 found, 5 junk. The pipeline alone scores 24/29 with 10 junk; Pro alone 27/29 with 35 junk. Agreement halves the
+junk for one lost shot. It is the first result in which Gemini improves on the pipeline, and it needs a longer stretch to confirm.

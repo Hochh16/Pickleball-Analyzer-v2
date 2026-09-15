@@ -57,6 +57,9 @@ WINDOW_S, STEP_S = 20.0, 16.0
 SHOT_MERGE_S, POINT_MERGE_S = 0.3, 2.0
 SHOT_TOL_S, SERVE_TOL_S, END_TOL_S = 0.35, 1.0, 2.0
 SIDELINE_FT, FAR_ABOVE_FT, NEAR_BELOW_FT = 5.0, 8.0, 3.0
+RALLY_PAD_S = 3.0                   # seconds before a rally's serve and after its end
+COMPLETE_SHOT_FRAC = 0.75           # a response listing fewer shots than this share of the pipeline's is cut short
+COMPLETE_TIME_FRAC = 0.80           # ...as is one whose last shot comes before this share of the clip
 
 PROMPT = """This is a clip from a recreational doubles pickleball video from a fixed camera behind one baseline.
 "Near" means the half of the court closest to the camera; "far" means the half beyond the net.
@@ -146,6 +149,36 @@ def window_starts(duration: float, window: float = WINDOW_S, step: float = STEP_
     return out
 
 
+def fixed_spans(duration: float) -> List[Tuple[float, float]]:
+    return [(s, min(s + WINDOW_S, duration)) for s in window_starts(duration)]
+
+
+def rally_spans(rallies: List[dict], start: float, end: float,
+                pad: float = RALLY_PAD_S) -> List[Tuple[float, float]]:
+    """One span per pipeline rally overlapping [start, end], padded so Gemini sees the serve
+    set-up and the ball dying, in CLIP time. Rallies are the pipeline's (rallies.json), never truth."""
+    out = []
+    for r in sorted(rallies, key=lambda r: float(r["start_t_sec"])):
+        a, b = float(r["start_t_sec"]) - pad, float(r["end_t_sec"]) + pad
+        if b < start or a > end:
+            continue
+        out.append((round(max(a, start) - start, 3), round(min(b, end) - start, 3)))
+    return out
+
+
+def completeness(windows: List[dict], duration: float, expected_shots: int) -> Optional[str]:
+    """Why a response looks cut short, or None. Judged against the PIPELINE's shot count for the
+    same stretch, not truth: a whole-video request once listed 13 shots for 58 and stopped."""
+    if any("error" in w for w in windows):
+        return "a request failed"
+    times = [float(w["start"]) + float(s["time_s"]) for w in windows for s in w["result"].get("shots", [])]
+    if len(times) < COMPLETE_SHOT_FRAC * expected_shots:
+        return f"listed {len(times)} shots where the pipeline has {expected_shots}"
+    if not times or max(times) < COMPLETE_TIME_FRAC * duration:
+        return (f"stopped listing at {max(times) if times else 0:.0f}s of a {duration:.0f}s clip")
+    return None
+
+
 def merge_windows(windows: List[dict], clip_start: float) -> Tuple[List[dict], List[dict]]:
     """Shots and points in VIDEO time. Where windows overlap, an item is kept from the window in
     which it sits most centrally; shots closer than SHOT_MERGE_S and points whose serves are
@@ -228,47 +261,56 @@ def make_clip(video: Path, out: Path, start: float, end: float,
     return out
 
 
-def ask_gemini(clip: Path, model: str, fps: float, duration: float) -> List[dict]:
+def ask_gemini(pieces: List[Tuple[float, float, Path]], model: str, fps: float) -> List[dict]:
+    """One request per piece, four at a time. Each piece is its OWN video file.
+
+    Pieces used to be spans of one upload selected with start_offset/end_offset. Gemini's times for
+    such a span were inconsistent -- sometimes from the span's start, sometimes from the file's start,
+    once past the span's end -- and merging assumed the first, which scattered correct shots into
+    misses and junk (2026-09-15). A separate file has only one clock: its own start.
+    """
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=api_key())
-    f = client.files.upload(file=str(clip))
-    while not f.state or f.state.name != "ACTIVE":
-        if f.state and f.state.name == "FAILED":
-            raise SystemExit("Gemini could not process the uploaded clip")
-        time.sleep(5)
-        f = client.files.get(name=f.name)
 
-    def one(start: float) -> dict:
-        end = min(start + WINDOW_S, duration)
+    def one(piece: Tuple[float, float, Path]) -> dict:
+        start, end, path = piece
         err = ""
-        for _ in range(3):
-            try:
-                r = client.models.generate_content(
-                    model=model,
-                    contents=types.Content(parts=[
-                        types.Part(file_data=types.FileData(file_uri=f.uri, mime_type="video/mp4"),
-                                   video_metadata=types.VideoMetadata(
-                                       fps=fps, start_offset=f"{start:.1f}s", end_offset=f"{end:.1f}s")),
-                        types.Part(text=PROMPT)]),
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json", response_json_schema=SCHEMA,
-                        temperature=0.0, media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH))
-                return {"start": start, "end": end, "result": json.loads(r.text),
-                        "usage": str(r.usage_metadata)[:300]}
-            except Exception as e:  # noqa: BLE001 -- report per window, never lose the others
-                err = repr(e)
-                time.sleep(10)
-        return {"start": start, "end": end, "error": err}
-
-    try:
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            return list(ex.map(one, window_starts(duration)))
-    finally:
         try:
-            client.files.delete(name=f.name)
-        except Exception:  # noqa: BLE001
-            pass
+            f = client.files.upload(file=str(path))
+            while not f.state or f.state.name != "ACTIVE":
+                if f.state and f.state.name == "FAILED":
+                    return {"start": start, "end": end, "error": "Gemini could not process the piece"}
+                time.sleep(5)
+                f = client.files.get(name=f.name)
+        except Exception as e:  # noqa: BLE001
+            return {"start": start, "end": end, "error": repr(e)}
+        try:
+            for _ in range(3):
+                try:
+                    r = client.models.generate_content(
+                        model=model,
+                        contents=types.Content(parts=[
+                            types.Part(file_data=types.FileData(file_uri=f.uri, mime_type="video/mp4"),
+                                       video_metadata=types.VideoMetadata(fps=fps)),
+                            types.Part(text=PROMPT)]),
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json", response_json_schema=SCHEMA,
+                            temperature=0.0, media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH))
+                    return {"start": start, "end": end, "time_base": "piece", "result": json.loads(r.text),
+                            "usage": str(r.usage_metadata)[:300]}
+                except Exception as e:  # noqa: BLE001 -- report per piece, never lose the others
+                    err = repr(e)
+                    time.sleep(10)
+            return {"start": start, "end": end, "error": err}
+        finally:
+            try:
+                client.files.delete(name=f.name)
+            except Exception:  # noqa: BLE001
+                pass
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        return list(ex.map(one, pieces))
 
 
 def truth_between(clip_dir: Path, start: float, end: float) -> dict:
@@ -297,6 +339,11 @@ def main(argv=None) -> int:
     ap.add_argument("--end", type=float, default=None, help="default: the whole video")
     ap.add_argument("--fps", type=float, default=MAX_FPS)
     ap.add_argument("--no-crop", action="store_true", help="send the full frame instead of the court crop")
+    ap.add_argument("--mode", choices=["windows", "single", "rallies"], default="windows",
+                    help="windows: 20 s overlapping pieces; single: the whole stretch in one request "
+                         "(falls back to rallies if the answer looks cut short); rallies: one request per "
+                         "pipeline rally, padded 3 s")
+    ap.add_argument("--no-fallback", action="store_true", help="with --mode single, never fall back")
     ap.add_argument("--windows-json", type=Path, default=None, help="re-score a saved response; no API call")
     ap.add_argument("--allow-heldout", action="store_true")
     a = ap.parse_args(argv)
@@ -308,38 +355,77 @@ def main(argv=None) -> int:
         raise SystemExit(f"--fps above {MAX_FPS:g} is rejected by the API")
     session = json.loads((clip / "session.json").read_text(encoding="utf-8"))
     video = Path(session["video_path"])
-    end = a.end if a.end is not None else float(session["duration_sec"])
+    meta = session["video"]                     # frame_width, frame_height, fps, duration_sec
+    end = a.end if a.end is not None else float(meta["duration_sec"])
     duration = end - a.start
+
+    ours = [dict(t=float(s["t_sec"]), type=s.get("shot_type"), side=s.get("hitter_side"))
+            for s in json.loads((clip / "classified.json").read_text(encoding="utf-8"))["shots"]
+            if a.start <= float(s["t_sec"]) <= end]
 
     if a.windows_json:
         windows = json.loads(a.windows_json.read_text(encoding="utf-8"))
         label = f"{a.windows_json.stem}"
+        if any(float(w["start"]) > 0 and w.get("time_base") != "piece" for w in windows if "error" not in w):
+            print("  WARNING: saved before 2026-09-15's fix -- spans after the first were cut with "
+                  "start/end offsets, whose times Gemini reports inconsistently; these scores are unreliable")
     else:
         court = json.loads((clip / "court.json").read_text(encoding="utf-8"))
-        crop = None if a.no_crop else court_crop(court, int(session["frame_width"]), int(session["frame_height"]))
+        crop = None if a.no_crop else court_crop(court, int(meta["frame_width"]), int(meta["frame_height"]))
         out_dir = clip / "_gemini"
         out_dir.mkdir(exist_ok=True)
-        tag = f"{a.model}_{'full' if crop is None else 'crop'}_{a.start:g}-{end:g}_fps{a.fps:g}"
-        clip_file = make_clip(video, out_dir / f"{tag}.mp4", a.start, end, crop)
-        t0 = time.time()
-        windows = ask_gemini(clip_file, a.model, a.fps, duration)
-        saved = out_dir / f"{tag}.json"
-        saved.write_text(json.dumps(windows, indent=1), encoding="utf-8")
-        errors = [w for w in windows if "error" in w]
-        print(f"{a.model}: {len(windows)} windows in {time.time() - t0:.0f}s, {len(errors)} failed; saved {saved}")
-        for w in errors:
-            print(f"  window {w['start']:g}s failed: {w['error'][:200]}")
-        label = f"{a.model} {'full' if crop is None else 'crop'}"
+        view = "full" if crop is None else "crop"
+        base = f"{a.model}_{view}_{a.start:g}-{end:g}_fps{a.fps:g}"
+        rallies = json.loads((clip / "rallies.json").read_text(encoding="utf-8"))["rallies"]
+        plan = {"windows": fixed_spans(duration), "single": [(0.0, duration)],
+                "rallies": rally_spans(rallies, a.start, end)}
+
+        def pieces(mode: str) -> List[Tuple[float, float, Path]]:
+            out = []
+            for s, e in plan[mode]:
+                p = out_dir / f"{view}_{a.start + s:.2f}-{a.start + e:.2f}.mp4"
+                if not p.exists():
+                    make_clip(video, p, a.start + s, a.start + e, crop)
+                out.append((s, e, p))
+            return out
+
+        def run(mode: str) -> List[dict]:
+            t0 = time.time()
+            got = ask_gemini(pieces(mode), a.model, a.fps)
+            saved = out_dir / f"{base}_{mode}.json"
+            saved.write_text(json.dumps(got, indent=1), encoding="utf-8")
+            print(f"{a.model} [{mode}]: {len(got)} request(s) in {time.time() - t0:.0f}s; saved {saved}")
+            for w in got:
+                if "error" in w:
+                    print(f"  span {w['start']:g}-{w['end']:g}s failed: {w['error'][:200]}")
+                elif "usage" in w:
+                    print(f"  span {w['start']:g}-{w['end']:g}s: {len(w['result'].get('shots', []))} shots, "
+                          f"{len(w['result'].get('points', []))} points")
+            return got
+
+        mode = a.mode
+        windows = run(mode)
+        if mode == "single" and not a.no_fallback:
+            why = completeness(windows, duration, len(ours))
+            if why:
+                print(f"  the single request looks cut short ({why}) -- falling back to one request per rally")
+                mode = "rallies"
+                windows = run(mode)
+        label = f"{a.model} {'full' if crop is None else 'crop'} [{mode}]"
 
     shots, points = merge_windows(windows, a.start)
     truth = truth_between(clip, a.start, end)
-    print(f"\n{clip.name} {a.start:g}-{end:g}s: truth {len(truth['shots'])} shots, "
-          f"{sum(1 for s in truth['shots'] if s.get('type') == 'serve')} serves, {len(truth['ends'])} rally ends")
+    # BOTH rows below are scored against the operator's review (the truth store), never against
+    # each other -- "found", "junk", "type right" all mean "agrees with the review".
+    print(f"\n{clip.name} {a.start:g}-{end:g}s, each row scored against the operator's review: "
+          f"{len(truth['shots'])} shots, {sum(1 for s in truth['shots'] if s.get('type') == 'serve')} serves, "
+          f"{len(truth['ends'])} rally ends")
     print(fmt(label, score(shots, [p["t"] for p in points], truth, points)))
-    ours = [dict(t=float(s["t_sec"]), type=s.get("shot_type"), side=s.get("hitter_side"))
-            for s in json.loads((clip / "classified.json").read_text(encoding="utf-8"))["shots"]
-            if a.start <= float(s["t_sec"]) <= end]
     print(fmt("pipeline today", score(ours, [s["t"] for s in ours if s["type"] == "serve"], truth)))
+    # Gemini as a second opinion: keep only the pipeline's shots that Gemini also reports. On one
+    # minute of court C this halved the junk (10 -> 5) for one lost shot (2026-09-15).
+    agreed = [ours[i] for i, _ in one_to_one([s["t"] for s in ours], [s["t"] for s in shots], SHOT_TOL_S)]
+    print(fmt("pipeline, where Gemini agrees", score(agreed, [s["t"] for s in agreed if s["type"] == "serve"], truth)))
     return 0
 
 

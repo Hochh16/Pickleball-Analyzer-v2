@@ -1,8 +1,8 @@
 """Pure parts of tools/gemini_video_test: matching, crop, windows, merge, scoring. No API calls."""
 import pytest
 
-from tools.gemini_video_test import (HELD_OUT, court_crop, main, merge_windows, one_to_one,
-                                     score, window_starts)
+from tools.gemini_video_test import (HELD_OUT, completeness, court_crop, main, merge_windows,
+                                     one_to_one, rally_spans, score, window_starts)
 
 
 def test_one_to_one_uses_each_side_once_shortest_first():
@@ -25,6 +25,21 @@ def test_court_crop_from_court_json_is_even_and_inside_frame():
 def test_window_starts_cover_the_clip_with_overlap():
     assert window_starts(63.0) == [0.0, 16.0, 32.0, 48.0]
     assert window_starts(10.0) == [0.0]
+
+
+def test_rally_spans_pad_clip_and_use_clip_time():
+    rallies = [{"start_t_sec": 40.0, "end_t_sec": 52.0}, {"start_t_sec": 57.5, "end_t_sec": 81.2},
+               {"start_t_sec": 113.8, "end_t_sec": 117.0}, {"start_t_sec": 133.0, "end_t_sec": 142.0}]
+    assert rally_spans(rallies, 56.0, 119.0) == [(0.0, 28.2), (54.8, 63.0)]
+
+
+def test_completeness_flags_errors_short_lists_and_early_stops():
+    def w(start, times):
+        return {"start": start, "end": start + 60, "result": {"shots": [{"time_s": t} for t in times]}}
+    assert completeness([w(0, [1, 20, 40, 55])], 60.0, 4) is None
+    assert "failed" in completeness([{"start": 0, "end": 60, "error": "x"}], 60.0, 4)
+    assert "listed 2" in completeness([w(0, [1, 55])], 60.0, 4)
+    assert "stopped" in completeness([w(0, [1, 5, 9, 12])], 60.0, 4)
 
 
 def test_merge_keeps_the_more_central_copy_and_shifts_to_video_time():
