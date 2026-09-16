@@ -1,7 +1,8 @@
 # Player report redesign — decision record
 
-**Status: designed and reviewed, NOT yet implemented in code.**
-Date: 2026-09-10. Operator review: David, across this session.
+**Status: IMPLEMENTED in `tools/build_report.py` on 2026-09-16.**
+Designed and reviewed 2026-09-10; operator review: David, across both sessions.
+The canvas remains the design record; the code is now the product.
 
 The design lives as a Claude Design canvas:
 <https://claude.ai/code/artifact/13043cb7-3b3a-44b3-81fd-8562bb992649>
@@ -244,20 +245,31 @@ guard would be for `segment_rallies` (or the aggregate stage) to assert that eve
 
 ## 6. Implementation checklist — `tools/build_report.py`
 
-Not started. `tools/test_build_report.py` must stay green.
+Done 2026-09-16, operator decisions: all five ball views with the weak ones labelled, and one
+review at the end rather than after each step. `tools/test_build_report.py` covers each piece
+(10 tests) and the full suite is green.
 
-- [ ] Hero: add the evidence strip (sessions / minutes / rallies / your shots + cumulative SVG)
-- [ ] Categories: replace the 4-column table with per-category cards
-- [ ] Add the leverage column — call `tools.rating_leverage.leverage()` rather than hardcoding
-- [ ] Add the intended-vs-actual weight strip; use `rating_leverage.category_shares()`
-- [ ] Move `●◐○` chips and "measured on N of M" into `<details>`
-- [ ] Fold `improvement_plan.json` focus areas into their category cards
-- [ ] Widen `CATEGORY_ELEMENTS` states — `live`/`partial`/`planned` conflates "we chose not
-      to" with "we cannot yet", which is what produced the unforced-errors contradiction.
-      The four buckets in §2 are the replacement.
-- [ ] Positioning: three zones with percentages; honest empty state when a role has no frames
-- [ ] Ball views: plotted marks with toggles, replacing `landing_diagram_uri`
-- [ ] Ladder + notes: four collapsibles
+- [x] Hero: evidence strip (sessions / minutes / rallies / your shots + cumulative SVG), bars
+      labelled by the day filmed, drawn to their own scale so one session stays visible
+- [x] Categories: per-category cards, ordered by measured leverage within and across categories
+- [x] Leverage column via `tools.rating_leverage.leverage()` — never hardcoded
+- [x] Intended-vs-actual weight strip via `category_shares()`, and on every card
+- [x] `●◐○` chips and "measured on N of M" moved into `<details>` "How we measured this"
+- [x] `improvement_plan.json` focus areas folded into their category cards
+- [x] The four buckets replace `live`/`partial`/`planned` for what a measurement can move:
+      `BUCKET` + `INERT_NOTE` in build_report.py say which of the three limitations, or the
+      one deliberate exclusion, applies — including unforced errors as a stated hole
+- [x] Positioning: three zones with percentages; a role is published only when its position
+      confidence is >= 0.80 and its role is not contaminated (`ZONE_MIN_CONF`), so David2's
+      opponents render the honest empty state rather than 3% kitchen time
+- [x] Ball views: five plotted views with toggles (`ball_views`, `ball_views_svg`), replacing
+      `landing_diagram_uri`; blue bounce, red out/net, green volley; the three that rest on
+      rally-end attribution are labelled weak
+- [x] Ladder + notes: four collapsibles, with the footnote ids kept so the in-report links work
+
+**Bug found in review and fixed:** the layers were switched with the `hidden` attribute, which
+browsers ignore on SVG elements — the buttons changed and all five views stayed drawn at once.
+They toggle by CSS class now, with a test.
 
 ## 7. Still open
 

@@ -138,6 +138,66 @@ COVERAGE = {
 }
 SYMBOL = {"live": "●", "partial": "◐", "planned": "○"}
 
+# WHY A MEASUREMENT CAN MOVE NOTHING (docs/REPORT_REDESIGN.md §2). `live/partial/planned`
+# answered "do we show a number", which conflated "USA Pickleball rates this and we cannot
+# see it" with "we chose not to grade it" -- and that conflation is what let an earlier
+# draft tell the player unforced errors were "not rated on purpose". Three of these four
+# are OUR limitation; only the last is a judgement about what USAPA grades.
+BUCKET = {
+    "gap":     ("🔴", "USA Pickleball rates it, we can't see it yet"),
+    "standin": ("🟠", "What we have is a stand-in"),
+    "inert":   ("🟢", "Nothing to gain right now"),
+    "context": ("⚪", "Context, not a skill grade"),
+}
+
+# tools/rating_leverage probe label -> the driver key whose rendered value it moves, so the
+# "worth" column sits on the same row as the number it is the worth OF.
+DRIVER_KEY = {
+    "Time at the kitchen line": "user_kitchen_time_frac",
+    "You and your partner up together": "both_at_kitchen_frac",
+    "Time stuck in mid-court": "user_transition_time_frac",
+    "Court covered": "distance_ft_per_min",
+    "Ready position (paddle up)": "ready_position",
+    "Getting to the kitchen after the 3rd": "transition",
+    "Third-shot drop rate": "__third_shot__",
+    "Pop-ups given up": "popup",
+    "Share of your shots that are dinks": "dink_count",
+    "Average rally length": "mean_rally_length",
+    "Dinks landing in the kitchen": "dink_control",
+    "Knee bend on dinks": "dink_knee_bend",
+    "Share of your shots that are volleys": "volley_rate",
+    "Serves landing in": "serve_in_play",
+    "Returns landing in": "return_in_play",
+    "Serves landing deep": "serve_depth",
+    "Returns landing deep": "return_depth",
+    "Contact point in front of the hip": "contact_front",
+    "Knee bend on drives": "drive_knee_bend",
+}
+
+# A driver the scorer does not move: WHICH bucket, and why in the player's words. The
+# leverage tool reports `inert` for all of them; only these sentences say whether that is a
+# hole in the rating, a stand-in, or a dead end that is fine.
+INERT_NOTE = {
+    "Unforced errors": ("gap", "USA Pickleball's ladder turns on these. We can't count them "
+                               "yet: we read how a point ended right 14 times in 23, and the "
+                               "usual mix-up is a ball into the net read as a winner."),
+    "Court covered": ("standin", "Work rate, not skill — strong players often move less and "
+                                 "get to better spots, so it isn't graded."),
+    "Ready position (paddle up)": ("standin", "We measure hand height, which stands in for "
+                                              "the paddle; we can't see the paddle itself."),
+    "Time stuck in mid-court": ("inert", "Already counted through your time at the kitchen "
+                                         "line, so it doesn't move the rating twice."),
+    "Serves landing in": ("inert", "You're at the top of this scale — every serve landed in, "
+                                   "so there is nothing above it to gain."),
+    "Third-shot drop rate": ("inert", "Too few of your third shots could be typed to judge "
+                                      "this yet."),
+    "Contact point in front of the hip": ("inert", "Already above where this scale tops out."),
+}
+
+# Counts are context: they say how much evidence there is, not how well you played.
+CONTEXT_KEYS = {"dink_count", "n_volley", "n_serves", "n_serves_detected", "n_returns",
+                "forehand_count", "backhand_count"}
+
 # Seconds of run-up before a serve when jumping to a point. Landing exactly on the serve
 # frame drops the viewer in mid-motion with no idea how the players were set.
 JUMP_LEAD_S = 3.0
@@ -534,7 +594,346 @@ def landing_diagram_uri(bounces: list, rally_windows: list,
     return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
 
 
-# --- HTML --------------------------------------------------------------------
+# --- Leverage: what each measurement is WORTH --------------------------------
+
+def leverage_index(metrics: dict) -> dict:
+    """{category: [row, ...]} from tools.rating_leverage, best-first. Measured, not judged.
+
+    Called rather than hardcoded (docs/REPORT_REDESIGN.md §6): the worth of a driver depends
+    on the scorer's slope, the category weight, its confidence and where the player already
+    sits, so a table of fixed numbers would be wrong for the next player.
+    """
+    try:
+        from tools.rating_leverage import leverage
+        rows = leverage(metrics).get("rows", [])
+    except Exception:                                    # noqa: BLE001 - report must build
+        return {}
+    out: dict = {}
+    for r in sorted(rows, key=lambda x: -float(x.get("d_rating") or 0.0)):
+        out.setdefault(r["category"], []).append(r)
+    return out
+
+
+def worth_html(row: Optional[dict]) -> str:
+    """The 'worth, per 10 points' cell: a number when it scores, a bucket when it cannot."""
+    if row is None:
+        return '<span class="muted">—</span>'
+    d = float(row.get("d_rating") or 0.0)
+    if row.get("verdict") == "scores" and d > 0:
+        return f'<b class="worth">+{d:.2f}</b>'
+    if row.get("verdict") == "below_floor":
+        mx = float(row.get("d_rating_max") or 0.0)
+        sym, name = BUCKET["inert"]
+        return (f'<span class="bk" title="{esc(name)}">{sym}</span> '
+                f'<span class="small">under where the scale starts — crossing it is worth '
+                f'up to <b>+{mx:.2f}</b></span>')
+    bucket, why = INERT_NOTE.get(row.get("driver", ""), ("inert", "Doesn't move the rating."))
+    sym, name = BUCKET[bucket]
+    return (f'<span class="bk" title="{esc(name)}">{sym}</span> '
+            f'<span class="small">{esc(why)}</span>')
+
+
+def category_rows(cat: str, drivers: dict, lev: dict, match_counts: dict,
+                  n_vids: int) -> list:
+    """[(worth, label, value_html, worth_html)] for one category, ordered by worth.
+
+    Every measurement the category has appears -- operator: "include all the measurements
+    for each category with those within each category ordered by what moves rating fastest,
+    as well as across categories."
+    """
+    by_key = {}
+    for r in lev.get(cat, []):
+        k = DRIVER_KEY.get(r.get("driver", ""))
+        if k and k not in by_key:
+            by_key[k] = r
+    rows = []
+    if cat == "third_shot":
+        line = third_shot_line(drivers, match_counts.get("n_third_shots")
+                               or match_counts.get("n_third_decisions"), max(1, n_vids))
+        if line:
+            r = by_key.get("__third_shot__")
+            rows.append((float((r or {}).get("d_rating") or 0.0),
+                         "Third shots you dropped", line, worth_html(r)))
+    if cat == "serve_return":
+        line = serve_fault_line(drivers)
+        if line:
+            rows.append((0.0, "Serve faults", line,
+                         f'<span class="bk" title="{esc(BUCKET["standin"][1])}">'
+                         f'{BUCKET["standin"][0]}</span> <span class="small">inferred from '
+                         f'points that ended on the serve, not from watching it land'
+                         f'</span>'))
+    for k, (label, fmt) in METRIC_DISPLAY.items():
+        if k not in drivers:
+            continue
+        s = fmt_metric(fmt, drivers[k])
+        if s is None:
+            continue
+        mt = match_counts.get(k) if fmt == "int" else None
+        val = (f'<b>{esc(str(mt))}</b> in the match, <b>{esc(s)}</b> by you'
+               if mt is not None else f'<b>{esc(s)}</b>')
+        r = by_key.get(k)
+        if r is None and k in CONTEXT_KEYS:
+            sym, name = BUCKET["context"]
+            w = (f'<span class="bk" title="{esc(name)}">{sym}</span> '
+                 f'<span class="small">how much evidence there is, not a grade</span>')
+        else:
+            w = worth_html(r)
+        rows.append((float((r or {}).get("d_rating") or 0.0), label, val, w))
+    # Unforced errors have no driver row of their own, and leaving them out is what the
+    # redesign calls the hole in the rating: show the count, in the red bucket.
+    if cat == "strategy":
+        r = next((x for x in lev.get(cat, []) if x.get("driver") == "Unforced errors"), None)
+        if r is not None and not any(lbl == "Unforced errors" for _, lbl, _, _ in rows):
+            rows.append((0.0, "Unforced errors", '<span class="muted">not counted yet</span>',
+                         worth_html(r)))
+    rows.sort(key=lambda x: -x[0])
+    return rows
+
+
+# --- Hero evidence: how settled this is --------------------------------------
+
+def session_day(member: dict) -> Optional[str]:
+    """'29 Aug' from a member's capture time, or None."""
+    import datetime as _dt
+    raw = str(member.get("captured_at") or member.get("added_at") or "")
+    try:
+        return _dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).strftime("%d %b").lstrip("0")
+    except ValueError:
+        return None
+
+
+def evidence_sessions(folder: Path, collection: Optional[dict]) -> list:
+    """[(label, n_user_shots)] per session, oldest first — the evidence accumulating.
+
+    A per-video RATING trend is deliberately not shown (operator: "progress should be the
+    cumulative estimate, not by individual videos"); per-video estimates swing 3.47-4.40 on
+    7-28 shots, which reads as skill change and is noise. What accumulates honestly is the
+    EVIDENCE, so that is what is plotted.
+    """
+    out = []
+    members = sorted(((collection or {}).get("members") or []),
+                     key=lambda m: str(m.get("captured_at") or m.get("added_at") or ""))
+    for m in members:
+        mf = Path(m.get("path") or "")
+        try:
+            cl = json.loads((mf / "classified.json").read_text(encoding="utf-8"))
+            ra = json.loads((mf / "rallies.json").read_text(encoding="utf-8"))["rallies"]
+            tr = json.loads((mf / "track_roles.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, KeyError):
+            continue
+        tids = {int(t) for t, i in (tr.get("track_roles", {}) or {}).items()
+                if i.get("role") == "user"}
+        ids = {int(i) for r in ra for i in r.get("shot_ids", [])}
+        n = sum(1 for s in cl.get("shots", [])
+                if int(s["shot_id"]) in ids and s.get("track_id") is not None
+                and int(s["track_id"]) in tids)
+        # The DAY it was filmed, not the session id: "pb_3_min_indoor_1_court_b-4" tells the
+        # player nothing and does not fit under a bar.
+        out.append((session_day(m) or str(m.get("session_id") or mf.name)[:10], n))
+    return out
+
+
+def evidence_svg(sessions: list) -> str:
+    """Per-session bars under the cumulative line of the user's own measured shots."""
+    if len(sessions) < 2:
+        return ""
+    vals = [n for _, n in sessions]
+    cum, tot = [], 0
+    for n in vals:
+        tot += n
+        cum.append(tot)
+    W, H, pad_l, pad_b, top = 780, 150, 46, 32, 30
+    n = len(sessions)
+    step = (W - pad_l - 12) / n
+    xs = [pad_l + step * (i + 0.5) for i in range(n)]
+    y = lambda c: top + (H - pad_b - top) * (1 - (c / tot if tot else 0))  # noqa: E731
+    # Per-session bars share the axis but not its scale: at the cumulative scale a single
+    # session is a sliver. They are drawn to 30% of the plot height at the busiest session,
+    # which is why the caption names them separately rather than implying one scale.
+    plot_h = (H - pad_b) - top
+    bar_h = [(v / max(vals or [1])) * plot_h * 0.30 for v in vals]
+    bars = "".join(
+        f'<rect x="{x - 14:.1f}" y="{(H - pad_b) - h:.1f}" width="28" '
+        f'height="{h:.1f}" rx="2"></rect>' for x, h in zip(xs, bar_h))
+    line = " ".join(f"{x:.1f},{y(c):.1f}" for x, c in zip(xs, cum))
+    dots = "".join(f'<circle cx="{x:.1f}" cy="{y(c):.1f}" r="3.5"></circle>'
+                   for x, c in zip(xs, cum))
+    labels = "".join(f'<text x="{x:.1f}" y="{H - 8:.0f}" text-anchor="middle">{esc(lb)}</text>'
+                     for x, (lb, _) in zip(xs, sessions))
+    return (f'<svg viewBox="0 0 {W} {H}" class="eviz" role="img" '
+            f'aria-label="Your shots measured, session by session, accumulating to {tot}">'
+            f'<line x1="{pad_l}" y1="{H - pad_b}" x2="{W - 12}" y2="{H - pad_b}"/>'
+            f'<line x1="{pad_l}" y1="{top}" x2="{W - 12}" y2="{top}" class="dash"/>'
+            f'<text x="{pad_l - 6}" y="{H - pad_b + 4}" text-anchor="end" class="ax">0</text>'
+            f'<text x="{pad_l - 6}" y="{top + 4}" text-anchor="end" class="ax">{tot}</text>'
+            f'<g class="ebar">{bars}</g>'
+            f'<polyline class="eline" points="{line}"/><g class="edot">{dots}</g>'
+            f'<g class="ax">{labels}</g></svg>')
+
+
+# --- Ball views: plotted marks, not heat -------------------------------------
+#
+# Operator: "Ball landing heatmap: need ability to toggle to different views ... Color code:
+# bounce = blue, Out - Red, volleys - green", with "need to verify that the info is there
+# for these views". It is, at 5-20 points a view -- far too few for density shading, and
+# plotting each mark is better anyway: an out ball or a net ball plots outside the lines,
+# which is exactly what he asked to see.
+
+COURT_W_FT, COURT_L_FT, NET_Y_FT, KITCHEN_FT = 20.0, 44.0, 22.0, 7.0
+OUT_REASONS = {"ball-out", "net-or-short", "serve-fault"}
+WON_REASONS = {"ball-not-returned", "double-bounce"}
+
+
+def ball_views(classified: dict, rallies: list, bounces: list, track_roles: dict) -> dict:
+    """{view: {"points": [(x_ft, y_ft, kind)], "weak": bool, "note": str}}.
+
+    `kind` is bounce / out / volley, which fixes the colour. Views that rest on WHO ended
+    the point are marked weak: end reason is right 14 times in 23, and the usual mix-up
+    (a ball into the net read as one nobody returned) is the winner/error flip itself.
+    """
+    roles = {int(t): i.get("role") for t, i in (track_roles.get("track_roles", {}) or {}).items()}
+    by_id = {int(s["shot_id"]): s for s in classified.get("shots", [])}
+    landing = {}
+    for b in bounces:
+        prev = (b.get("between_shots") or [None, None])[0]
+        xy = b.get("court_xy_ft")
+        if prev is None or not xy or xy[0] is None:
+            continue
+        landing.setdefault(int(prev), (float(xy[0]), float(xy[1]),
+                                       bool(b.get("is_in_court", True))))
+    mine = lambda s: s.get("track_id") is not None and roles.get(int(s["track_id"])) == "user"  # noqa: E731
+
+    def hit_xy(s):
+        xy = s.get("hitter_court_xy_ft") or [None, None]
+        return (float(xy[0]), float(xy[1])) if xy and xy[0] is not None else None
+
+    out: dict = {}
+    sr = []
+    for sid, s in by_id.items():
+        if not mine(s) or s.get("shot_type") not in ("serve", "return"):
+            continue
+        L = landing.get(sid)
+        if L:
+            sr.append((L[0], L[1], "bounce" if L[2] else "out"))
+    out["Serves & returns"] = {"points": sr, "weak": False,
+                               "note": "where your serve or return landed"}
+
+    vol = [(*hit_xy(s), "volley") for s in by_id.values()
+           if mine(s) and s.get("is_volley") and hit_xy(s)]
+    out["Your volleys"] = {"points": vol, "weak": False,
+                           "note": "where you were standing when you volleyed"}
+
+    opp, err, win = [], [], []
+    for r in rallies:
+        ids = [int(i) for i in r.get("shot_ids", [])]
+        if not ids:
+            continue
+        s = by_id.get(ids[-1])
+        if s is None:
+            continue
+        reason = r.get("end_reason")
+        who_user = mine(s)
+        L = landing.get(int(s["shot_id"]))
+        pt = (L[0], L[1], "bounce" if L[2] else "out") if L else (
+            (*hit_xy(s), "out") if hit_xy(s) else None)
+        if pt is None:
+            continue
+        if reason in OUT_REASONS:
+            (err if who_user else opp).append(pt)
+        elif reason in WON_REASONS and who_user:
+            win.append((pt[0], pt[1], "bounce"))
+    weak = ("rests on reading how the point ended, which we get right about 6 times in 10 — "
+            "treat it as a hint, not a record")
+    out["Opponent mistakes"] = {"points": opp, "weak": True, "note": weak}
+    out["Your errors"] = {"points": err, "weak": True, "note": weak}
+    out["Your winners"] = {"points": win, "weak": True, "note": weak}
+    return out
+
+
+def ball_views_svg(views: dict) -> str:
+    """One court, one layer per view, toggled by buttons. No canvas, no images."""
+    live = [(name, d) for name, d in views.items() if d["points"]]
+    if not live:
+        return ""
+    # The envelope, not the court: an out ball lands outside the lines and must have
+    # somewhere to plot (docs: play envelope runs ~5 ft wide and ~15 ft long of the lines).
+    x0, x1, y0, y1 = -6.0, 26.0, -10.0, 54.0
+    W, H = 320, 560
+    sx = lambda x: (x - x0) / (x1 - x0) * W  # noqa: E731
+    sy = lambda y: H - (y - y0) / (y1 - y0) * H  # noqa: E731
+    court = (f'<rect class="ct" x="{sx(0):.1f}" y="{sy(COURT_L_FT):.1f}" '
+             f'width="{sx(COURT_W_FT) - sx(0):.1f}" height="{sy(0) - sy(COURT_L_FT):.1f}"/>'
+             f'<line class="net" x1="{sx(0):.1f}" y1="{sy(NET_Y_FT):.1f}" '
+             f'x2="{sx(COURT_W_FT):.1f}" y2="{sy(NET_Y_FT):.1f}"/>'
+             + "".join(
+                 f'<line class="kl" x1="{sx(0):.1f}" y1="{sy(yy):.1f}" '
+                 f'x2="{sx(COURT_W_FT):.1f}" y2="{sy(yy):.1f}"/>'
+                 for yy in (NET_Y_FT - KITCHEN_FT, NET_Y_FT + KITCHEN_FT))
+             + f'<line class="kl" x1="{sx(COURT_W_FT / 2):.1f}" y1="{sy(0):.1f}" '
+               f'x2="{sx(COURT_W_FT / 2):.1f}" y2="{sy(NET_Y_FT - KITCHEN_FT):.1f}"/>'
+               f'<line class="kl" x1="{sx(COURT_W_FT / 2):.1f}" y1="{sy(NET_Y_FT + KITCHEN_FT):.1f}" '
+               f'x2="{sx(COURT_W_FT / 2):.1f}" y2="{sy(COURT_L_FT):.1f}"/>')
+    layers, buttons = [], []
+    for i, (name, d) in enumerate(live):
+        marks = "".join(f'<circle class="m-{kind}" cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="5"/>'
+                        for x, y, kind in d["points"])
+        # A CLASS, not the `hidden` attribute: `hidden` is an HTML attribute and browsers
+        # ignore it on SVG elements, so every view stayed drawn on top of the others while
+        # the buttons looked like they were switching.
+        layers.append(f'<g class="bv-layer{" on" if i == 0 else ""}" data-view="{i}">'
+                      f'{marks}</g>')
+        buttons.append(f'<button class="bvb{" on" if i == 0 else ""}" data-view="{i}">'
+                       f'{esc(name)} <b>({len(d["points"])})</b></button>')
+    notes = "".join(
+        f'<p class="small muted bv-note" data-view="{i}"{"" if i == 0 else " hidden"}>'
+        f'{"<b>Weaker reading.</b> " if d["weak"] else ""}{esc(d["note"])}</p>'
+        for i, (_n, d) in enumerate(live))
+    return (f'<div class="bv"><div class="bvbar">{"".join(buttons)}</div>'
+            f'<svg viewBox="0 0 {W} {H}" class="bvsvg" role="img" '
+            f'aria-label="Ball views on the court">{court}{"".join(layers)}</svg>'
+            f'<div class="bvlegend"><span><i class="m-bounce"></i> bounced in</span>'
+            f'<span><i class="m-out"></i> out or into the net</span>'
+            f'<span><i class="m-volley"></i> volley (never bounced)</span></div>{notes}'
+            f'<p class="small muted">Your end of the court is at the bottom; the net is the '
+            f'solid line across the middle.</p></div>'
+            '<script>document.querySelectorAll(".bvb").forEach(function(b){'
+            'b.addEventListener("click",function(){var v=b.dataset.view;'
+            'document.querySelectorAll(".bvb").forEach(function(o){'
+            'o.classList.toggle("on",o.dataset.view===v);});'
+            'document.querySelectorAll(".bv-layer").forEach(function(o){'
+            'o.classList.toggle("on",o.dataset.view===v);});'
+            'document.querySelectorAll(".bv-note").forEach(function(o){'
+            'o.hidden=(o.dataset.view!==v);});});});</script>')
+
+
+# --- Court positioning: three zones, per player -------------------------------
+
+ZONES = [("kitchen", "At the kitchen line"), ("transition", "Mid-court (transition)"),
+         ("baseline", "Back at the baseline")]
+ZONE_MIN_CONF = 0.80      # below this the zone split is not published; see zone_rows()
+
+
+def zone_rows(metrics: dict, role: str) -> Optional[list]:
+    """[(label, frac)] for one player, or None when that role has no tracked time.
+
+    An honest empty state matters more here than anywhere: far-side role attribution is not
+    good enough to publish (opp_b has zero tracked frames on David2 and opp_a reads 3%
+    kitchen time, which is not a thing a pickleball player does).
+    """
+    pl = (metrics.get("players", {}) or {}).get(role, {}) or {}
+    p = pl.get("position", {}) or {}
+    val = p.get("value") or {}
+    zf = val.get("zone_time_frac") or {}
+    if not zf or not val.get("n_frames"):
+        return None
+    # Publish a percentage only where the tracking earns it. On David2 the far side fails
+    # both ways: opp_b has zero tracked frames, and opp_a is tracked but reads 3% of rallies
+    # at the kitchen line -- not something a pickleball player does, and the sign that its
+    # zone split is guesswork. The gate is the measured confidence, not the role name, so a
+    # clip that tracks the far side well would publish it.
+    if pl.get("role_contaminated") or float(p.get("confidence") or 0.0) < ZONE_MIN_CONF:
+        return None
+    return [(label, float(zf.get(k) or 0.0)) for k, label in ZONES]
 
 CSS = """
 :root{
@@ -630,6 +1029,70 @@ background:#fff;border-radius:9px;cursor:pointer;font:inherit;text-align:left;}
 .shotrow{display:flex;gap:10px;align-items:flex-start;margin:8px 0;flex-wrap:wrap;}
 .shotrow-l{min-width:130px;padding-top:6px;font-size:13px;}
 .shotrow .points{flex:1;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));margin:0;}
+
+/* --- redesign (docs/REPORT_REDESIGN.md) --- */
+h3.sub{font-size:14.5px;margin:14px 0 8px;font-weight:600;}
+.eviz{width:100%;height:auto;display:block;margin:2px 0 4px;}
+.eviz line{stroke:var(--line);stroke-width:1;}
+.eviz .dash{stroke-dasharray:3 3;}
+.eviz .ebar rect{fill:var(--ball);opacity:.75;}
+.eviz .eline{fill:none;stroke:var(--court);stroke-width:2;stroke-linejoin:round;}
+.eviz .edot circle{fill:var(--court-deep);}
+.eviz text{font-size:10.5px;fill:var(--muted);font-family:var(--sans);}
+.wstrip{display:flex;gap:3px;margin:6px 0 4px;}
+.wseg{background:var(--measured-bg);border:1px solid var(--line);border-radius:6px;
+  padding:6px 4px;text-align:center;min-width:0;overflow:hidden;}
+.wlab{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.wpct{display:block;font-weight:700;color:var(--court-deep);font-size:13px;}
+.cat{padding-top:14px;}
+.cat-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.cat-head h3{margin:0;font-size:19px;}
+.cat-lvl{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.cat-lvl .bar{width:120px;}
+.cat-w{margin:2px 0 8px;}
+table.cat-t{width:100%;border-collapse:collapse;}
+table.cat-t th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);text-align:left;font-weight:600;border-bottom:1px solid var(--line);
+  padding:6px 8px 6px 0;}
+table.cat-t td{padding:8px 8px 8px 0;border-bottom:1px solid var(--line);
+  vertical-align:top;font-size:13.5px;}
+table.cat-t td:last-child{width:38%;}
+.worth{color:var(--court-deep);font-variant-numeric:tabular-nums;font-size:15px;}
+.bk{font-size:12px;}
+.coach{border-left:4px solid var(--court);padding:2px 0 2px 12px;margin:12px 0 4px;}
+.coach h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);}
+details.how,details.note{margin:10px 0 0;}
+details.how>summary,details.note>summary{cursor:pointer;font-size:12.5px;color:var(--court-deep);}
+details.note>summary{font-size:14px;margin:8px 0;}
+.zone h3{margin:0 0 8px;font-size:15px;}
+.zrow{display:flex;align-items:center;gap:8px;margin:5px 0;}
+.zl{font-size:12.5px;min-width:132px;color:var(--muted);}
+.zbar{flex:1;height:10px;background:var(--na-bg);border-radius:5px;overflow:hidden;}
+.zbar>i{display:block;height:100%;background:var(--court);}
+.zp{font-size:12.5px;font-weight:700;min-width:34px;text-align:right;}
+.bvbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+.bvb{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;
+  padding:5px 11px;font:inherit;font-size:12.5px;cursor:pointer;}
+.bvb.on{border-color:var(--court);background:var(--measured-bg);color:var(--court-deep);}
+.bvsvg{display:block;margin:0 auto;max-width:320px;width:100%;height:auto;}
+.bvsvg .bv-layer{display:none;} .bvsvg .bv-layer.on{display:inline;}
+.bvsvg .ct{fill:var(--measured-bg);stroke:var(--line);stroke-width:1.5;}
+.bvsvg .net{stroke:var(--ink);stroke-width:2.5;}
+.bvsvg .kl{stroke:var(--line);stroke-width:1.5;}
+.bvsvg .m-bounce{fill:#2f6fd0;opacity:.85;}
+.bvsvg .m-out{fill:#d23;opacity:.85;}
+.bvsvg .m-volley{fill:#2f8f5b;opacity:.85;}
+.bvlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);
+  justify-content:center;margin-top:8px;}
+.bvlegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;}
+.bvlegend i.m-bounce{background:#2f6fd0;} .bvlegend i.m-out{background:#d23;}
+.bvlegend i.m-volley{background:#2f8f5b;}
+@media (max-width:560px){
+  .cat-lvl{margin-left:0;} .wlab{display:none;} .zl{min-width:96px;}
+  table.cat-t td:last-child{width:auto;}
+}
 """
 
 
@@ -847,8 +1310,44 @@ def build_html(folder: Path) -> str:
     # said "Shots", so there was no way to tell it from all detections without reading the
     # code -- and the operator had to ask which one it was.
     n_outside = max(0, len(_all_shots) - len(shots))
-    stats = [("Minutes analyzed", mins), ("Rallies", len(rallies)),
-             ("Shots in rallies", len(shots)), ("Volleys (hit in the air)", n_volley),
+    _utids = {int(t) for t, i in (track_roles.get("track_roles", {}) or {}).items()
+              if i.get("role") == "user"}
+    n_mine = sum(1 for s in shots if s.get("track_id") is not None
+                 and int(s["track_id"]) in _utids)
+
+    # ---- How settled this is ----
+    # The rating rests on YOUR shots, and in one session that can be seven. Saying so up
+    # front is the difference between a number that looks authoritative and one the reader
+    # can weigh. Progress is the evidence accumulating, not a per-video rating line: the
+    # per-video estimates swing 3.47-4.40 on 7-28 shots each, which is measurement noise
+    # wearing the clothes of skill change (docs/REPORT_REDESIGN.md, Hero).
+    A('<h2>How settled this is</h2><hr class="rule">')
+    A('<div class="card">')
+    A('<p class="muted small" style="margin-top:0">One session is a snapshot — you might '
+      'play seven of your own shots in three minutes. Your rating is built on all of them '
+      'together, and it firms up every time you add a video.</p>')
+    A('<div class="stats">')
+    settled = ([("Sessions", n_vids)] if n_vids else []) + [
+        ("Minutes of play", mins), ("Rallies", len(rallies)),
+        ("Shots of yours", n_mine)]
+    for label, val in settled:
+        A(f'<div class="stat"><div class="stat-n num">{esc(val)}</div>'
+          f'<div class="stat-l">{esc(label)}</div></div>')
+    A('</div>')
+    _sessions = evidence_sessions(folder, collection)
+    _svg = evidence_svg(_sessions)
+    if _svg:
+        A('<h3 class="sub">Evidence behind your rating</h3>')
+        A(_svg)
+        A('<p class="small muted">Bars are the shots you played in each session; the line '
+          'is the running total behind your rating. The bars are drawn to their own scale '
+          'so a single session stays visible.</p>')
+    A('</div>')
+
+    # ---- At a glance ----
+    stats = [("Shots in rallies", len(shots)),
+             ("Shots per rally", f"{len(shots)/len(rallies):.1f}" if rallies else "—"),
+             ("Volleys (hit in the air)", n_volley),
              ("Ball bounces", len(bounces_doc.get("bounces", [])))]
     A('<div class="card"><div class="stats">')
     for label, val in stats:
@@ -863,65 +1362,106 @@ def build_html(folder: Path) -> str:
     # cross-reference to answer one question. The coverage column and its badges are gone
     # too: the "what USA Pickleball rates" column already shows which elements are
     # measured, so the badge restated it in vaguer words.
+    # Ordered by MEASURED leverage, within a category and across them -- operator: "with
+    # those within each category ordered by what moves rating fastest, as well as across
+    # categories". The worth is probed through the real scorers (tools/rating_leverage.py),
+    # never judged here. This disagrees with improvement_plan.json, which ranks by
+    # gap-to-target x weight; both are honest answers to different questions, so the plan's
+    # coaching rides inside the card of the category it belongs to.
+    lev = leverage_index(metrics)
     A('<h2>Your 7 categories</h2><hr class="rule">')
-    A('<p class="muted small">USA Pickleball rates players across these seven '
-      'categories. Here\'s your level in each, the numbers behind it, and what the '
-      'category covers.</p>')
-    A('<div class="card scrollx"><table><thead><tr>'
-      '<th>Category</th><th>Your level</th><th>Your numbers now</th>'
-      '<th>What USA Pickleball rates</th></tr></thead><tbody>')
-    for c in CATEGORY_ORDER:
+    A('<p class="muted small">USA Pickleball rates players across these seven categories. '
+      'Each card shows your level, every measurement behind it, and what ten points of '
+      'improvement on that measurement would be worth to your rating. Biggest movers '
+      'first.</p>')
+
+    # What a category actually carries. The estimate is confidence-weighted, so the fixed
+    # weight is not the contribution: strategy is meant to carry 20% and carries 39%,
+    # because positioning is the one thing measured near completely. Printing only the
+    # intended weight overstates how balanced the rating is.
+    shares = []
+    try:
+        from tools.rating_leverage import category_shares
+        shares = category_shares(rating)
+    except Exception:                                    # noqa: BLE001 - report must build
+        shares = []
+    share_by = {s["category"]: s for s in shares}
+    if shares:
+        A('<div class="card"><h3 class="sub">What each category is carrying today</h3>'
+          '<div class="wstrip">')
+        for s in shares:
+            pct = s["actual_share"] * 100
+            A(f'<div class="wseg" style="flex:{max(pct, 3):.1f}" '
+              f'title="{esc(CATEGORY_LABEL.get(s["category"], s["category"]))}: meant '
+              f'{s["weight"]*100:.0f}%, carrying {pct:.0f}%">'
+              f'<span class="wlab">{esc(CATEGORY_LABEL.get(s["category"], s["category"]))}'
+              f'</span><span class="wpct num">{pct:.0f}%</span></div>')
+        A('</div><p class="small muted">A category counts for more when we can measure it '
+          'well. Positioning is the one thing we measure almost completely, so it carries '
+          'nearly double its intended share while the ball-dependent categories are pulled '
+          'toward a neutral 3.0.</p></div>')
+
+    focus_by = {f.get("dimension"): f for f in (plan.get("focus_areas", []) or [])}
+    order = sorted(CATEGORY_ORDER,
+                   key=lambda c: -max([float(r.get("d_rating") or 0.0)
+                                       for r in lev.get(c, [])] or [0.0]))
+    for c in order:
         d = dims.get(c, {})
         sub = d.get("subscore_level")
+        drivers = d.get("driver_metrics", {}) or {}
+        A('<div class="card cat">')
+        A('<div class="cat-head">')
+        A(f'<h3>{esc(CATEGORY_LABEL[c])}</h3>')
         if cov_of(c) == "not_assessable" or not isinstance(sub, (int, float)):
-            lvl = '<span class="muted">—</span>'
+            A('<div class="cat-lvl"><span class="muted">not measured yet</span></div>')
         else:
             barpct = int(max(0, min(100, ((sub - 1.0) / 4.5) * 100)))
-            lvl = (f'<span class="lvl num">{band_of(sub)}</span>'
-                   f'<div class="bar"><i style="width:{barpct}%"></i></div>')
-        drivers = d.get("driver_metrics", {}) or {}
-        nums = []
-        if c == "third_shot":
-            line = third_shot_line(drivers,
-                                   match_counts.get("n_third_shots")
-                                   or match_counts.get("n_third_decisions"),
-                                   max(1, n_vids))
-            if line:
-                nums.append(line)
-        if c == "serve_return":
-            line = serve_fault_line(drivers)
-            if line:
-                nums.append(line)
-        for k, (label, fmt) in METRIC_DISPLAY.items():
-            if k in drivers:
-                s = fmt_metric(fmt, drivers[k])
-                if s is None:
-                    continue
-                ref = fn(4) if k == "distance_ft_per_min" else ""
-                # COUNT drivers only: show the match total AND the user's share, so the
-                # user's numbers sit in perspective (a 5-min clip has ~4 players). A rate
-                # is not perspective -- the match figure for serve depth averages four
-                # players, so it says nothing about this one -- and rendering it here put
-                # the raw depth dict on the page, str() of a dict inside the <b>.
-                mt = match_counts.get(k) if fmt == "int" else None
-                if mt is not None:
-                    nums.append(f'<div class="metric">{esc(label)}: '
-                                f'<b>{esc(str(mt))}</b> in the match, '
-                                f'<b>{esc(s)}</b> by you{ref}</div>')
-                else:
-                    nums.append(f'<div class="metric">{esc(label)}: '
-                                f'<b>{esc(s)}</b>{ref}</div>')
-        numhtml = "".join(nums) if nums else '<span class="muted small">—</span>'
+            A(f'<div class="cat-lvl"><span class="lvl num">{band_of(sub)}</span>'
+              f'<div class="bar"><i style="width:{barpct}%"></i></div></div>')
+        A('</div>')
+        sh = share_by.get(c)
+        if sh:
+            A(f'<p class="small muted cat-w">Meant to carry '
+              f'<b>{sh["weight"]*100:.0f}%</b> of your rating — carrying '
+              f'<b>{sh["actual_share"]*100:.0f}%</b> today.</p>')
+        rows = category_rows(c, drivers, lev, match_counts, n_vids)
+        if rows:
+            A('<div class="scrollx"><table class="cat-t"><thead><tr><th>Measurement</th>'
+              '<th>Where you are</th><th>Worth, per 10 points</th></tr></thead><tbody>')
+            for _w, label, val, worth in rows:
+                ref = fn(4) if label == "Court covered during play" else ""
+                A(f'<tr><td>{esc(label)}{ref}</td><td>{val}</td><td>{worth}</td></tr>')
+            A('</tbody></table></div>')
+        else:
+            A('<p class="muted small">Nothing measured in this category yet.</p>')
+        f = focus_by.get(c)
+        if f:
+            A('<div class="coach"><h4>What to work on</h4>')
+            A(f'<p>{esc(f.get("finding",""))}</p>')
+            if f.get("why_it_matters"):
+                A(f'<p class="small muted">{esc(f["why_it_matters"])}</p>')
+            for dr in f.get("drills", []):
+                A(f'<div class="drill"><b>{esc(dr.get("name",""))}:</b> '
+                  f'{esc(dr.get("cue",""))}</div>')
+            A('</div>')
+        # Every caveat behind a disclosure -- operator: "I see the how we measured it in a
+        # collapsed section, good info, but only for those interested."
         els = "".join(
             f'<span class="el"><span class="sym">{SYMBOL[st]}</span> '
             f'<span class="{ "planned" if st=="planned" else "" }">{esc(lbl)}</span></span>'
             for lbl, st in CATEGORY_ELEMENTS[c])
-        A(f'<tr><td><b>{esc(CATEGORY_LABEL[c])}</b></td><td>{lvl}</td>'
-          f'<td>{numhtml}</td><td class="small">{els}</td></tr>')
-    A('</tbody></table></div>')
-    A('<div class="legend"><span><span class="sym">●</span> measured now</span>'
-      '<span><span class="sym">◐</span> partial / early signal</span>'
-      '<span><span class="sym">○</span> coming soon</span></div>')
+        A('<details class="how"><summary>How we measured this</summary>')
+        A(f'<p class="small muted">What USA Pickleball rates in this category, and how much '
+          f'of it we can see: <span class="sym">●</span> measured now · '
+          f'<span class="sym">◐</span> a stand-in · <span class="sym">○</span> not yet.</p>')
+        A(f'<p class="small">{els}</p>')
+        if isinstance(d.get("confidence"), (int, float)):
+            A(f'<p class="small muted">Measurement coverage for this category: '
+              f'{d["confidence"]*100:.0f}%. "Worth" is measured by nudging one number and '
+              f're-running the real scorer, so it already accounts for how much we can see '
+              f'here.</p>')
+        A('</details></div>')
+
     A('<p class="small muted" style="margin-top:8px">About knee bend: '
       '&ldquo;the right knee bend&rdquo; means your knees were flexed into the range '
       'good technique calls for on that shot &mdash; you get lower on soft, control '
@@ -929,20 +1469,10 @@ def build_html(folder: Path) -> str:
       'straight): serve &amp; return 10&ndash;30&deg;, drive 20&ndash;35&deg;, '
       'third-shot drop 30&ndash;45&deg;, dink &amp; reset 35&ndash;50&deg;.</p>')
 
-    # ---- Improvement plan ----
-    A('<h2>Your improvement plan</h2><hr class="rule">')
     tgt = plan.get("target", {}) or {}
-    A(f'<p class="muted small">Toward USAPA {esc(tgt.get("band","—"))}: '
-      f'{esc(tgt.get("rationale",""))}</p>')
-    for f in plan.get("focus_areas", []):
-        A('<div class="card focus">')
-        A(f'<h3>{esc(CATEGORY_LABEL.get(f["dimension"], f["dimension"]))}</h3>')
-        A(f'<p>{esc(f.get("finding",""))}</p>')
-        if f.get("why_it_matters"):
-            A(f'<p class="small muted">{esc(f["why_it_matters"])}</p>')
-        for dr in f.get("drills", []):
-            A(f'<div class="drill"><b>{esc(dr.get("name",""))}:</b> {esc(dr.get("cue",""))}</div>')
-        A('</div>')
+    if tgt:
+        A(f'<p class="muted small">Toward USAPA {esc(tgt.get("band","—"))}: '
+          f'{esc(tgt.get("rationale",""))}</p>')
     if not_assessable:
         A('<div class="card"><h3>Not coached yet</h3>'
           '<p class="small muted">These need upcoming detection work before we can '
@@ -969,7 +1499,10 @@ def build_html(folder: Path) -> str:
     A('<h2>Court positioning</h2><hr class="rule">')
     A('<p class="muted small">Where each player spent time during points.'
       + fn(3) + '</p>')
-    A('<div class="grid2">')
+    # Three zones with a percentage each, per player -- operator's direction, verbatim:
+    # "court/player positioning should just show 3 colored sections for use, partner,
+    # opponents and % time in each section". The old per-player heat images are gone: they
+    # showed the same thing less legibly and invited reading noise as pattern.
     # A CUMULATIVE report covers several videos, where "Opponent A" is not one person and
     # neither is the partner. Stage 7.9 already pools every opponent into one bucket
     # (contract D1), so the labels have to say so rather than implying a named individual.
@@ -977,15 +1510,24 @@ def build_html(folder: Path) -> str:
                    if collection else
                    [("user", "You"), ("partner", "Partner"),
                     ("opp_a", "Opponent A"), ("opp_b", "Opponent B")])
+    A('<div class="grid2">')
     for role, label in role_labels:
-        uri = data_uri_png(folder / f"heatmap_position_{role}.png")
-        if uri:
-            A(f'<div class="card hm"><h3>{esc(label)}</h3>'
-              f'<img alt="{esc(label)} position" src="{uri}"></div>')
+        zr = zone_rows(metrics, role)
+        A(f'<div class="card zone"><h3>{esc(label)}</h3>')
+        if zr is None:
+            # An honest empty state, not a blank card: far-side role attribution is not good
+            # enough to publish, and saying nothing would let the reader assume it is fine.
+            A('<p class="small muted">Not tracked well enough to report. We lose the far '
+              'side of the court often enough that a percentage here would be made up.</p>')
+        else:
+            for zlabel, frac in zr:
+                A(f'<div class="zrow"><span class="zl">{esc(zlabel)}</span>'
+                  f'<div class="zbar"><i style="width:{frac*100:.0f}%"></i></div>'
+                  f'<span class="zp num">{frac*100:.0f}%</span></div>')
+        A('</div>')
     A('</div>')
-    A('<div class="card hm"><div class="ramp"></div>'
-      '<p class="small muted" style="margin:2px 0 0">Dark = little time there · '
-      'bright yellow = where you spent the most time. The white line is the net.</p></div>')
+    A('<p class="small muted">Time during live rallies only. At this level the kitchen line '
+      'is where points are won, so the first bar is the one to grow.</p>')
 
     # ball landings
     all_bounces = bounces_doc.get("bounces", [])
@@ -1012,22 +1554,21 @@ def build_html(folder: Path) -> str:
         hxy = sh.get("hitter_court_xy_ft")
         if hxy and hxy[0] is not None:
             user_hits[b.get("bounce_id")] = (float(hxy[0]), float(hxy[1]))
-    land = landing_diagram_uri(all_bounces, rally_windows, user_hits)
-    if land:
-        A('<div class="grid2"><div class="card hm"><h3>Where the ball bounced</h3>'
-          f'<img alt="ball landing sequence" src="{land}"></div>'
-          '<div class="card"><h3>Reading it</h3>'
-          f'<p class="small muted">Lines join <b>your</b> shots to where that ball '
-          f'landed ({len(user_hits)} of them) — the dot at the start is where you hit '
-          f'from. Your volleys have no line: a volley never bounces.</p>'
-          f'<p class="small muted">Each dot is where the ball bounced during a rally — '
-          f'<span style="color:var(--court)">●</span> in bounds · '
-          f'<span style="color:#d23">●</span> out. Near baseline at the bottom, far '
-          f'court at the top, net across the middle.</p>'
-          f'<p class="small muted">Showing {n_inr} of {len(all_bounces)} detected '
-          f'bounces (the rest were between points). Volleys never bounce, and a '
-          f'ball hit into the net doesn\'t bounce either, so those aren\'t shown. '
-          f'A few real bounces are also still missed by detection{fn(5)}.</p></div></div>')
+    # Five views over the same court, one at a time. Plotted marks rather than heat: each
+    # view holds 5-20 points, far too few to shade honestly, and a mark outside the lines is
+    # exactly how an out ball should read.
+    _inr_bounces = [b for b in all_bounces if _inr(int(b["frame"]))]
+    views = ball_views(classified, rallies, _inr_bounces, track_roles)
+    bv = ball_views_svg(views)
+    if bv:
+        A('<h2>Where the ball went</h2><hr class="rule">')
+        A('<p class="muted small">During rallies only. Pick a view.</p>')
+        A('<div class="card">' + bv + '</div>')
+        A(f'<p class="small muted">Built from {n_inr} of {len(all_bounces)} detected '
+          f'bounces (the rest were between points) plus where you were standing. A volley '
+          f'never bounces, and nor does a ball hit into the net, so those are plotted from '
+          f'the contact instead. Some real bounces are still missed by detection{fn(5)}.'
+          f'</p>')
 
     # ---- Match video + point index ----
     # Deliberately NOT a re-rendered video with overlays. Those overlays (boxes, ball
@@ -1183,16 +1724,24 @@ def build_html(folder: Path) -> str:
     # and cross-session trends are cumulative reports. Promising delivered features as
     # future ones makes the whole report look out of date.
 
-    # ---- Footnotes ----
-    A('<div class="foot"><h3>Notes</h3><ol>')
+    # ---- Notes ----
+    # Four collapsibles rather than one wall of footnotes: the numbers in the report link
+    # into them (the <li> ids are unchanged), but a reader who does not click stays in the
+    # report. Operator: caveats are "good info, but only for those interested".
+    A('<div class="foot"><h3>Notes</h3>')
+    A('<details class="note"><summary>What the rating rests on</summary><ol>')
     A(f'<li id="fn1">Measurement coverage is {int(round((rt.get("confidence") or 0)*100))}%. '
       f'This is how much of the full 7-category skill picture we can measure from one '
       f'camera yet — <b>not</b> how sure we are of your rating. It\'s low mainly '
       f'because shot <i>quality</i> (pace, dink height, return depth) isn\'t measured '
       f'yet; the counts we do report are validated. Thresholds are uncalibrated '
       f'heuristics anchored to the USAPA definitions, not an official rating.</li>')
+    A('</ol></details>')
+    A('<details class="note"><summary>Where the level descriptions come from</summary><ol>')
     A('<li id="fn2">Level descriptions are a condensed synthesis of the published '
       'USA Pickleball definitions across the seven categories.</li>')
+    A('</ol></details>')
+    A('<details class="note"><summary>How positioning and movement are measured</summary><ol>')
     A('<li id="fn3">Positioning is measured from the player\'s front foot, during '
       'live rallies only (between-point standing is excluded).</li>')
     A('<li id="fn4">Court covered is a work-rate figure (feet per minute of play). '
@@ -1205,6 +1754,8 @@ def build_html(folder: Path) -> str:
     # remained, roughly half are shots the operator labelled a VOLLEY and we did not -- 13
     # of 26 on the outdoor clip, 8 of 17 on court C -- and a volley correctly has no bounce
     # before it. So name both, and the residue is small.
+    A('</ol></details>')
+    A('<details class="note"><summary>How shots and bounces are counted</summary><ol>')
     n_srv = sum(1 for s in shots if s.get("is_serve"))
     n_need = max(0, len(shots) - n_volley - n_srv)
     n_gap = max(0, n_need - len(all_bounces))
@@ -1223,7 +1774,7 @@ def build_html(folder: Path) -> str:
       f'balls picked up and returned between points, and some false detections — and '
       f'{"is" if n_outside == 1 else "are"} excluded, because they are not shots played '
       f'in a point. So this is smaller than the raw detection count, on purpose.</li>')
-    A('</ol>')
+    A('</ol></details>')
     A('</div></div>')
     return _PAGE.replace("__CSS__", CSS).replace("__BODY__", "\n".join(O))
 
