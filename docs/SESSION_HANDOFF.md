@@ -1,4 +1,42 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-08-24)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-09-15)
+
+## 2026-09-15 — READ FIRST
+
+**Where accuracy stands**, scored against the operator's reviews of four videos (outdoor, courts
+A, B, C): shots 252/340 (74%) with 111 junk; type 181/252 (72%), drop 14/43; volley 82%; serves
+34/52 end to end with 13 false; rally end within 2 s 12/19 on court A. Full numbers and every
+experiment are in `docs/ACCURACY_LEDGER.md`; the summary block at the top of `SYSTEM_DESIGN.md`
+supersedes that file's older per-stage numbers.
+
+**Court A is HELD OUT.** Never tune on it. A change counts only if court A improves.
+
+**The plateau is real and measured.** Eight approaches were tested on video they were not tuned
+on — more filters, a learned candidate classifier, a third reviewed video, mono audio, stereo
+audio, audio picking the contact, a frame-by-frame diagnosis of the losses, and Gemini 3.8 Flash
+and Pro. None beats the rule stack. 96-98% of real shots already appear as Stage 5 candidates, so
+the problem is choosing between nearby candidates, not finding contacts.
+
+**Two rules from the operator that close off whole directions:** no special camera setup
+(ordinary tripod, low and off-centre), and no user review/correction pass in the product.
+
+**What was built this session**
+- Stage 5 writes every pre-filter candidate to `shot_discards.json` (`"candidates"`), no output change.
+- Rally ends: the trusted NET end decides the reason; end frame capped 2.0 s past the last shot.
+- `tools/gemini_video_test.py` — re-score any video model against the truth store in one command.
+- Court B reviewed shot by shot and imported (82 real, 18 junk, 10 ends, all rallies match the operator's counts).
+- `docs/REPORT_REDESIGN.md` — the report design, saved so it need not be redone; NOT yet implemented in `build_report.py`.
+
+**Watch out for** (both bit this session, twice each): loose many-to-one time matching inflates
+findings — always match one-to-one against the whole shot list; and truth entries flagged
+`not_a_shot` are retractions, not real shots.
+
+**Open decision for the operator:** accuracy work on shot detection has no tested path forward.
+The alternatives are to build the report around what is reliable, and to re-test video models as
+they are released.
+
+---
+
+# Older handoffs (updated 2026-08-24)
 
 ## 2026-08-24 — READ FIRST
 

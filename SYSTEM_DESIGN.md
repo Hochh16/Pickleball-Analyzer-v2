@@ -1,5 +1,45 @@
 # Pickleball-Analyzer-v2 — System Design & Accuracy Ledger (AUTHORITATIVE)
 
+## 2026-09-15 — CURRENT MEASURED ACCURACY (supersedes the per-stage numbers below)
+
+Sections 2 and 3 were written on 2026-07-09 against `pb_2min` and the old ball tracker. They
+still describe the ARCHITECTURE correctly, but their NUMBERS are superseded by this block and by
+`docs/ACCURACY_LEDGER.md`, which is the running record. Four videos are now reviewed shot by shot
+by the operator: outdoor, court B, court C and court A. Court A is HELD OUT — never tune on it.
+
+Scored one-to-one against the operator's review across all four videos:
+
+| | measured |
+|---|---|
+| shots detected | 252 of 340 real shots (74%), 111 junk |
+| shot type, of detected | 181/252 (72%); drop is the weak one, 14/43 |
+| volley vs not | 159/194 (82%) |
+| serves, end to end | 34 of 52 (65%), 13 false serves |
+| rally end within 2 s | court A 12/19, court B 6/10 |
+| end reason | 14/23 where the operator gave one |
+| side of the net, of detected shots | 178/180 |
+
+**What has been tried against this plateau, and measured on video it was not tuned on**
+(each with numbers in `docs/ACCURACY_LEDGER.md`): more hand-built rejection filters; a learned
+per-candidate classifier trained on the operator's reviews; a third reviewed video; the paddle
+sound, mono and stereo; the sound choosing which nearby contact is the hit; and Gemini 3.8 Flash
+and Pro on the video directly. **None beats the rule stack on unseen video.**
+
+**Why it is hard, measured rather than assumed:** 96-98% of the operator's real shots ARE present
+in Stage 5's pre-filter candidate stream, so contacts are not being missed by the ball track. The
+failure is choosing among nearby candidates, and the per-candidate measurements available from
+one low camera do not separate them.
+
+**Two standing product constraints from the operator (2026-09-14):** the app must work from an
+ordinary tripod — no special camera placement — and end users must never be asked to review or
+correct shots. Accuracy has to come from the pipeline.
+
+**Tools that keep these claims standing:** `tools/regression.py` (the whole-suite baseline),
+`tools/truth_store.py` (the operator's answers), `tools/shot_review_sheet.py` +
+`tools/annotate_full.py` (how a review is produced), `tools/gemini_video_test.py` (re-score a new
+video model in one command).
+
+
 > **This document is the single source of truth. Read it before touching any stage.**
 > It exists to stop the failure pattern that sank v1–v3 and was recurring in v4:
 > decisions deferred downstream that became blockers, rationale lost across
