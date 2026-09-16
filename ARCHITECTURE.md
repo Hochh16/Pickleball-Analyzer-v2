@@ -1,5 +1,16 @@
 # Architecture
 
+> **Status note, 2026-09-15.** The design below still describes the system, but the
+> "Implementation status" section is from 2026-06-14 and its per-stage claims are superseded.
+> For where things actually stand, read the dated block at the top of `SYSTEM_DESIGN.md`
+> (current measured accuracy, and every approach tried against the plateau) and
+> `docs/ACCURACY_LEDGER.md` (the running record). Stages that exist now but are not in the
+> table below: `classify_tracks` (2.5, player roles), `ball_trajectory` (3-D ball),
+> `detect_bounces` (5.5) and `aggregate` (many sessions into one player view); `README.md`
+> lists them all. How the operator's reviews become the acceptance test is in
+> `docs/TRUTH_STORE.md`.
+
+
 > **⚠ `SYSTEM_DESIGN.md` (repo root) is the AUTHORITATIVE source of truth as of
 > 2026-06-19** — the whole-system accuracy ledger, dependency map, trust-map,
 > fundamental-limits decisions, and the foundations-first roadmap. Read it first.
