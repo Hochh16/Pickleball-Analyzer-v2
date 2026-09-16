@@ -1,3 +1,18 @@
+# Known issues
+
+> **Triaged 2026-09-15.** Every entry below was checked against the current code,
+> `docs/ACCURACY_LEDGER.md` and `docs/REGRESSION_BASELINE.json`. Entries that no longer hold now
+> carry a **STALE** note naming what superseded them; everything else was left as it stands. The
+> ledger is the running record and wins any disagreement with this file. Seven entries could not be
+> settled from the code alone and are listed at the end of this header.
+>
+> **Could not be settled (need a measurement, not a reading):** the two serves missed at 1:04 and
+> 1:33 on a clip folder that no longer exists; pre-serve handling detected instead of the serve
+> (`reject_same_track_repeats` still silently deleted 5 real shots on court A); "wrong player" as a
+> contact-timing error; the 2026-08-22 indoor review's items 1 and 3; decode-vs-model split for
+> `pose` and `track_players`; and the label-frame-index audit for `indoor_b`, `indoor_c`, `outdoor`
+> and `test_clip`.
+
 # Known Issues and Deferred Decisions
 
 > **⚠ `SYSTEM_DESIGN.md` (repo root) is the authoritative whole-system accuracy +
@@ -60,6 +75,8 @@ two are superseded 1080p/30 and unused; `test_clip` backs the Stage 2.5 smoke te
 that test ever behaves oddly around ball timing, suspect this first.
 
 ## Stage 7 - RALLY END is undetectable; between-point balls are counted (ACCEPTED, 2026-08-03)
+
+> **STALE 2026-09-15.** A net-end detector exists (`tools/detect_rally_ends.py`) and Stage 7 now takes the END REASON from it when it is trusted (`stages/segment_rallies/segment_rallies.py`, `NET_END_CONFIDENCE = 0.85`, `net_end_for_rally`). End reason went 8/23 to 14/23 (docs/ACCURACY_LEDGER.md, 2026-09-10). The row "net hit | no detector exists" is retracted.
 
 **Status: ACCEPTED LIMITATION, operator decision 2026-08-03.** Deliberately parked so
 the rest of the work can proceed. Come back to it — it is not solved, only quantified.
@@ -318,6 +335,8 @@ Adding this stage would change ARCHITECTURE.md from 11 stages to 12. Worth doing
 
 ## Stage 4 - Dettor's pre-trained weights do not generalize to user footage
 
+> **HEADING STALE 2026-09-15.** Superseded by the v4 detector now shipped; see the v4 entries later in this file.
+
 **Observed:** May 2026, Stage 4 first end-to-end run with Andrew Dettor's
 pickleball-trained TrackNetV2 weights converted from his TF SavedModel.
 
@@ -361,6 +380,8 @@ Stage 4. When Stage 4.5 produces new weights, Stage 4's `--weights`
 argument points at them; smoke test re-runs without other changes.
 
 ## Stage 4.5 - Ball detection PAUSED after three failed attempts
+
+> **HEADING STALE 2026-09-15.** v4 landed (see the update inside this entry); the pipeline ships `stages/track_ball/track_ball_v4.py` with schema-2 `ball.parquet`.
 
 **Observed:** May 2026, across three distinct ball-detection approaches.
 
@@ -523,6 +544,8 @@ Two parallel efforts:
 
 ## Synthetic ball — Stages 5–9 consume PLACEHOLDER ball data
 
+> **MOSTLY STALE 2026-09-15.** Every analysed clip runs on the REAL ball (`ball.meta.json` has `"synthetic": false`) and all four clips are scored on it. Still true: the four Tier-B metrics are emitted as null in `stages/compute_metrics/compute_metrics.py` (unforced errors, dink tolerance, third-shot-drop outcome, opponent backhand targeting).
+
 **Observed:** May 2026, ongoing. The *cause* was the Stage 4.5 pause above;
 this section documents the *downstream consequence and workaround* that every
 ball-consuming stage (5, 5.5, 6, 7, 8) inherits, because it's easy to forget
@@ -625,6 +648,8 @@ like the near side, the L/R split tightens with no Stage 8 change.
 
 ## App/pipeline — local CPU can't process real clips; Stages 2 & 3 must move to GPU/Colab (2026-07-14)
 
+> **STALE 2026-09-15.** Done: `tools/colab_vision.py` runs Stages 2 / 2.5 / 3 / 4 on Colab, with the measured timings recorded later in this file (2026-08-23).
+
 **Observed:** 2026-07-13/14, first real end-to-end run through the Phase-2 setup-UI
 runner on a **5-minute 4K/60fps outdoor clip** (`PB 5 minute outdoor.mp4`, 18,862
 frames), on a machine with **no CUDA GPU** (`torch.cuda`=False).
@@ -661,6 +686,8 @@ then: the app is only practical on **short clips** locally, or needs a local CUD
 each helps ~2–4× but doesn't close the gap and carries accuracy trade-offs to validate.
 
 ## Stage 4 (v4) — inference throughput is CPU-decode-bound, too slow at scale
+
+> **STALE 2026-09-15.** Superseded later in this file (2026-08-23): the cost is the forward pass (infer 66%, preprocess 19%, decode 13%), so the shared-decode conclusion here does not hold.
 
 **Observed:** 2026-06-11/12, full-clip Colab run of `stages/track_ball/infer_v4.ipynb`
 on a T4 (driven via the Claude-in-Chrome browser MCP).
@@ -786,6 +813,8 @@ and also help recall. Until then the Stage 5 gates are the safety net.
 
 ## Stage 4 — ball-detection recall is the dominant downstream limiter
 
+> **STALE 2026-09-15.** Retracted later in this file (2026-08-20): recall is 94-96%; the failure is false positives. Confirmed on held-out court A, where 95 of 97 real shots are present in Stage 5's candidate stream (docs/ACCURACY_LEDGER.md, 2026-09-14). Stage 5 now records every pre-filter candidate in `shot_discards.json`.
+
 **Observed:** 2026-06-16, foundation review.
 
 **Problem:** On pb_2min the ball is detected (`visible|interpolated`) in only
@@ -804,6 +833,8 @@ shots, bounces, serves, and end_reason at once. Forcing detections out of gaps i
 Stage 5 instead is rejected: it reintroduces the contamination above.
 
 ## Stage 5.5 — bounce recall is ~50% (undercounts landings, caps depth/end_reason) (2026-07-11)
+
+> **NUMBERS SUPERSEDED 2026-09-15.** Outdoor now detects 71 bounces against 81 in the operator's review (`docs/REGRESSION_BASELINE.json`). The gap is real; "~50%" is not.
 
 **Observed:** 2026-07-11, building the consumer report — the operator noticed the
 counts don't reconcile. A clean way to see it: **every groundstroke is hit right
@@ -1166,6 +1197,8 @@ the next thing to work. A per-shot review is still worth having eventually, but 
 longer needed to answer the precision question.
 
 ## Stage 5 - the HANDLING filter compounds every missed shot (PARTLY FIXED 2026-08-22)
+
+> **STILL OPEN, one part stale (2026-09-15).** Open: on held-out court A this filter accounts for 12 of the 25 recoverable missed shots (docs/ACCURACY_LEDGER.md, 2026-09-14). Stale: the `SAME_SIDE_EXCURSION_PX` split claimed in Update 1 is INERT on all three 4K clips (threshold 1200px, largest excursion 1173px).
 
 > **Update 2 (2026-08-22, later).** A FOURTH fix shipped on top, and it is the net-crossing
 > question that was rejected in July -- asked again now that `tools/build_ball_3d.py` makes
@@ -1551,6 +1584,8 @@ Reproduce: `python -m tools.probe_crossing_signal <off-filter classified.json>`
 
 ## What ball height unlocks — the plan (2026-08-19)
 
+> **SUPERSEDED 2026-09-15.** The plan is executed or closed item by item later in this file: the position bias fix, the volley judgement shipped, and shot-type-via-landing extrapolation rejected.
+
 With `tools/ball_3d.py` working, several things recorded here as blocked are worth reopening.
 Operator refinements to this plan are folded in below and change it materially.
 
@@ -1673,6 +1708,8 @@ every bounce is expensive and the fit is a property of the camera, not the analy
 
 ## Rally END detection — WORKING, precision is the open side (2026-08-20)
 
+> **NUMBERS SUPERSEDED 2026-09-15.** The trusted NET end is 85% precise and end reason is 14/23; see `docs/ACCURACY_LEDGER.md` (2026-09-10) and the held-out court A read (12/19 ends within 2 s, reason 10/19).
+
 "Stage 7 - RALLY END is undetectable" records six failed routes. All six failed for want of
 ball height. With `ball_3d.parquet` supplying it, `tools/detect_rally_ends.py` implements the
 operator's taxonomy directly:
@@ -1712,6 +1749,8 @@ thresholds were swept against them. A third labelled clip is needed before trust
 figures.
 
 ## Between-point from measured ends: wired, NOT enabled — precision is the blocker (2026-08-20)
+
+> **STALE 2026-09-15.** It is enabled: `app/pipeline.py` and `tools/regression.py` both run segment_rallies with `--use-rally-ends`, restricted to TRUSTED net ends. Measured that way the gate removes 15 junk shots inside rallies for 2 real ones, not the 1.3-1.5 real per junk this entry records.
 
 The operator's insight was that between-point balls need no classifier: with accurate serves
 and rally-ends, between-point is simply everything between a point ending and the next serve.
@@ -1779,6 +1818,8 @@ two mechanisms are complementary, and firing early on a flying ball costs less t
 ends outright.
 
 ### No third clip exists without new footage
+
+> **STALE 2026-09-15.** Four videos are reviewed shot by shot (outdoor, courts A, B, C) and the harness scores all four. Court A is HELD OUT and nothing is tuned on it.
 
 `videos/` holds three files: the indoor clip, the outdoor clip, and a 20-second excerpt. Every
 processed folder in `data/` traces back to one of those two full videos, so there is no
@@ -1860,6 +1901,8 @@ Court C also carries the project's first CLICKED user identity (`basis: click, c
 against 11 on court B.
 
 ## HELD-OUT VERDICT: rally-end thresholds did NOT generalise (2026-08-20)
+
+> **SUPERSEDED 2026-09-15.** Court C is no longer held out; court A is, and it was reviewed end to end on 2026-09-14: 12/19 rally ends within 2 s, end reason 10/19 (docs/ACCURACY_LEDGER.md).
 
 Court C scored cold, with nothing tuned against it. The result is worse than the clip the
 thresholds were fitted on, which is what a held-out test is for.
@@ -2052,6 +2095,8 @@ real shots kept, 1 wrong-player, serves 86%/86%, rally ends 9/10 on both clips.
 
 ## Ball tracking is RESOLUTION-LIMITED, and the escalation was already planned (2026-08-20)
 
+> **PREMISE STALE 2026-09-15.** The "recall 69-76%" this rests on was re-measured at 94-96% later in this file (2026-08-20). The 1080p finding itself still stands.
+
 Ball detection sits under everything — shots, bounces, rally ends, the 3-D reconstruction —
 and its recall (69-76% of frames) is the ceiling on all of them. The cause is measurable.
 
@@ -2147,6 +2192,8 @@ is a fine-tune of the current model.
 shots, bounces and rally ends.**
 
 ## Where the next labelling hours should go (2026-08-20)
+
+> **STALE 2026-09-15.** The plan is inverted later in this same file (2026-08-20), after recall was re-measured.
 
 With the 1080p escalation dead, more training data at 720p is the remaining lever on ball
 tracking. Two measurements decide where to spend it, and both point away from the obvious
@@ -2246,6 +2293,8 @@ opposite of what `tools/propose_labels.py` was built to find, and its ranking sh
 inverted — hunt stretches where the detector is CONFIDENT but the ball is out of play.
 
 ## Negative-mining batch complete; ready to retrain (2026-08-20)
+
+> **STALE 2026-09-15.** The retrain was run and REJECTED (every epoch), baseline weights untouched - see the rejection entry later in this file.
 
 The operator labelled 442 frames proposed by `tools/propose_labels.py` in negative-mining
 mode, on the outdoor clip where the detector hallucinates worst.
@@ -2572,6 +2621,8 @@ elements already listed as planned in the report — drop LANDING DEPTH and TRAN
 — because both are reconstruction quantities on a shot we have already identified.
 
 ## Throughput: build_ball_3d is 98% of local post-processing (2026-08-23)
+
+> **STALE 2026-09-15.** Superseded later in this file (2026-08-23): Stage 4 now measures the ball blob and `build_ball_3d` no longer decodes video, ~1700 s to ~5 s.
 
 Measured before proposing any performance work, because "the pipeline is slow" is a claim
 about where the time goes. Every local post stage timed end to end on a 184-second 4K clip:
@@ -3263,6 +3314,8 @@ Drop at 50% is the known problem: it needs a landing, and a volleyed drop has no
 
 ## "Ignore everything outside serve -> rally end" — right idea, not yet affordable (2026-08-24)
 
+> **STALE 2026-09-15.** Superseded by the trusted-net-end gate now shipped (see the two rally-end entries above): 15 junk removed for 2 real, which also beats the operator's own point boundaries. Tracked as `junk_in_rallies` / `real_outside_rallies` in `docs/REGRESSION_BASELINE.json`.
+
 The operator: *"while serves are excellent markers, if we can accurately know when a rally
 ends, every shot outside the serve to rally can be ignored."* Correct in principle, and the
 conditional is the whole question. Measured against their truth:
@@ -3286,6 +3339,8 @@ is not uniformly poor; it is good where it fires and absent where a rally was ne
 end-detection gets more precise.**
 
 ### What the truth store actually contains — and one gap
+
+> **STALE 2026-09-15.** The review sheet has had a dedicated `NOT_A_SHOT` column since 2026-09-10 (`tools/shot_review_sheet.py`), and four videos now carry operator-marked junk (54 / 18 / 23 / 38). The store is documented in `docs/TRUTH_STORE.md`.
 
 Asked whether the store is only the latest review. It is not, and the split matters:
 
