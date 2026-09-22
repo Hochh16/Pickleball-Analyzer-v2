@@ -2329,3 +2329,34 @@ serves, not against them.
 
 Stage 5 already gates serves on dead-time gap, formation and side, "the server HAS the ball"
 (0.81-0.93 of the window against 0.28-0.37 for everything else) and "the ball moves forward".
+
+### 2026-09-22 (later) — Shot type from kinematic phase windows: adds nothing
+
+Outside review, idea 4: type a shot from a 1-D kinematic slice (the frames around the contact
+and the bounce) rather than static per-shot features. Built 15 window features from
+`ball_3d.parquet` and `ball.parquet` -- post-contact horizontal and vertical speed and their
+ratio, apex height, time to apex, height at the net plane, late/early speed decay, rise and drop
+about the apex, pre-contact speed, and pixel-space versions immune to the 3-D reconstruction.
+
+Leave-one-video-out over the three dev videos, 177 detected shots carrying an operator type
+(court A not read; lob dropped, 4 examples):
+
+| arm | correct |
+|---|---|
+| today, shipped `classify_shots` | **119/177 (67%)** |
+| model on the features classify_shots already computes | 92/177 (52%) |
+| the same model + the 15 kinematic window features | 92/177 (52%) |
+| kinematic windows alone | 63/177 (36%) |
+
+**The windows add nothing** (identical totals, ±2 per type), and any model on these features is
+well below the shipped rules. The rules win because type is not purely kinematic: a return is
+structurally the shot after the serve, and the rules know that (16/20 against the model's 4/20).
+
+One real signal inside the failure: on DROPS the model scores 20-22/35 against today's 11/35 --
+but it buys that by giving up dinks (15/33 vs 26/33) and drives (39/65 vs 47/65), so the stroke
+subset as a whole is 74/133 for the model against 84/133 today. The drop/dink/drive boundary
+moves around; it does not get better.
+
+Note for anyone re-running this: `HistGradientBoostingClassifier` multiclass fits crash in this
+environment (sklearn 1.9.1 + numpy 2.4.4, "window shape cannot be larger than input array shape",
+reproducible on random data). This test used a random forest over median-imputed features.
