@@ -2293,3 +2293,39 @@ Other measures:
 **Conclusion.** Neither Gemini alone nor any combination tested beats the pipeline on unseen-style
 measurement. Pro's one distinctive value is recall: real shots the pipeline misses, especially on
 court B. Its junk is not separable with what we have.
+
+### 2026-09-22 — Two physics ideas from an outside review, both measured, both fail
+
+Dev videos only (outdoor-7, court C, court B); court A untouched. Scripts: scratchpad
+`test_ballistic_residual.py`, `test_serve_incoming_speed.py`.
+
+**1. "A real strike launches a gravity-consistent flight; a ghost kink does not."** For every
+member of a same-side handling run, the 10 frames after it were fitted from `ball_3d.parquet`:
+z against z0 + vz·t − g·t²/2 with g fixed, and court x/y against straight lines. Residuals in feet.
+
+| | real contacts | ghost contacts |
+|---|---|---|
+| median vertical residual | 0.16-0.24 ft | 0.15-0.19 ft |
+| AUC | 0.49 (0.5 = says nothing) | |
+
+On the 35 runs where exactly one member is real and all members could be fitted, today's
+excursion rule picks the real one 30 times; picking the lowest residual would get 19. The idea is
+sound physics and our reconstruction cannot see it: over a 10-frame window the flight is short,
+the ball is small, and the per-frame noise swamps the gravity term.
+
+**2. "A serve is struck from a held ball, so reject a serve candidate whose incoming ball speed
+is over ~3 ft/s."** Measured over the 5 frames before contact.
+- In court feet (via `ball_3d`) the measurement is unusable: true serves read a median 44 ft/s
+  incoming, so the gate would reject 18 of 19 of them.
+- In pixels scaled at the near baseline the numbers are sane -- true serves read a median 5 ft/s,
+  the server bouncing or tossing the ball -- but there is no separation: at ≤3 ft/s the gate keeps
+  6 of 20 true serves and rejects all 3 false ones; at ≤6 ft/s, 11 of 20 and 1 of 3.
+
+**Why it fails here, and it is worth keeping:** the review assumed a false serve is a deep drive
+or a high volley misread as a serve. Ours are not. They are junk detections 2-6 s BEFORE the real
+serve -- the server's own pre-serve bouncing and handling -- which have exactly the held-ball
+signature the gate looks for. A physics test for "the ball was still" selects FOR our false
+serves, not against them.
+
+Stage 5 already gates serves on dead-time gap, formation and side, "the server HAS the ball"
+(0.81-0.93 of the window against 0.28-0.37 for everything else) and "the ball moves forward".
