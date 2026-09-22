@@ -2449,3 +2449,24 @@ right against 12 wrong, so the model's gain is not reducible to a rule either.
 
 Closed. This is also the clearest demonstration so far of why court A is held out: a +2 point dev
 gain was worth -7 points on video nothing was tuned on.
+
+### 2026-09-22 (later) — Pre-check: our junk does NOT sit on weak ball tracking, so heatmap entropy cannot pay
+
+Before spending GPU hours dumping per-frame heatmap statistics (the "empty frames still produce a
+peak" idea), we asked what the junk we actually emit looks like in the ball track we already
+store. Dev videos, 255 emitted shots: 180 real, 75 junk.
+
+| where the junk sits | share |
+|---|---|
+| SOLID tracking (80%+ of the ±10-frame window tracked, a real detection at the contact itself) | **44 of 75 = 59%** |
+| WEAK tracking (under half the window tracked, or interpolated, or nothing tracked at the contact) | 14 of 75 = 19% |
+
+Separation of real from junk by track health: window visibility AUC 0.66, detector confidence at
+the contact **0.49**, interpolated 0.50, tracked-at-contact 0.50. Junk is not low-confidence and
+it is not interpolated; it is a confident detection of something that is not a paddle strike.
+
+So a perfect empty-frame gate could reach at most a fifth of our junk, and less in practice, since
+"weak tracking" is not the same as "no ball present" and real shots sit in gappy tracking too
+(that is what the 0.66 leaves). **The heatmap re-run is not worth the hours.** The measured
+false-positive rate in ball-free frames (25-49%) is real but is mostly being absorbed already --
+those frames are between points, where the rally gate drops what they produce.
