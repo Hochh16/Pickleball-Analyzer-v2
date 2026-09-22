@@ -2360,3 +2360,40 @@ moves around; it does not get better.
 Note for anyone re-running this: `HistGradientBoostingClassifier` multiclass fits crash in this
 environment (sklearn 1.9.1 + numpy 2.4.4, "window shape cannot be larger than input array shape",
 reproducible on random data). This test used a random forest over median-imputed features.
+
+### 2026-09-22 (later) — Forward net-crossing for serves: weak. Macro turn angle IN PIXELS: the first real signal
+
+Dev videos only; court A not read. Scripts: scratchpad `test_serve_net_crossing.py`,
+`test_macro_vector_angle.py`.
+
+**1. "A serve must cross the net soon; pre-serve bouncing never does."** Measured over the 30
+shots we call serves. Every one of them crosses the net eventually, junk included, so the test is
+only about HOW SOON:
+
+| | n | median frames to cross |
+|---|---|---|
+| true serve | 23 | 26 (0.43 s) |
+| false serve | 7 | 80 (1.32 s), quartiles 12-145 |
+
+The gate trades badly: at 50 frames it keeps 19 of 23 true serves and still 4 of 7 false; at 75
+frames it keeps every true serve and the same 4 false. Some junk contacts are followed by a
+genuine crossing within 12 frames, because the junk sits in live play or in handling that does
+send the ball over. Not worth shipping at a cost of 4 real serves.
+
+**2. "A real strike alters the macro direction; a tracking artifact leaves it collinear."**
+Straight-line fits over the 10 frames before and after each same-side run member, angle between:
+
+| space | median angle, real | median angle, ghost | AUC |
+|---|---|---|---|
+| court feet (via ball_3d) | 72-106° | 68-125° | **0.50** |
+| **pixels (raw ball track)** | **67-99°** | **31-46°** | **0.65** (0.73 on court B) |
+
+In court feet it says nothing -- the same 3-D noise that killed the gravity fit. **In pixels it
+carries real signal**, the first idea in this exchange that does. It is still not better than the
+shipped rule on its own: choosing the widest-angle member gets 26 of 34 decidable runs against
+today's 29. The existing candidate features include a `direction_change_deg` measured between
+adjacent known frames; this 10-frame regression version is a different, stronger measurement.
+
+**Standing lesson:** any trajectory feature proposed in court feet should be measured in PIXELS
+first. Two ideas have now died in the 3-D reconstruction and survived, or half-survived, in the
+raw track.
