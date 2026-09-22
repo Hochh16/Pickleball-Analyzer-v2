@@ -2422,3 +2422,30 @@ this filter. That is now the FOURTH better-winner attempt to measure well locall
 place, after grounded-fraction, run span and net crossing. The standing note in
 `reject_same_side_runs` holds: the win is not in the winner, and splitting by any single contact
 feature admits more junk than it recovers.
+
+### 2026-09-22 (later) — The drop override looked good on dev and FAILED on held-out court A
+
+Outside review: keep the rules, and override only drive -> drop where a model is confident and the
+shot came from deep, harvesting the model's better drop reading without its losses elsewhere. Also
+proposed: the hitter's BODY as a drive-vs-soft cue.
+
+**Body motion before contact does not separate a drive from a drop or dink.** Arm, shoulder and
+torso joint speeds over the 8 frames before contact, scaled by the player's shoulder-to-hip size,
+read AUC 0.47-0.54. The only feature that "separates" is body scale itself (0.73), which is just
+near-player versus far-player. Pose was read for 176 of 177 shots, so this is not a coverage gap.
+
+**The override, dev videos:** 8 flips, 6 right, 2 wrong. 119/177 -> 123/177 (67% -> 69%), drops
+11 -> 17 of 35. The "deep" gate was inert (identical at 0, 10, 14 and 18 ft), and the whole effect
+sat at the 0.5 probability boundary: at 0.6 only one shot flips.
+
+**The same rule on held-out court A: 61/80 (76%) -> 55/80 (69%).** Eight flips, every one wrong --
+6 real drives, 1 return, 1 serve -- and not one of court A's 9 drops recovered. At 0.6 it still
+loses 2 and gains none.
+
+**And the premise is wrong where we can check it.** Among shots we call drives, the ones that are
+really drops are NOT slower: 35.8 ft/s against 35.2. They differ on arc height (0.31 vs 0.14) and
+landing depth, both of which `classify_shots` already uses. A simple speed-and-arc rule flips 6
+right against 12 wrong, so the model's gain is not reducible to a rule either.
+
+Closed. This is also the clearest demonstration so far of why court A is held out: a +2 point dev
+gain was worth -7 points on video nothing was tuned on.
