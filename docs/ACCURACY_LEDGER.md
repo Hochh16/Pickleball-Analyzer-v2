@@ -2397,3 +2397,28 @@ adjacent known frames; this 10-frame regression version is a different, stronger
 **Standing lesson:** any trajectory feature proposed in court feet should be measured in PIXELS
 first. Two ideas have now died in the 3-D reconstruction and survived, or half-survived, in the
 raw track.
+
+**Wiring the angle into the filter: measured both ways, neither pays.** Dev videos, the runs whose
+real contact the operator labelled (scratchpad `test_run_winner_with_angle.py` and the split test):
+
+| rule | result |
+|---|---|
+| today: largest post-impact excursion | **29 of 34 runs** pick the real contact |
+| largest turn angle | 26 of 34 |
+| excursion normalised + angle/180 | 26 of 34 |
+
+| splitting a run where a member turns the ball sharply | real contacts kept | junk kept |
+|---|---|---|
+| today, no split | 90 | 81 |
+| split at >= 90° | 131 | 187 |
+| split at >= 75° | 135 | 211 |
+| split at >= 60° | 143 | 231 |
+
+Splitting recovers real contacts at about one for every 2.6 junk it admits, against the
+trusted-net-end gate's 15 junk removed for 2 real. Not shippable.
+
+So the angle joins the list: a real signal (AUC 0.65) that does not pay for itself anywhere in
+this filter. That is now the FOURTH better-winner attempt to measure well locally and fail in
+place, after grounded-fraction, run span and net crossing. The standing note in
+`reject_same_side_runs` holds: the win is not in the winner, and splitting by any single contact
+feature admits more junk than it recovers.
