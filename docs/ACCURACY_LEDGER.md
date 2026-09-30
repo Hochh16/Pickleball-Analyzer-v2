@@ -2470,3 +2470,21 @@ So a perfect empty-frame gate could reach at most a fifth of our junk, and less 
 (that is what the 0.66 leaves). **The heatmap re-run is not worth the hours.** The measured
 false-positive rate in ball-free frames (25-49%) is real but is mostly being absorbed already --
 those frames are between points, where the rally gate drops what they produce.
+
+### 2026-09-30 — Stroke mechanics are not in the 2-D pose, even for the near player
+
+Asked while assessing WHAM (3-D human mesh from monocular video) as a way to read stroke
+mechanics. If the hitter's arm motion before contact does not separate a drive from a drop or
+dink in what we already see, a 3-D body model rebuilt from the same pixels is unlikely to create
+the signal. Dev videos; 2-D pose over the 8 frames before contact, scaled by torso size.
+
+| hitter | drives vs drops/dinks | torso size | arm speed AUC | shoulder | torso | arm/torso |
+|---|---|---|---|---|---|---|
+| near side | 37 vs 33 | 133 px | 0.46 | 0.46 | 0.42 | 0.55 |
+| far side | 27 vs 35 | 59 px | 0.50 | 0.47 | 0.52 | 0.51 |
+
+No separation on either side, including the well-resolved near player. What distinguishes a drop
+(wrist, paddle face) is below what this camera resolves. WHAM was not pursued: its main strength,
+world-grounded trajectories under a MOVING camera, is redundant with a fixed tripod and our
+homography; it depends on the SMPL body model, licensed for non-commercial research only; and it
+is a heavy per-person model against the throughput requirement.
