@@ -2488,3 +2488,42 @@ No separation on either side, including the well-resolved near player. What dist
 world-grounded trajectories under a MOVING camera, is redundant with a fixed tripod and our
 homography; it depends on the SMPL body model, licensed for non-commercial research only; and it
 is a heavy per-person model against the throughput requirement.
+
+### 2026-09-30 — Video classifier, Phase 1: real signal, below the rules, and data is not the limit
+
+Per `docs/VIDEO_CLASSIFIER_SCOPE.md`: every Stage 5 candidate cut to ~0.5 s of video around it,
+cropped to the ball and nearest player (2,076 clips; dev 1,439 with 237 real), embedded with a
+FROZEN Kinetics-pretrained S3D, and a logistic regression trained on top. Leave-one-video-out over
+the three dev videos. Court A not read. Tools: `tools/vidclf_build_clips.py`, `tools/vidclf_probe.py`.
+
+**Learning curve** (AUC on the video left out; 0.5 = no signal):
+
+| share of training data | ~real per fold | outdoor-7 | court C | court B | mean |
+|---|---|---|---|---|---|
+| 25% | 40 | 0.689 | 0.786 | 0.778 | 0.751 |
+| 50% | 79 | 0.709 | 0.797 | 0.809 | 0.771 |
+| 75% | 118 | 0.720 | 0.809 | 0.786 | 0.772 |
+| 100% | 158 | 0.721 | 0.827 | 0.796 | **0.781** |
+
+**Shots it would emit**, threshold chosen on dev (it chose 0.95, the top of the grid):
+
+| video | rules found / junk | video model found / junk |
+|---|---|---|
+| outdoor-7 | 79 / 33 | 35 / 26 |
+| court C | 45 / 24 | 19 / 11 |
+| court B | 56 / 18 | 27 / 11 |
+
+**As a filter on top of the rules** (a secondary question, not in the pre-registered rules):
+dropping shipped shots the model scores under 0.05 removes 27 junk and 21 real (180/75 -> 159/48);
+every stricter cut is worse. About one real shot lost per junk removed.
+
+**Verdict, by the rule fixed in the scope: "below the rules, flat" -> stop.** The signal is real --
+AUC 0.78 is as good as the paddle sound and better than any single hand-built feature -- but it
+does not select shots better than the rules. And more data is not the answer: quadrupling the
+training set lifted AUC by 0.03, about 0.015 per doubling. Reaching even 0.85 at that rate would
+take something like sixteen times the data, on the order of fifty fully reviewed videos.
+
+The one door left open is the backbone: this plateau belongs to frozen S3D features, trained on
+general human actions. A stronger pretrained model (MViT, a VideoMAE-class model) on Colab could
+sit on a higher curve. That is a two-hour test, not a project, and should be expected to move the
+plateau by a few points at most unless the representation is dramatically better.
