@@ -31,6 +31,29 @@ drive being partly judged on body mechanics.
    been our harder case. Run: `python -m tools.pbvision_compare data/<clip> <insights.json>
    --cv <cv.json>` (the cv file orients near/far; PB Vision's coordinates run opposite to ours).
 
+**What we do that PB Vision does not — and the reverse.** Judged from its four exported files
+(cv, insights, stats, data.xlsx); its app may show more.
+
+| ours, not in their export | theirs, not ours |
+|---|---|
+| **Cumulative report**: N videos pooled into one virtual session (`stages/aggregate`), so the rating rests on all of a player's shots — David2 is 6 videos and 80 of his own shots, where one video gives 7-28. PB Vision analyses many videos but, per the operator, gives no combined report. | Ball speed, height over the net, direction (cross-court / down the line) |
+| A rating on the **USA Pickleball 2.0-5.5 scale** across the 7 official categories, with the ladder (theirs: own 0-1 dimensions — kitchen game, ball control, defense, offense, court IQ, targeting) | A quality score for every shot |
+| **Body mechanics from pose**: knee bend per shot type, contact in front of the hip, ready position | Game scoring (court A read as 11-0, side-out) |
+| **Measured leverage**: what ten points on each measurement is worth to the rating | Speed-ups, resets, poaches, passing shots per player |
+| Time-in-zone per rally, and partner-up-together % | Highlight clips |
+| A coaching plan with drills tied to each finding | Confidence intervals on their advice (they quantify uncertainty too) |
+
+Overlap: shot mix, serve/return depth, volleys, distance covered, kitchen arrival. Their export
+carries per-metric trend history across sessions, which is not the same as our cumulative
+report: a trend line of per-video numbers is exactly the noise our redesign refused to plot
+(per-video estimates swing 3.47-4.40 on 7-28 shots), whereas pooling the shots is what makes a
+rating stable.
+
+**Strategically:** our distinctive layer is what sits ON TOP of detection — the cumulative,
+USAPA-aligned rating, pose-based technique, and leverage-ordered coaching. Theirs is detection
+itself, done far better, plus ball-flight measurement. That is the shape of path 1: their
+detection feeding our cumulative rating, technique and coaching.
+
 ---
 
 **Detection accuracy is unchanged since 2026-09-15** (shots 74%, type 72%, serves 34/52), and
