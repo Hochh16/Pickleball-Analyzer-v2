@@ -1,6 +1,37 @@
 # Session Handoff — Pickleball-Analyzer-v2 (updated 2026-10-01)
 
-## 2026-10-01 — READ FIRST
+## 2026-10-01 — READ FIRST: THE FOOTAGE IS NOT THE LIMIT
+
+**Headline finding.** Recommendation 1 below was run the same day. The operator put held-out
+court A through PB Vision, and `tools/pbvision_compare.py` scored its shot list and ours against
+his review, one-to-one, the way every experiment here is scored (`docs/ACCURACY_LEDGER.md`,
+2026-10-01):
+
+| court A (97 shots, 19 serves, 19 rally ends) | PB Vision | our pipeline |
+|---|---|---|
+| real shots found / junk (within 1.0 s) | **96 / 1** | 74 / 34 |
+| serves found (false) | **19/19 (1)** | 14/19 (3) |
+| rally ends within 2 s | **19/19** | 12/19 |
+| how the point ended | **18/19** | 9/12 |
+| shot type, of what each found | 77% | 82% |
+
+From the SAME 6 ft tripod footage, a trained commercial system gets detection, serves and rally
+structure essentially right. Every detection limit this project attributed to the camera was a
+limit of our method. Shot type is the exception: PB Vision is no better, consistent with drop vs
+drive being partly judged on body mechanics.
+
+**Paths forward, for the operator to decide**
+1. **Use PB Vision (or a similar service) as the detection front end** and keep what is ours on
+   top: the USAPA-aligned rating, the leverage-ordered report, coaching, the truth store. Whether
+   PB Vision offers an API or partner terms is unknown — a business question as much as a
+   technical one, and the first thing to find out.
+2. **Build toward that accuracy ourselves** — the labelled-data-at-scale route (recommendation 2
+   below), now shown to be achievable, and a large investment.
+3. **Either way, repeat the comparison on an outdoor video first.** Court A is indoor; outdoor has
+   been our harder case. Run: `python -m tools.pbvision_compare data/<clip> <insights.json>
+   --cv <cv.json>` (the cv file orients near/far; PB Vision's coordinates run opposite to ours).
+
+---
 
 **Detection accuracy is unchanged since 2026-09-15** (shots 74%, type 72%, serves 34/52), and
 the work since then explains why it should stay there with this approach. Every experiment is

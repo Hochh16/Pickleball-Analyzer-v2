@@ -27,8 +27,14 @@ and Pro on the video directly. **None beats the rule stack on unseen video.**
 
 **Why it is hard, measured rather than assumed:** 96-98% of the operator's real shots ARE present
 in Stage 5's pre-filter candidate stream, so contacts are not being missed by the ball track. The
-failure is choosing among nearby candidates, and the per-candidate measurements available from
-one low camera do not separate them.
+failure is choosing among nearby candidates, and the per-candidate measurements WE use do not
+separate them.
+
+**But the camera is not the limit (2026-10-01).** PB Vision, run on held-out court A from the same
+tripod footage, found 96 of 97 real shots with 1 junk, all 19 serves and all 19 rally ends, and
+read 18 of 19 point endings — against our 74 / 34, 14 of 19, 12 of 19 and 9 of 12. The detection
+gap is our method (a trained model on far more labelled data), not the footage. Shot type is the
+exception: PB Vision is no better there. See `docs/ACCURACY_LEDGER.md` and `docs/SESSION_HANDOFF.md`.
 
 **Two standing product constraints from the operator (2026-09-14):** the app must work from an
 ordinary tripod — no special camera placement — and end users must never be asked to review or

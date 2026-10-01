@@ -2527,3 +2527,40 @@ The one door left open is the backbone: this plateau belongs to frozen S3D featu
 general human actions. A stronger pretrained model (MViT, a VideoMAE-class model) on Colab could
 sit on a higher curve. That is a two-hour test, not a project, and should be expected to move the
 plateau by a few points at most unless the representation is dramatically better.
+
+### 2026-10-01 — PB Vision on held-out court A: the footage is NOT the limit
+
+The handoff's first recommendation, run. The operator processed court A's video through PB Vision
+and downloaded its output; `tools/pbvision_compare.py` scores its shot list and ours against the
+same review, the same one-to-one way every experiment here is scored. Court A is unaffected as a
+held-out clip: nothing of ours was tuned on the result.
+
+| court A, against the operator's review (97 shots, 19 serves, 19 rally ends) | PB Vision | our pipeline |
+|---|---|---|
+| real shots found within 0.35 s / junk | 86 / 11 | 72 / 36 |
+| **real shots found within 1.0 s / junk** | **96 / 1** | 74 / 34 |
+| shot type right (of matched) | 66 / 86 (77%) | 59 / 72 (82%) |
+| near/far side right | 86 / 86 | 70 / 72 |
+| volley vs not right | 53 / 56 | 55 / 61 |
+| **serves found (false)** | **19 / 19 (1)** | 14 / 19 (3) |
+| **rally ends within 2 s** | **19 / 19** | 12 / 19 |
+| **how the point ended** | **18 / 19** | 9 / 12 |
+
+The 1.0 s row is the fair one for PB Vision: of the 10 shots it matches only between 0.35 and
+1.0 s, five are review times the operator TYPED BY HAND for shots we never detected (so the
+review time itself is approximate), and five are serves PB Vision timestamps 0.4-0.8 s from the
+operator's mark -- a consistent difference in where a serve is said to happen, not a different
+shot. It missed one real shot (255.18 s) and reported one that is not one.
+
+Orientation note for anyone re-running it: PB Vision's court coordinates run the other way from
+ours (its camera sits at y = 57 ft), so near/far is read from its camera fit (`--cv`); assumed,
+it scored a perfect 0 of 86. It also places the camera 6.1 ft high, matching the tripod.
+
+**What this settles.** From the same 6 ft tripod footage, a trained commercial system finds 96 of
+97 shots with 1 junk, every serve and every rally end, and reads 18 of 19 point endings. Every
+limit this ledger attributed to "what one low camera can see" for detection, serves and rally
+structure was a limit of OUR method, not of the footage. Shot TYPE is the exception: PB Vision is
+no better than us there (77% against 82% on what each found), which fits the operator's own note
+that drop versus drive is partly judged on body mechanics.
+
+One video, indoor. Worth repeating on an outdoor video before treating the numbers as general.

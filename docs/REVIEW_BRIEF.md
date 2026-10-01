@@ -1,6 +1,6 @@
 # Brief for an outside code review
 
-Updated 2026-09-22. Paste this in before asking another model to review the repo. It exists
+Updated 2026-10-01. Paste this in before asking another model to review the repo. It exists
 because a review arrived built on numbers this project had already retracted — the code is ahead
 of the older sections of `SYSTEM_DESIGN.md` and of the un-marked parts of `KNOWN_ISSUES.md`.
 
@@ -93,6 +93,13 @@ of them in the image, which then looks like the near side hitting twice.
 Also rejected with numbers, in `docs/ACCURACY_LEDGER.md` and `KNOWN_ISSUES.md`: net-crossing
 splits, dead-ball splits, resting-side rules, serve rotation, 1080p escalation, negative-mining
 retrain, dead-ball suppression from ball height, predicting where a volleyed ball would land.
+
+## A commercial benchmark, same footage (2026-10-01)
+
+PB Vision on the held-out video, scored against the same review: 96 of 97 real shots with 1 junk,
+19 of 19 serves, 19 of 19 rally ends, 18 of 19 point endings (ours: 74 / 34, 14, 12, 9 of 12). So
+detection, serves and rally structure ARE achievable from this camera; the gap is method and
+training data. Shot type is the exception (PB Vision 77% vs ours 82% on what each found).
 
 ## Where a review could actually help
 
