@@ -1,6 +1,68 @@
-# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-09-15)
+# Session Handoff — Pickleball-Analyzer-v2 (updated 2026-10-01)
 
-## 2026-09-15 — READ FIRST
+## 2026-10-01 — READ FIRST
+
+**Detection accuracy is unchanged since 2026-09-15** (shots 74%, type 72%, serves 34/52), and
+the work since then explains why it should stay there with this approach. Every experiment is
+in `docs/ACCURACY_LEDGER.md` with its numbers.
+
+**What was built**
+- The report redesign is IMPLEMENTED in `tools/build_report.py` (2026-09-16): evidence strip,
+  category cards ordered by measured leverage, the four "why it moves nothing" buckets, three-zone
+  positioning with an honest empty state, five toggleable ball views, collapsible notes.
+  `docs/REPORT_REDESIGN.md` records what each design item became.
+- `docs/REVIEW_BRIEF.md` — paste into any outside model BEFORE asking it to review the repo. A
+  review built on retracted figures is what prompted it.
+- `tools/vidclf_build_clips.py` + `tools/vidclf_probe.py` — a labelled half-second clip for every
+  Stage 5 candidate, and a frozen-video-model probe over them. Clips and embeddings live in
+  `data/_vidclf/` (gitignored); candidates there were regenerated on COPIES, so the real data
+  folders are untouched.
+
+**Measured and closed, 2026-09-22 to 09-30** (all on dev videos, court A only where stated):
+gravity-fit residual after a contact (AUC 0.49); "ball still before a serve" (our false serves
+ARE pre-serve bouncing, so a stillness test selects for them); forward net-crossing for serves;
+shot type from kinematic windows (no gain); macro turn angle as run winner or split (signal in
+PIXELS, AUC 0.65, but never pays in the filter); a targeted drive->drop override (+2 points on
+dev, **-7 on held-out court A**); hitter body motion for drive-vs-soft (no signal even for the
+near player); heatmap entropy (pre-check: 59% of junk sits on solid ball tracking, so it cannot
+pay); WHAM 3-D body (redundant with a fixed camera, non-commercial body model); a frozen S3D video
+classifier (AUC 0.78 but well below the rules, and a nearly flat learning curve — **data is not
+the limit for this approach**).
+
+**What the evidence says the problem is.** Real contacts are found (96-98% are candidates), the
+ball is tracked to ~4 px, and several signals exist at about AUC 0.78 (sound, video, pixel
+direction). What is missing is a model trained on THOUSANDS of labelled paddle strikes. Our
+junk is semantic — a real ball, really moving, not struck by a paddle — not a tracking failure.
+
+**Recommendations, in order**
+1. **Benchmark a commercial product against the truth store (cheapest, most decisive).** Run a
+   reviewed video — court A is the natural one — through a service such as PB Vision or
+   SwingVision and score its shot list with our scorers. If it reaches 90%+ from the same tripod
+   footage, the footage is not the limit and scale of training data is. If it also struggles,
+   that is strong evidence this camera position caps everyone. Court A's current report in the
+   redesigned layout is at `data/pb_5_min_indoor_1_court_a/report_redesign.html` for side-by-side
+   reading; compare SHOT LISTS against the truth store, not headline numbers.
+2. **Labelled data at scale — the real lever, and expensive.** A fine-tuned video or audio-video
+   event model needs thousands of labelled strikes. Options: a labelling service (marking contact
+   frames outsources well), and self-supervised pretraining on the ~50 unreviewed local videos so
+   fewer labels are needed. A real project and still a bet.
+3. **Next-generation general video models — watch, nearly free.** Gemini lost partly because it
+   samples at most 24 fps and shrinks every frame to a fixed budget. `tools/gemini_video_test.py`
+   re-scores any new model in one command; re-run it on each release.
+4. **Higher capture frame rate (120 fps) — modest.** A phone setting, not a special setup; would
+   sharpen contact timing. Ball tracking is not the bottleneck, so expect a small gain, and
+   evaluating it needs a new video run end to end and reviewed.
+
+**Do not pursue:** better tracking, 3-D pose, physics models, more hand-built filters, or more
+reviewing for the frozen-model approach — each measured, none targets the limit.
+
+**Product, independent of detection:** the report already leads with what is measured reliably
+(positioning, kitchen time, movement, volleys) and is honest about the rest. That is shippable
+today.
+
+---
+
+## 2026-09-15
 
 **Where accuracy stands**, scored against the operator's reviews of four videos (outdoor, courts
 A, B, C): shots 252/340 (74%) with 111 junk; type 181/252 (72%), drop 14/43; volley 82%; serves
@@ -24,7 +86,7 @@ the problem is choosing between nearby candidates, not finding contacts.
 - Rally ends: the trusted NET end decides the reason; end frame capped 2.0 s past the last shot.
 - `tools/gemini_video_test.py` — re-score any video model against the truth store in one command.
 - Court B reviewed shot by shot and imported (82 real, 18 junk, 10 ends, all rallies match the operator's counts).
-- `docs/REPORT_REDESIGN.md` — the report design, saved so it need not be redone; NOT yet implemented in `build_report.py`.
+- `docs/REPORT_REDESIGN.md` — the report design, saved so it need not be redone (implemented 2026-09-16; see the entry above).
 
 **Watch out for** (both bit this session, twice each): loose many-to-one time matching inflates
 findings — always match one-to-one against the whole shot list; and truth entries flagged
