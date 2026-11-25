@@ -2564,3 +2564,39 @@ no better than us there (77% against 82% on what each found), which fits the ope
 that drop versus drive is partly judged on body mechanics.
 
 One video, indoor. Worth repeating on an outdoor video before treating the numbers as general.
+
+### 2026-11-25 — PB Vision on the outdoor clip: still well ahead, but rally ends are no better than ours
+
+The repeat the entry above asked for. The operator ran "PB 5 minute outdoor.mp4" through PB Vision
+as a 1080p/30 H.264 downscale of the 4K/60 original (untrimmed, so times line up with the review)
+and downloaded insights, stats and cv (`samples/pbvision/outdoor/`). Scored with
+`tools/pbvision_compare.py` against `data/pb_5_minute_outdoor-7` (our latest run, 2026-09-11) and
+the operator's review of the same video. Each system is scored as it would actually be used:
+PB Vision on 1080p/30, ours on 4K/60.
+
+| outdoor, against the operator's review (103 shots, 13 serves, 17 rally ends) | PB Vision | our pipeline |
+|---|---|---|
+| real shots found within 0.35 s / junk | 85 / 18 | 79 / 33 |
+| **real shots found within 1.0 s / junk** | **93 / 10** | 86 / 26 |
+| shot type right (of matched) | 67 / 85 (79%) | 52 / 79 (66%) |
+| near/far side right | 83 / 85 | 79 / 79 |
+| volley vs not right | 49 / 51 | 42 / 51 |
+| **serves found (false)** | **13 / 13 (1)** | 10 / 13 (4) |
+| rallies (review: 17) | 14 | 16 |
+| rally ends within 2 s | 11 / 17 | 11 / 17 |
+| how the point ended | 6 / 10 | 7 / 10 |
+
+**What this adds to court A.**
+- Detection holds outdoors: 90% of real shots with 10 junk against our 26, and every serve. The
+  front-end case does not rest on one indoor video any more.
+- The margin is narrower than indoors (court A: 96/97 with 1 junk).
+- **Rally structure is PB Vision's weak point outdoors**: 14 rallies against 17, rally ends 11/17,
+  the same as ours (court A: 19/19). Anything built on its rallies should check its boundaries,
+  not take them as given.
+- Shot type reversed from court A: PB Vision 79% against our 66% here, 77% against 82% there.
+  Two videos, opposite directions — no general claim either way on type.
+
+Tooling note: `tools/pbvision_compare.py` (via `tools/truth_store.source_video`) reads the clip's
+`video_path` with `Path(...).name`, which only splits Windows paths on Windows. Run on Linux it
+silently finds no review ("0 real shots") and then crashes formatting a missing clock offset.
+This run patched `source_video` in memory to use `PureWindowsPath`; the code is unchanged.
